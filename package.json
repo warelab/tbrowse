@@ -30,7 +30,10 @@
   },
   "author": "Andrew Olson",
   "license": "MIT",
-  "repository": "",
+  "repository": {
+      "type": "git",
+      "url": "https://github.com/warelab/tbrowse.git"
+  },
   "keywords": [
     "react-component"
   ]
