@@ -1,9 +1,21 @@
-import React, {Component} from 'react'
+import React from 'react'
+import { Provider } from 'react-redux'
+import { configureStore, createReducer } from 'redux-starter-kit'
+import Layout from './components/Layout'
+import configureState from './initialState.js'
+import reducer from './reducers'
 
-export default class extends Component {
-  render() {
-    return <div>
-      <h2>Welcome to TBrowse</h2>
-    </div>
-  }
+const TBrowse = (props) => {
+  const store = configureStore({
+    reducer: reducer,
+    preloadedState: configureState(props)
+  });
+  
+  return (
+    <Provider store={store}>
+      <Layout/>
+    </Provider>
+  )
 }
+
+export default TBrowse

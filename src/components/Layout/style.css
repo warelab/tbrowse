@@ -1,0 +1,31 @@
+.zone-wrapper {
+    position: fixed;
+}
+.zone-cfg {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px dotted #7e8585;
+    border-radius: 4px;
+    transition: border .1s;
+    position: absolute;
+    box-sizing: border-box;
+    padding: 4px;
+    min-width: 50px;
+}
+
+.zone-cfg:hover {
+    border: 1px solid #7a8181;
+    border-radius: 6px;
+}
+
+.tbrowse {
+    min-height: 400px;
+}
+.tbrowse-header {
+    background: lightgreen;
+    height: 40px;
+    padding: 4px;
+}
+.tbrowse-zone-config {
+    height: 40px;
+    padding: 4px;
+}
