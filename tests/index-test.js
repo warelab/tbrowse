@@ -17,7 +17,7 @@ describe('Component', () => {
 
   it('displays a welcome message', () => {
     render(<Component/>, node, () => {
-      expect(node.innerHTML).toContain('Welcome to TBrowse')
+      expect(node.innerHTML).toContain('TBrowse')
     })
   })
 })
