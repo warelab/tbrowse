@@ -26,7 +26,7 @@ const zoneDefaults = {
   },
   label: {
     label: 'Label',
-    width: 100,
+    width: 150,
     minWidth: 10
   },
   distance: {

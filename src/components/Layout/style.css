@@ -3,18 +3,10 @@
 }
 .zone-cfg {
     background: rgba(255, 255, 255, 0.7);
-    border: 1px dotted #7e8585;
-    border-radius: 4px;
-    transition: border .1s;
     position: absolute;
     box-sizing: border-box;
     padding: 4px;
     min-width: 50px;
-}
-
-.zone-cfg:hover {
-    border: 1px solid #7a8181;
-    border-radius: 6px;
 }
 
 .tbrowse {
@@ -26,6 +18,13 @@
     padding: 4px;
 }
 .tbrowse-zone-config {
-    height: 40px;
+    height: 20px;
     padding: 4px;
+    border: 1px dotted #7e8585;
+    border-radius: 4px;
+    transition: border .1s;
+}
+.tbrowse-zone-config:hover {
+    border: 1px solid #7a8181;
+    border-radius: 6px;
 }

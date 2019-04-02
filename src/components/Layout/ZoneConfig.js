@@ -5,12 +5,15 @@ import { bindActionCreators } from 'redux'
 import './style.css'
 
 const SettingsButton = (props) => {
-  return <button><i className="fas fa-cog"/></button>
+  if (props.configurable) {
+    return <i style={{float:'right'}} className="fa fa-cog"/>
+  }
+  return null
 };
 
 const ZoneConfig = ({type,id,availableZones,addZone,deleteZone,replaceZone}) => (
   <div className='tbrowse-zone-config'>
-    <select value={type} onChange={(e) => {
+    <select style={{width:'100px'}} value={type} onChange={(e) => {
       if (e.target.value === '__add') {
         addZone({idx:id})
       }
