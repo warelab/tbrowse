@@ -21,11 +21,13 @@
     "test:watch": "nwb test-react --server"
   },
   "dependencies": {
+    "cross-fetch": "^3.0.2",
     "lodash": "^4.17.11",
     "react-redux": "^6.0.1",
     "reactablejs": "0.0.3",
     "redux": "^4.0.1",
     "redux-starter-kit": "^0.4.3",
+    "redux-thunk": "^2.3.0",
     "url-parse": "^1.4.4"
   },
   "peerDependencies": {

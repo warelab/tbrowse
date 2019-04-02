@@ -23,8 +23,6 @@ class Demo extends Component {
     return <div>
       <h1>tbrowse Demo</h1>
       <TBrowse {...props}/>
-      <h1>tbrowse Demo 2</h1>
-      <TBrowse {...props}/>
     </div>
   }
 }

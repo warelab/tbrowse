@@ -1,5 +1,5 @@
 import { createAction, createReducer } from 'redux-starter-kit'
-import { zoneDefaults } from "../initialState";
+import { zoneDefaults } from "../store/initialState";
 
 const updateZonePosition = createAction('layout/updateZonePosition');
 const addZone = createAction('layout/addZone');

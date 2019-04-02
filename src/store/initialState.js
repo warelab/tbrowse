@@ -1,16 +1,11 @@
 import _ from 'lodash';
-import Tree from './components/Tree';
-import MSA from './components/MSA';
-import { Labels, Distances } from './components/Text';
-import Neighborhoods from './components/Neighborhoods';
-import Checkboxes from './components/Checkboxes';
-import LocalData from './components/LocalData';
 
 const genetreesDefaults = {
   api: 'http://www.genetrees.org/api/v1',
   setId: 'compara_95',
   treeId: 'ENSGT00390000003602',
-  genomes: []
+  genomes: [],
+  trees: {}
 };
 const defaultZones = ['tree', 'label', 'msa'];
 const zoneDefaults = {
@@ -68,7 +63,7 @@ const overrideDefaults = (defaults, props) => {
   return merged;
 };
 
-const configureState = (props) => {
+const initializeState = (props) => {
   let state = {
     genetrees: overrideDefaults(genetreesDefaults, props),
     layout: {
@@ -106,5 +101,5 @@ const configureState = (props) => {
   return state;
 };
 
-export default configureState;
+export default initializeState;
 export { zoneDefaults }
