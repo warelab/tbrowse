@@ -1,10 +1,12 @@
 import _ from 'lodash';
+import Swagger from 'swagger-client';
 
 const genetreesDefaults = {
   api: 'http://www.genetrees.org/api/v1',
   setId: 'compara_95',
   treeId: 'ENSGT00390000003602',
   genomes: [],
+  genesOfInterest: ['ENSG00000139618'],
   trees: {}
 };
 const defaultZones = ['tree', 'label', 'msa'];

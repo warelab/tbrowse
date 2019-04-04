@@ -15,7 +15,12 @@ function trees(
       return Object.assign({}, state, {
         isFetching: true})
     case RECEIVE_TREE:
-      state.trees[action.url] = action.tree;
+      state.trees[action.url] = {
+        tree: action.tree,
+        visible: action.visible,
+        maxVindex: action.maxVindex,
+        interpro: action.interpro
+      };
       return Object.assign({}, state, {
         isFetching: false,
         currentTree: action.url,
@@ -26,16 +31,5 @@ function trees(
   }
 }
 
-function genetrees(state, action) {
-  switch (action.type) {
-    case REQUEST_TREE:
-    case RECEIVE_TREE:
-      return Object.assign({}, state, {
-        genetrees: trees(state.genetrees, action)
-      })
-    default:
-      return state
-  }
-}
 
 export default trees;

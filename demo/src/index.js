@@ -7,9 +7,9 @@ const url = parse(document.location.href, true);
 const props = {
   setId: url.query.setId || "compara_95",
   treeId: url.query.treeId || "ENSGT00390000003602",
+  genesOfInterest: ['ENSG00000139618'],
   zones: [{
-    type: 'tree',
-    genesOfInterest: ['ENSG00000139618']
+    type: 'tree'
   },{
     type: 'label'
   },{

@@ -1,3 +1,6 @@
+import {prepTree, addConsensus, collapseGaps, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
+import Swagger from "swagger-client";
+
 export const REQUEST_TREE = 'REQUEST_TREE';
 function requestTree(url) {
   return {
@@ -7,16 +10,16 @@ function requestTree(url) {
 }
 
 export const RECEIVE_TREE = 'RECEIVE_TREE';
-function receiveTree(url, json) {
+function receiveTree(url, tree, visible, maxVindex, interpro) {
   return {
     type: 'RECEIVE_TREE',
-    url,
-    tree: json,
+    url, tree, visible, maxVindex, interpro,
     receivedAt: Date.now()
   }
 }
 
 const treeURL = (p,s) => `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
+const gapParams = (p,s) => [p.minDepth || s.minDepth, p.minGapLength || s.minGapLength, p.gapPadding || s.gapPadding];
 
 const shouldFetchTree = (state, params) => {
   if (state.isFetching) return false;
@@ -31,7 +34,19 @@ const fetchTree = (params) => {
     dispatch(requestTree(url));
     return fetch(url)
       .then(response => response.json())
-      .then(json => dispatch(receiveTree(url, json)))
+      .then(json => {
+        let tree = prepTree(json);
+        addConsensus(tree);
+        collapseGaps(tree, gapParams(params, state.genetrees));
+        let visible = expandToGenes(tree, params.genesOfInterest || state.genetrees.genesOfInterest);
+        let maxVindex = indexVisibleNodes(tree);
+        Swagger(`${state.genetrees.api}/swagger`)
+          .then(client => {
+            addDomainArchitecture(tree, client, function (interpro) {
+              dispatch(receiveTree(url, tree.model, visible, maxVindex, interpro));
+            })
+          })
+      })
   }
 };
 
