@@ -21,10 +21,11 @@ const zoneDefaults = {
     label: 'Alignment',
     width: 400,
     minWidth: 100,
-    minDepth: 1,
+    minDepth: 10,
     minGapLength: 1,
     gapPadding: 0,
-    colorScheme: 'clustal'
+    colorScheme: 'clustal',
+    configurable: true
   },
   label: {
     label: 'Label',

@@ -1,11 +1,11 @@
-import Checkboxes from './Checkboxes'
-import LocalData from './LocalData'
-import MSA from './MSA'
-import Neighborhoods from './Neighborhoods'
-import { Labels, Distances } from './Text'
-import Tree from './Tree'
+import Checkboxes from './Zones/Checkboxes'
+import LocalData from './Zones/LocalData'
+import { MSA, MSAConfig } from './Zones/MSA'
+import Neighborhoods from './Zones/Neighborhoods'
+import { Labels, Distances } from './Zones/Text'
+import Tree from './Zones/Tree'
 
-const components = {
+export const components = {
   checkbox: Checkboxes,
   tree: Tree,
   msa: MSA,
@@ -15,4 +15,6 @@ const components = {
   distance: Distances
 };
 
-export default components;
+export const configs = {
+  msa: MSAConfig
+};

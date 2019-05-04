@@ -4,7 +4,7 @@ import { bindActionCreators } from 'redux'
 import reactable from 'reactablejs'
 import {connect} from "react-redux"
 import ZoneConfig from './ZoneConfig'
-import components from '../inventory'
+import {components} from '../inventory'
 import './style.css'
 
 const Child = props => (
@@ -14,7 +14,7 @@ const Child = props => (
        ref={props.getRef}
   >
     <ZoneConfig id={props.zoneId}/>
-    {props.zoneType && components[props.zoneType] && React.createElement(components[props.zoneType])}
+    {props.zoneType && components[props.zoneType] && React.createElement(components[props.zoneType], props)}
   </div>
 );
 

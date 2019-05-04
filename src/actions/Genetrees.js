@@ -1,4 +1,4 @@
-import {prepTree, addConsensus, collapseGaps, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
+import {prepTree, addConsensus, getGapMask, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
 import Swagger from "swagger-client";
 
 export const REQUEST_TREE = 'REQUEST_TREE';
@@ -10,40 +10,74 @@ function requestTree(url) {
 }
 
 export const RECEIVE_TREE = 'RECEIVE_TREE';
-function receiveTree(url, tree, visible, maxVindex, interpro) {
+function receiveTree(tree, visibleNodes, maxVindex, interpro) {
   return {
-    type: 'RECEIVE_TREE',
-    url, tree, visible, maxVindex, interpro,
+    type: RECEIVE_TREE,
+    tree, ...visibleNodes, maxVindex, interpro,
     receivedAt: Date.now()
   }
 }
 
-const treeURL = (p,s) => `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
-const gapParams = (p,s) => [p.minDepth || s.minDepth, p.minGapLength || s.minGapLength, p.gapPadding || s.gapPadding];
+export const USE_TREE = 'USE_TREE';
+const useTree = (url) => {
+  return {
+    type: USE_TREE,
+    url
+  }
+};
 
-const shouldFetchTree = (state, params) => {
+const treeURL = (p,s) => `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
+
+export const getGapParams = (p) => [p.minDepth, p.minGapLength, p.gapPadding];
+
+export const CALCULATED_GAPS = 'CALCULATED_GAPS';
+function saveGaps(gapKey, gaps) {
+  return {
+    type: CALCULATED_GAPS,
+    gaps, gapKey
+  }
+}
+
+export const calculateGaps = (params) => {
+  return (dispatch, getState) => {
+    const state = getState();
+    const gapParams = getGapParams(params);
+    const gapKey = JSON.stringify(gapParams);
+    const tree = state.genetrees.trees[state.genetrees.currentTree];
+    if (tree && !tree.gaps.hasOwnProperty(gapKey)) {
+      dispatch(saveGaps(gapKey, getGapMask(tree, ...gapParams)))
+    }
+    else {
+      Promise.resolve();
+    }
+  }
+};
+
+const shouldFetchTree = (state, url) => {
   if (state.isFetching) return false;
-  const url = treeURL(params, state);
   return !state.trees.hasOwnProperty(url);
 };
 
-const fetchTree = (params) => {
+const fetchTree = (url,params) => {
   return (dispatch, getState) => {
     const state = getState();
-    const url = treeURL(params, state.genetrees);
     dispatch(requestTree(url));
     return fetch(url)
       .then(response => response.json())
       .then(json => {
         let tree = prepTree(json);
-        addConsensus(tree);
-        collapseGaps(tree, gapParams(params, state.genetrees));
-        let visible = expandToGenes(tree, params.genesOfInterest || state.genetrees.genesOfInterest);
+        let visibleNodes = expandToGenes(tree, params.genesOfInterest || state.genetrees.genesOfInterest);
         let maxVindex = indexVisibleNodes(tree);
+
+        addConsensus(tree);
+        // const gapParams = getGapParams(params, state.layout.msa);
+        // const gapKey = JSON.stringify(gapParams);
+        // const gaps = getGapMask(tree, gapParams);
+
         Swagger(`${state.genetrees.api}/swagger`)
           .then(client => {
             addDomainArchitecture(tree, client, function (interpro) {
-              dispatch(receiveTree(url, tree.model, visible, maxVindex, interpro));
+              dispatch(receiveTree(tree, visibleNodes, maxVindex, interpro));
             })
           })
       })
@@ -53,11 +87,12 @@ const fetchTree = (params) => {
 export const fetchTreeIfNeeded = params => {
   return (dispatch, getState) => {
     const state = getState();
-    if (shouldFetchTree(state.genetrees, params)) {
-      return dispatch(fetchTree(params))
+    const url = treeURL(params, state.genetrees);
+    if (shouldFetchTree(state.genetrees, url)) {
+      return dispatch(fetchTree(url,params))
     }
     else {
-      return Promise.resolve()
+      return dispatch(useTree(url))
     }
   }
 };

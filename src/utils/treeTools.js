@@ -33,6 +33,31 @@ function indexTree(tree, attrs) {
   });
 }
 
+function sumBranchLengths(node) {
+  let sum = node.model.distanceToParent;
+  node.children.forEach(child => {
+    sum += sumBranchLengths(child);
+  });
+  return sum;
+}
+
+function flattenTree(node) {
+  if (node.children.length === 2) {
+    return _.concat(flattenTree(node.children[0]),node,flattenTree(node.children[1]));
+  }
+  return node;
+}
+
+function colorByDistance(tree) {
+  let nodeOrder = flattenTree(tree);
+  let flatDist = 0;
+  nodeOrder.forEach(node => {
+    let midpoint = flatDist + node.model.distanceToParent/2;
+    node.branchColor = d3chrom.interpolateRainbow(midpoint/tree.totalLength);
+    flatDist += node.model.distanceToParent
+  });
+}
+
 export function prepTree(genetree) {
   function leftIndexComparator(a, b) {
     if (a.leftIndex) {
@@ -45,29 +70,8 @@ export function prepTree(genetree) {
   let tree = new TreeModel({modelComparatorFn: leftIndexComparator}).parse(genetree);
   indexTree(tree, ['geneId','nodeId']);
 
-  function sumBranchLengths(node) {
-    let sum = node.model.distanceToParent;
-    node.children.forEach(child => {
-      sum += sumBranchLengths(child);
-    });
-    return sum;
-  }
 
-  function flattenTree(node) {
-    if (node.children.length === 2) {
-      return _.concat(flattenTree(node.children[0]),node,flattenTree(node.children[1]));
-    }
-    return node;
-  }
-
-  let totalLength = sumBranchLengths(tree);
-  let nodeOrder = flattenTree(tree);
-  let flatDist = 0;
-  nodeOrder.forEach(node => {
-    let midpoint = flatDist + node.model.distanceToParent/2;
-    node.branchColor = d3chrom.interpolateRainbow(midpoint/totalLength);
-    flatDist += node.model.distanceToParent
-  });
+  tree.totalLength = sumBranchLengths(tree);
 
   return tree;
 }
@@ -121,6 +125,7 @@ export function expandToGenes(tree, genesOfInterest) {
     })
   }
   visibleNodes = _.uniq(visibleNodes);
+  colorByDistance(tree);
   return {maxExpandedDist,visibleNodes};
 }
 
@@ -263,12 +268,11 @@ export function addConsensus(tree) {
   addConsensusToNode(tree);
 }
 
-export function collapseGaps(tree, minDepth, minGapLength, gapPadding) {
-  // for trees without MSA
-  if (!tree.model.consensus) return;
+export function getGapMask(node, minDepth, minGapLength, gapPadding) {
+  if (!node.model.consensus) return;
   if (minGapLength < 3) gapPadding = 0;
 
-  const coverage = tree.model.consensus.coverage;
+  const coverage = node.model.consensus.coverage;
   let gaps = [];
   let pos = 0;
   let len = 0;
@@ -318,8 +322,7 @@ export function collapseGaps(tree, minDepth, minGapLength, gapPadding) {
       len: len
     })
   }
-  tree.model.mask = mask;
-  tree.model.maskLen = maskLen;
+  return ({mask, maskLen});
 }
 
 export function mergeOverlaps(regions, minOverlap, coverageMode) {
@@ -489,17 +492,17 @@ export function addDomainArchitecture(tree, api, callback) {
       // sort domains within each group by start pos
       // merge if overlap by at least 20% of the shorter one
       // also convert domain positions from sequence to MSA
-      collapseGaps(node,1,1,0); // use this function to mark the regions in the msa
-      let startPositions = new Uint16Array(node.model.mask.length); // do binary search on this
+      const gaps = getGapMask(node,1,1,0); // use this function to mark the regions in the msa
+      let startPositions = new Uint16Array(gaps.mask.length); // do binary search on this
       let posInSeq=0;
-      node.model.mask.forEach((region,idx) => {
+      gaps.mask.forEach((region,idx) => {
         startPositions[idx] = posInSeq;
         posInSeq += region.len;
       });
       _.each(groups,(group,nodeType) => {
         _.each(group,(set,rootId) => {
           set.hits = mergeOverlaps(set.hits, 0.2)
-            .map(region => projectToMSA(region, startPositions, node.model.mask));
+            .map(region => projectToMSA(region, startPositions, gaps.mask));
         });
       });
       return groups;
