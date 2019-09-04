@@ -51,7 +51,7 @@ class Zone extends React.Component {
   render() {
     return (
       <ReactableChild
-        draggable
+        // draggable
         resizable={{
           edges: { left: true, right: true}
         }}

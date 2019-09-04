@@ -24,8 +24,23 @@ const zoneDefaults = {
     minDepth: 10,
     minGapLength: 1,
     gapPadding: 0,
-    colorScheme: 'clustal',
-    configurable: true
+    colorScheme: 'zappo',
+    configurable: [
+      {id: 'minDepth', type: 'integer', label: 'Min coverage', min:0, max:100},
+      {id: 'minGapLength', type: 'integer', label: 'Min gap length', min:0, max:10},
+      {id: 'gapPadding', type: 'integer', label: 'Gap padding', min:0, max:10},
+      {id: 'colorScheme', type: 'enum', label: 'Color scheme', values:
+        [
+          {id: 'clustal', label: 'Clustal'},
+          {id: 'zappo', label: 'Zappo'},
+          {id: 'taylor', label: 'Taylor'},
+          {id: 'hydrophobicity', label: 'Hydrophobicity'},
+          {id: 'helix', label: 'Helix Propensity'},
+          {id: 'strand', label: 'Strand Propensity'},
+          {id: 'turn', label: 'Turn Propensity'},
+          {id: 'buried', label: 'Buried Index'}
+      ]}
+    ]
   },
   label: {
     label: 'Label',

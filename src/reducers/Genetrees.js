@@ -2,6 +2,7 @@ import {
   REQUEST_TREE,
   RECEIVE_TREE,
   USE_TREE,
+  HOVER_NODE,
   CALCULATED_GAPS
 } from '../actions/Genetrees'
 
@@ -24,7 +25,8 @@ function trees(
         visibleNodes: action.visibleNodes,
         maxExpandedDist: action.maxExpandedDist,
         maxVindex: action.maxVindex,
-        gaps: {}
+        gaps: {},
+        highlight: {}
       };
       state.trees[state.currentTree] = newTree;
 
@@ -37,9 +39,23 @@ function trees(
       return Object.assign({}, state, {
         currentTree: action.url
       });
+    case HOVER_NODE:
+      let tree = state.trees[state.currentTree];
+      let highlight = {};
+      highlight[action.nodeId] = true;
+      let hoveredNode = tree.indices.nodeId[action.nodeId];
+      hoveredNode.walk(node => {
+        highlight[node.model.nodeId] = true;
+      });
+      while(hoveredNode.parent) {
+        hoveredNode = hoveredNode.parent;
+        highlight[hoveredNode.model.nodeId] = true;
+      }
+      tree.highlight = highlight;
+      return Object.assign({}, state);
     case CALCULATED_GAPS:
-      const tree = state.trees[state.currentTree];
-      tree.gaps[action.gapKey] = action.gaps
+      tree = state.trees[state.currentTree];
+      tree.gaps[action.gapKey] = action.gaps;
       return Object.assign({}, state);
     default:
       return state

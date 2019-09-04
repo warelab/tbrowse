@@ -11,7 +11,7 @@ function indexTree(tree, attrs) {
   tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
   tree.walk(node => {
-    node.displayInfo = { expanded : false };
+    node.displayInfo = { expanded : false, height : '21px' };
 
     node.class = node.model.nodeType; // todo: geneOfInterest/orthologs/paralogs
 

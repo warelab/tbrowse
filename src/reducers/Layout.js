@@ -5,14 +5,17 @@ const updateZonePosition = createAction('layout/updateZonePosition');
 const addZone = createAction('layout/addZone');
 const deleteZone = createAction('layout/deleteZone');
 const replaceZone = createAction('layout/replaceZone');
-
-export { addZone, deleteZone, replaceZone, updateZonePosition };
+const updateZoneParam = createAction('layout/updateZoneParam');
+export { addZone, deleteZone, replaceZone, updateZonePosition, updateZoneParam };
 
 
 const layoutReducer = createReducer({}, {
   [updateZonePosition]: (state, action) => {
     state.zones[action.payload.idx].width = action.payload.width;
     state.zones[action.payload.idx].offset = action.payload.offset;
+  },
+  [updateZoneParam]: (state, action) => {
+    state.zones[action.payload.idx][action.payload.id] = action.payload.value
   },
   [addZone]: (state, action) => { // insert an empty zone to the right of this one
     const idx = action.payload.idx;

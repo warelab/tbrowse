@@ -26,6 +26,16 @@ const useTree = (url) => {
   }
 };
 
+export const HOVER_NODE = 'HOVER_NODE';
+export const hoverNode = (nodeId) => {
+  return dispatch => {
+    dispatch( {
+      type: HOVER_NODE,
+      nodeId
+    })
+  }
+};
+
 const treeURL = (p,s) => `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
 
 export const getGapParams = (p) => [p.minDepth, p.minGapLength, p.gapPadding];
@@ -96,4 +106,3 @@ export const fetchTreeIfNeeded = params => {
     }
   }
 };
-
