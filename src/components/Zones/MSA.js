@@ -81,12 +81,11 @@ const MSABody = (props) => (
           const mySlice = new Uint16Array(seqBuffer, block.offset*2, block.len);
           alignSeq += String.fromCharCode.apply(null, mySlice);
           // this helps in safari with scrolling speed
-          // if (alignSeq.length > 256) {
-          //   node.model.consensus.alignSeq.push(alignSeq);
-          //   alignSeq = '';
-          // }
+          if (alignSeq.length > 256) {
+            node.model.consensus.alignSeq.push(alignSeq);
+            alignSeq = '';
+          }
         });
-        node.model.consensus.alignSeq = alignSeq.split(/(-+)/); // work around for different widths of '-'
       }
       const highlight = props.highlight[node.model.nodeId]? ' highlight' : '';
       return <div
@@ -96,9 +95,6 @@ const MSABody = (props) => (
         style={{whiteSpace:'nowrap', lineHeight:node.displayInfo.height}}
       >
         {node.model.consensus.alignSeq.map((s,i) => {
-          if (s.charAt(0) === '-') {  // work around for different widths of '-'
-            return <span key={i} style={{fontFamily: 'clustal'}}>{s}</span>
-          }
           return <span key={i}>{s}</span>
         })}
       </div>;
