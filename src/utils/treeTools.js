@@ -11,7 +11,7 @@ function indexTree(tree, attrs) {
   tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
   tree.walk(node => {
-    node.displayInfo = { expanded : false, height : '21px' };
+    node.displayInfo = { expanded : false, height : 21 };
 
     node.class = node.model.nodeType; // todo: geneOfInterest/orthologs/paralogs
 
@@ -322,7 +322,7 @@ export function getGapMask(node, minDepth, minGapLength, gapPadding) {
       len: len
     })
   }
-  return ({mask, maskLen});
+  return ({mask, gaps, maskLen});
 }
 
 export function mergeOverlaps(regions, minOverlap, coverageMode) {

@@ -1,101 +1,131 @@
 @font-face {
     font-family: 'clustal';
     src: url('fonts/Clustal-Regular.woff2') format('woff2'),
-    url('fonts/Clustal-Regular.woff') format('woff'),
     url('fonts/Clustal-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'zappo';
     src: url('fonts/Zappo-Regular.woff2') format('woff2'),
-    url('fonts/Zappo-Regular.woff') format('woff'),
     url('fonts/Zappo-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'taylor';
     src: url('fonts/Taylor-Regular.woff2') format('woff2'),
-    url('fonts/Taylor-Regular.woff') format('woff'),
     url('fonts/Taylor-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'hydrophobicity';
     src: url('fonts/Hydrophobicity-Regular.woff2') format('woff2'),
-    url('fonts/Hydrophobicity-Regular.woff') format('woff'),
     url('fonts/Hydrophobicity-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'helix';
     src: url('fonts/Helix-Regular.woff2') format('woff2'),
-    url('fonts/Helix-Regular.woff') format('woff'),
     url('fonts/Helix-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'strand';
     src: url('fonts/Strand-Regular.woff2') format('woff2'),
-    url('fonts/Strand-Regular.woff') format('woff'),
     url('fonts/Strand-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'turn';
     src: url('fonts/Turn-Regular.woff2') format('woff2'),
-    url('fonts/Turn-Regular.woff') format('woff'),
     url('fonts/Turn-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'buried';
     src: url('fonts/Buried-Regular.woff2') format('woff2'),
-    url('fonts/Buried-Regular.woff') format('woff'),
     url('fonts/Buried-Regular.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highclustal';
     src: url('fonts/Clustal-Bold.woff2') format('woff2'),
-    url('fonts/Clustal-Bold.woff') format('woff'),
     url('fonts/Clustal-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highzappo';
     src: url('fonts/Zappo-Bold.woff2') format('woff2'),
-    url('fonts/Zappo-Bold.woff') format('woff'),
     url('fonts/Zappo-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'hightaylor';
     src: url('fonts/Taylor-Bold.woff2') format('woff2'),
-    url('fonts/Taylor-Bold.woff') format('woff'),
     url('fonts/Taylor-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highhydrophobicity';
     src: url('fonts/Hydrophobicity-Bold.woff2') format('woff2'),
-    url('fonts/Hydrophobicity-Bold.woff') format('woff'),
     url('fonts/Hydrophobicity-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highhelix';
     src: url('fonts/Helix-Bold.woff2') format('woff2'),
-    url('fonts/Helix-Bold.woff') format('woff'),
     url('fonts/Helix-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highstrand';
     src: url('fonts/Strand-Bold.woff2') format('woff2'),
-    url('fonts/Strand-Bold.woff') format('woff'),
     url('fonts/Strand-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highturn';
     src: url('fonts/Turn-Bold.woff2') format('woff2'),
-    url('fonts/Turn-Bold.woff') format('woff'),
     url('fonts/Turn-Bold.eot') format('embedded-opentype')
 }
 @font-face {
     font-family: 'highburied';
     src: url('fonts/Buried-Bold.woff2') format('woff2'),
-    url('fonts/Buried-Bold.woff') format('woff'),
     url('fonts/Buried-Bold.eot') format('embedded-opentype')
 }
+@font-face {
+    font-family: 'blankclustal';
+    src: url('fonts/Clustal-Blank.woff2') format('woff2'),
+    url('fonts/Clustal-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blankzappo';
+    src: url('fonts/Zappo-Blank.woff2') format('woff2'),
+    url('fonts/Zappo-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blanktaylor';
+    src: url('fonts/Taylor-Blank.woff2') format('woff2'),
+    url('fonts/Taylor-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blankhydrophobicity';
+    src: url('fonts/Hydrophobicity-Blank.woff2') format('woff2'),
+    url('fonts/Hydrophobicity-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blankhelix';
+    src: url('fonts/Helix-Blank.woff2') format('woff2'),
+    url('fonts/Helix-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blankstrand';
+    src: url('fonts/Strand-Blank.woff2') format('woff2'),
+    url('fonts/Strand-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blankturn';
+    src: url('fonts/Turn-Blank.woff2') format('woff2'),
+    url('fonts/Turn-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'blankburied';
+    src: url('fonts/Buried-Blank.woff2') format('woff2'),
+    url('fonts/Buried-Blank.eot') format('embedded-opentype')
+}
+@font-face {
+    font-family: 'msaplain';
+    src: url('fonts/MSA-Plain.woff2') format('woff2'),
+    url('fonts/MSA-Plain.eot') format('embedded-opentype')
+}
 
-.msa { overflow-x: hidden; overflow-y: hidden; white-space: nowrap; font-size: 16px; }
+.msa { position: relative; overflow-x: scroll; font-size: 16px; white-space: nowrap; z-index:1;}
+.msaplain { font-family: 'msaplain', monospace; }
 .clustal { font-family: 'clustal', monospace; }
 .zappo   { font-family: 'zappo', monospace; }
 .taylor  { font-family: 'taylor', monospace; }
@@ -104,6 +134,14 @@
 .strand  { font-family: 'strand', monospace; }
 .turn    { font-family: 'turn', monospace; }
 .buried  { font-family: 'buried', monospace; }
+.clustal.blank { font-family: 'blankclustal', monospace; }
+.zappo.blank   { font-family: 'blankzappo', monospace; }
+.taylor.blank  { font-family: 'blanktaylor', monospace; }
+.hydro.blank   { font-family: 'blankhydrophobicity', monospace; }
+.helix.blank   { font-family: 'blankhelix', monospace; }
+.strand.blank  { font-family: 'blankstrand', monospace; }
+.turn.blank    { font-family: 'blankturn', monospace; }
+.buried.blank  { font-family: 'blankburied', monospace; }
 .clustal.highlight { font-family: 'highclustal', monospace; }
 .zappo.highlight   { font-family: 'highzappo', monospace; }
 .taylor.highlight  { font-family: 'hightaylor', monospace; }
@@ -112,3 +150,41 @@
 .strand.highlight  { font-family: 'highstrand', monospace; }
 .turn.highlight    { font-family: 'highturn', monospace; }
 .buried.highlight  { font-family: 'highburied', monospace; }
+
+.gaps { position: relative; z-index:10; font-family: 'msaplain', monospace; }
+.gap-vline {
+    width: 1px;
+    transform: translate(-0.5px);
+    background: blue;
+    height: 378px;
+    position: absolute;
+}
+.closed-gap {
+    position: absolute;
+    width: 0;
+    height: 0;
+    top: 11px;
+    border-top: 1ch solid blue;
+    border-left: 1ch solid transparent;
+    border-right: 1ch solid transparent;
+}
+.open-gap-right {
+    position: absolute;
+    width: 0;
+    height: 0;
+    top: 11px;
+    border-top: 1ch solid blue;
+    border-right: 1ch solid transparent;
+}
+.open-gap-center {
+    position: absolute;
+    height:0.5em;
+}
+.open-gap-left {
+    position: absolute;
+    width: 0;
+    height: 0;
+    top: 11px;
+    border-top: 1ch solid blue;
+    border-left: 1ch solid transparent;
+}

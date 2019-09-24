@@ -9,6 +9,9 @@
     min-width: 50px;
 }
 
+.rc-tootip { z-index: 1500; }
+.rc-slider-tooltip { z-index: 1500; }
+
 .tbrowse {
     min-height: 400px;
 }
@@ -24,7 +27,7 @@
     /*border-radius: 4px;*/
     transition: border .1s;
     position: relative;
-    /*z-index: 1000;*/
+    z-index: 1000;
 }
 .tbrowse-zone-config:hover {
     border: 1px solid #7a8181;
