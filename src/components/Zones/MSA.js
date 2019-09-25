@@ -90,13 +90,22 @@ const MSAAxis = (props) => {
   const zoneHeight = props.zoneHeight;
   const gapParams = getGapParams(props);
   let compression = 0;
+  const alignParams = {
+    points: ['bc','tc'],
+    offset: [0,3],
+    targetOffset: [0,0],
+    overflow: { adjustX: true, adjustY: true }
+  };
   return (
     <div className='gaps'>&nbsp;
       {gaps.gaps.map((block,idx) => {
         const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
         const marker = block.collapsed ? (
           <div key={block.offset}>
-            <Tooltip placement="top" overlay={text}>
+            <Tooltip placement="top"
+                     overlay={text}
+                     align={alignParams}
+            >
               <div className='closed-gap' style={{left: `${block.offset - compression - 1}ch`}} onClick={() => props.toggleGap(idx,gapParams)}/>
             </Tooltip>
             <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
@@ -105,7 +114,11 @@ const MSAAxis = (props) => {
           <div key={block.offset}>
             <div onClick={() => props.toggleGap(idx,gapParams)}>
               <div className='open-gap-left' style={{left: `${block.offset - compression - 1}ch`}}/>
-              <div className='open-gap-center' style={{left: `${block.offset - compression}ch`, width: `${block.len}ch`}}/>
+              <Tooltip placement="top"
+                       overlay={text} align={alignParams}
+              >
+                <div className='open-gap-center' style={{left: `${block.offset - compression}ch`, width: `${block.len}ch`}}/>
+              </Tooltip>
               <div className='open-gap-right' style={{left: `${block.offset - compression + block.len}ch`}}/>
             </div>
             <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
