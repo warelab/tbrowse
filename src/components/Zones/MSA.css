@@ -178,7 +178,11 @@
 }
 .open-gap-center {
     position: absolute;
-    height:0.5em;
+    top: 11px;
+    background: lightblue;
+    border-top: 1px solid blue;
+    border-bottom: 1px solid blue;
+    height:1ch;
 }
 .open-gap-left {
     position: absolute;
@@ -188,3 +192,4 @@
     border-top: 1ch solid blue;
     border-left: 1ch solid transparent;
 }
+

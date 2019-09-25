@@ -1,9 +1,10 @@
 import React from 'react'
 import { connect } from 'react-redux'
-import { getGapParams, calculateGaps, hoverNode } from "../../actions/Genetrees";
+import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
 import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
+import Tooltip from 'rc-tooltip';
 import './MSA.css';
 
 const override = css`
@@ -65,7 +66,7 @@ const mapState = (state, ownProps) => {
   return { ...zone }
 };
 
-const mapDispatch = dispatch => bindActionCreators({ calculateGaps, hoverNode }, dispatch);
+const mapDispatch = dispatch => bindActionCreators({ calculateGaps, toggleGap, hoverNode }, dispatch);
 
 export default connect(mapState, mapDispatch)(MSAComponent);
 
@@ -84,42 +85,63 @@ const MSABody = (props) => (
   </div>
 );
 
-const MSAAxis = ({gaps, zoneHeight}) => {
+const MSAAxis = (props) => {
+  const gaps = props.gaps;
+  const zoneHeight = props.zoneHeight;
+  const gapParams = getGapParams(props);
   let compression = 0;
   return (
     <div className='gaps'>&nbsp;
-      {gaps.gaps.map(block => {
-        const marker = (
+      {gaps.gaps.map((block,idx) => {
+        const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
+        const marker = block.collapsed ? (
           <div key={block.offset}>
-            <div className='closed-gap' style={{left: `${block.offset - compression - 1}ch`}}/>
+            <Tooltip placement="top" overlay={text}>
+              <div className='closed-gap' style={{left: `${block.offset - compression - 1}ch`}} onClick={() => props.toggleGap(idx,gapParams)}/>
+            </Tooltip>
             <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
           </div>
+        ) : (
+          <div key={block.offset}>
+            <div onClick={() => props.toggleGap(idx,gapParams)}>
+              <div className='open-gap-left' style={{left: `${block.offset - compression - 1}ch`}}/>
+              <div className='open-gap-center' style={{left: `${block.offset - compression}ch`, width: `${block.len}ch`}}/>
+              <div className='open-gap-right' style={{left: `${block.offset - compression + block.len}ch`}}/>
+            </div>
+            <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
+            <div className='gap-vline' style={{left: `${block.offset - compression + block.len}ch`, height: `${zoneHeight}px`}}/>
+          </div>
         );
-        compression += block.len;
+        if (block.collapsed) {
+          compression += block.len;
+        }
         return marker;
       })}
     </div>
   )
 };
 
+function chunkSubstr(str, size) {
+  const numChunks = Math.ceil(str.length / size)
+  const chunks = new Array(numChunks)
+
+  for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
+    chunks[i] = str.substr(o, size)
+  }
+
+  return chunks
+}
+
 const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
   if (true) { // !node.model.consensus.alignSeq) {
     // This block needs to happen when gap params change. For now, do it on every render
     let alignSeq = '';
-    node.model.consensus.alignSeq = [];
     const seqBuffer = node.model.consensus.alignSeqArray.buffer;
     gaps.mask.forEach(block => {
       const mySlice = new Uint16Array(seqBuffer, block.offset * 2, block.len);
       alignSeq += String.fromCharCode.apply(null, mySlice);
-      // this helps in safari with scrolling speed
-      if (alignSeq.length > 256) {
-        node.model.consensus.alignSeq.push(alignSeq);
-        alignSeq = '';
-      }
     });
-    if (alignSeq.length > 0) {
-      node.model.consensus.alignSeq.push(alignSeq);
-    }
+    node.model.consensus.alignSeq = chunkSubstr(alignSeq, 256); // speeds up scrolling in safari
   }
   const classes = highlight[node.model.nodeId] ? ' highlight' : '';
   return <div

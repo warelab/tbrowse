@@ -268,42 +268,14 @@ export function addConsensus(tree) {
   addConsensusToNode(tree);
 }
 
-export function getGapMask(node, minDepth, minGapLength, gapPadding) {
-  if (!node.model.consensus) return;
-  if (minGapLength < 3) gapPadding = 0;
-
-  const coverage = node.model.consensus.coverage;
-  let gaps = [];
-  let pos = 0;
-  let len = 0;
-  for(let i=0; i<coverage.length; i++) {
-    if (coverage[i] < minDepth) {
-      len++;
-    }
-    else {
-      if (len >= minGapLength) {
-        gaps.push({
-          offset: pos + gapPadding,
-          len: len - 2*gapPadding
-        })
-      }
-      pos = i + 1;
-      len = 0;
-    }
-  }
-  if (len >= minGapLength) {
-    gaps.push({
-      offset: pos + gapPadding,
-      len: len - 2 * gapPadding
-    })
-  }
+export function makeMask(gaps, totalLength) {
   // the complement of the gaps is the mask we want to return
   // so now pos and len refer to non-gap intervals
-  pos = 0;
-  len = 0;
+  let pos = 0;
+  let len = 0;
   let mask = [];
   let maskLen=0;
-  gaps.forEach(gap => {
+  gaps.filter(gap => gap.collapsed).forEach(gap => {
     len = gap.offset - pos;
     if (len > 0) {
       maskLen += len;
@@ -314,15 +286,55 @@ export function getGapMask(node, minDepth, minGapLength, gapPadding) {
     }
     pos = gap.offset + gap.len;
   });
-  if (pos < coverage.length) {
-    len = coverage.length - pos;
+  if (pos < totalLength) {
+    len = totalLength - pos;
     maskLen += len;
     mask.push({
       offset: pos,
       len: len
     })
   }
-  return ({mask, gaps, maskLen});
+  return ({gaps, mask, maskLen});
+}
+
+export function getGapMask(node, minDepth, minGapLength, gapPadding) {
+  if (!node.model.consensus) return;
+  if (minGapLength < 3) gapPadding = 0;
+
+  const coverage = node.model.consensus.coverage;
+  let gaps = [];
+  let pos = 0;
+  let len = 0;
+  let maxCoverage = 0;
+  for(let i=0; i<coverage.length; i++) {
+    if (coverage[i] < minDepth) {
+      if (coverage[i] > maxCoverage) {
+        maxCoverage = coverage[i];
+      }
+      len++;
+    }
+    else {
+      if (len >= minGapLength) {
+        gaps.push({
+          offset: pos + gapPadding,
+          len: len - 2*gapPadding,
+          coverage: maxCoverage,
+          collapsed: true
+        })
+      }
+      pos = i + 1;
+      len = 0;
+    }
+  }
+  if (len >= minGapLength) {
+    gaps.push({
+      offset: pos + gapPadding,
+      len: len - 2 * gapPadding,
+      coverage: maxCoverage,
+      collapsed: true
+    })
+  }
+  return makeMask(gaps, coverage.length);
 }
 
 export function mergeOverlaps(regions, minOverlap, coverageMode) {

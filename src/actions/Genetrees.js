@@ -1,4 +1,4 @@
-import {prepTree, addConsensus, getGapMask, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
+import {prepTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
 import Swagger from "swagger-client";
 
 export const REQUEST_TREE = 'REQUEST_TREE';
@@ -60,6 +60,24 @@ export const calculateGaps = (params) => {
     else {
       Promise.resolve();
     }
+  }
+};
+
+export const toggleGap = (idx, gapParams) => {
+  return (dispatch, getState) => {
+    const state = getState();
+    const gapKey = JSON.stringify(gapParams);
+    const tree = state.genetrees.trees[state.genetrees.currentTree];
+    let gaps = tree.gaps[gapKey].gaps;
+    if (gaps[idx].collapsed) {
+      console.log('expand this gap');
+      gaps[idx].collapsed = false;
+    }
+    else {
+      console.log('collapse this gap');
+      gaps[idx].collapsed = true;
+    }
+    dispatch(saveGaps(gapKey, makeMask(gaps, tree.model.consensus.coverage.length)));
   }
 };
 
