@@ -2,6 +2,8 @@ import React from 'react'
 import { connect } from 'react-redux'
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
+import {bindActionCreators} from "redux";
+import { expandNode } from "../../actions/Genetrees";
 
 const override = css`
   display: block;
@@ -28,8 +30,8 @@ class Tree extends React.Component {
       )
     }
     return (
-      <div>tree
-      </div>
+      <a onClick={()=>this.props.expandNode(this.props.tree, true)}>tree</a>
+
     );
   }
 }
@@ -45,4 +47,6 @@ const mapState = (state, ownProps) => {
   }
 };
 
-export default connect(mapState)(Tree);
+const mapDispatch = dispatch => bindActionCreators({ expandNode }, dispatch);
+
+export default connect(mapState, mapDispatch)(Tree);

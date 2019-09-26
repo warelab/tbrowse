@@ -1,5 +1,6 @@
 import React from 'react'
 import { connect } from 'react-redux'
+import _ from 'lodash';
 import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
 import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
@@ -49,7 +50,7 @@ const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   if (state.genetrees.trees.hasOwnProperty(state.genetrees.currentTree)) {
     const tree = state.genetrees.trees[state.genetrees.currentTree];
-    const nodes = tree.visibleNodes.filter(node => !(node.children.length > 0 && node.displayInfo.expanded));
+    const nodes = tree.visibleUnexpanded;
     const highlight = tree.highlight;
     const gapParams = JSON.stringify(getGapParams(zone));
     if (tree.gaps.hasOwnProperty(gapParams)) {
@@ -146,8 +147,7 @@ function chunkSubstr(str, size) {
 }
 
 const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
-  if (true) { // !node.model.consensus.alignSeq) {
-    // This block needs to happen when gap params change. For now, do it on every render
+  if (!node.model.consensus.alignSeq) {
     let alignSeq = '';
     const seqBuffer = node.model.consensus.alignSeqArray.buffer;
     gaps.mask.forEach(block => {
@@ -157,8 +157,9 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
     node.model.consensus.alignSeq = chunkSubstr(alignSeq, 256); // speeds up scrolling in safari
   }
   const classes = highlight[node.model.nodeId] ? ' highlight' : '';
+  function onHover() { hoverNode(node.model.nodeId) }
   return <div
-    onMouseOver={() => hoverNode(node.model.nodeId)}
+    onMouseOver={_.debounce(onHover,200)}
     className={colorScheme + classes}
     style={{lineHeight: `${node.displayInfo.height}px`}}
   >

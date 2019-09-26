@@ -43,7 +43,10 @@ function sumBranchLengths(node) {
 
 function flattenTree(node) {
   if (node.children.length === 2) {
-    return _.concat(flattenTree(node.children[0]),node,flattenTree(node.children[1]));
+    return _.concat(flattenTree(node.children[0]), node, flattenTree(node.children[1]));
+  }
+  if (node.children.length === 1) { // pruned branch
+    return _.concat(flattenTree(node.children[0], node));
   }
   return node;
 }
@@ -76,65 +79,53 @@ export function prepTree(genetree) {
   return tree;
 }
 
-export function expandToGenes(tree, genesOfInterest) {
-  let maxExpandedDist = 0;
-  let visibleNodes = [];
-
-  function makeNodeVisible(node) {
-    visibleNodes.push(node);
-    if (node.scaledDistanceToRoot > maxExpandedDist) {
-      maxExpandedDist = node.scaledDistanceToRoot;
+export function setGeneOfInterest(tree, geneId) {
+  let node = tree.indices.geneId[geneId];
+  while (!node.isRoot()) {
+    const parent = node.parent;
+    const siblings = parent.children;
+    const indexCallback = (n) => n === node;
+    const nodeIdx = _.findIndex(siblings, indexCallback);
+    if (nodeIdx) {
+      siblings.splice(0, 0, siblings.splice(nodeIdx, 1)[0]);
     }
+    node = parent;
+  }
+  colorByDistance(tree);
+}
+
+export function expandToGenes(tree, genesOfInterest, hideCousins) {
+  if (hideCousins) {
+    tree.all().forEach(n => n.displayInfo.expanded = false);
   }
 
   genesOfInterest.forEach(geneId => {
     let node = tree.indices.geneId[geneId];
     if (node) {
-      node.displayInfo.expanded = true;
-      makeNodeVisible(node);
-      node.class = 'geneOfInterest';
-
-      const indexCallback = (n) => n === node;
       while (!node.isRoot()) {
-        const parent = node.parent;
-        const children = parent.children;
-        const nodeIdx = _.findIndex(children, indexCallback);
-        if (nodeIdx) {
-          children.splice(0,0,children.splice(nodeIdx, 1)[0]);
-        }
-        node = parent;
-        if (!node.displayInfo.expanded) {
-          visibleNodes.push(node);
-          node.displayInfo.expanded = true;
-          node.children.forEach(child => {
-            if (!child.displayInfo.expanded) {
-              makeNodeVisible(child);
-            }
-          })
-        }
+        node = node.parent;
+        node.displayInfo.expanded = true;
       }
     }
   });
   if (!tree.displayInfo.expanded) { // no genesOfInterest in the tree, show everything
-    tree.walk(node => {
-      visibleNodes.push(node);
+    tree.all().forEach(node => {
       node.displayInfo.expanded = true;
-      if (node.scaledDistanceToRoot > maxExpandedDist) {
-        maxExpandedDist = node.scaledDistanceToRoot;
-      }
-    })
+    });
   }
-  visibleNodes = _.uniq(visibleNodes);
-  colorByDistance(tree);
-  return {maxExpandedDist,visibleNodes};
+  setGeneOfInterest(tree, genesOfInterest[0]);
 }
 
 export function indexVisibleNodes(tree) {
   let visibleUnexpanded = []; // array of unexpanded nodes that are visible
-
+  let visibleNodes = [];
+  let maxExpandedDist = 0;
   function calcVIndexFor(node) {
+    visibleNodes.push(node);
+    if (node.scaledDistanceToRoot > maxExpandedDist) {
+      maxExpandedDist = node.scaledDistanceToRoot
+    }
     if (node.displayInfo.expanded && node.children.length > 0) {
-
       if (node.children.length === 2) {
         let leftExtrema = calcVIndexFor(node.children[0]); // left child
         let rightExtrema = calcVIndexFor(node.children[1]); // right child
@@ -163,7 +154,8 @@ export function indexVisibleNodes(tree) {
     }
   }
 
-  return calcVIndexFor(tree).max;
+  let maxVIndex = calcVIndexFor(tree).max;
+  return {maxExpandedDist, visibleNodes, visibleUnexpanded, maxVIndex}
 }
 
 export function addConsensus(tree) {

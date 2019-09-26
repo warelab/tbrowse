@@ -1,8 +1,9 @@
 import {
-  REQUEST_TREE,
-  RECEIVE_TREE,
-  USE_TREE,
-  HOVER_NODE,
+  REQUESTED_TREE,
+  RECEIVED_TREE,
+  USED_TREE,
+  HOVERED_NODE,
+  UPDATED_TREE_LAYOUT,
   CALCULATED_GAPS
 } from '../actions/Genetrees'
 
@@ -14,15 +15,17 @@ function trees(
   },
   action
 ) {
+  let tree;
   switch(action.type) {
-    case REQUEST_TREE:
+    case REQUESTED_TREE:
       return Object.assign({}, state, {
         isFetching: true,
         currentTree: action.url
       });
-    case RECEIVE_TREE:
+    case RECEIVED_TREE:
       const newTree = { ...action.tree,
         visibleNodes: action.visibleNodes,
+        visibleUnexpanded: action.visibleUnexpanded,
         maxExpandedDist: action.maxExpandedDist,
         maxVindex: action.maxVindex,
         gaps: {},
@@ -35,12 +38,12 @@ function trees(
         lastUpdated: action.receivedAt,
         interpro: action.interpro,
       });
-    case USE_TREE:
+    case USED_TREE:
       return Object.assign({}, state, {
         currentTree: action.url
       });
-    case HOVER_NODE:
-      let tree = state.trees[state.currentTree];
+    case HOVERED_NODE:
+      tree = state.trees[state.currentTree];
       let highlight = {};
       highlight[action.nodeId] = true;
       let hoveredNode = tree.indices.nodeId[action.nodeId];
@@ -52,6 +55,13 @@ function trees(
         highlight[hoveredNode.model.nodeId] = true;
       }
       tree.highlight = highlight;
+      return Object.assign({}, state);
+    case UPDATED_TREE_LAYOUT:
+      tree = state.trees[state.currentTree];
+      tree.visibleNodes = action.visibleNodes;
+      tree.visibleUnexpanded = action.visibleUnexpanded;
+      tree.maxExpandedDist = action.maxExpandedDist;
+      tree.maxVindex = action.maxVindex;
       return Object.assign({}, state);
     case CALCULATED_GAPS:
       tree = state.trees[state.currentTree];
