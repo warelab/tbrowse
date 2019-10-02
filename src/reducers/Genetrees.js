@@ -36,7 +36,7 @@ function trees(
       return Object.assign({}, state, {
         isFetching: false,
         lastUpdated: action.receivedAt,
-        interpro: action.interpro,
+        interpro: action.interpro
       });
     case USED_TREE:
       return Object.assign({}, state, {

@@ -4,14 +4,14 @@ let d3 = require('d3-scale');
 let d3chrom = require('d3-scale-chromatic');
 
 
-function indexTree(tree, attrs) {
+function indexTree(tree, attrs, nodeHeight) {
   const MIN_DIST = 0.05;
   const MAX_DIST = 2;
 
   tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
   tree.walk(node => {
-    node.displayInfo = { expanded : false, height : 21 };
+    node.displayInfo = { expanded : false, height : nodeHeight };
 
     node.class = node.model.nodeType; // todo: geneOfInterest/orthologs/paralogs
 
@@ -61,7 +61,7 @@ function colorByDistance(tree) {
   });
 }
 
-export function prepTree(genetree) {
+export function prepTree(genetree,nodeHeight) {
   function leftIndexComparator(a, b) {
     if (a.leftIndex) {
       return a.leftIndex > b.leftIndex ? 1 : -1;
@@ -71,7 +71,7 @@ export function prepTree(genetree) {
     }
   }
   let tree = new TreeModel({modelComparatorFn: leftIndexComparator}).parse(genetree);
-  indexTree(tree, ['geneId','nodeId']);
+  indexTree(tree, ['geneId','nodeId'],nodeHeight);
 
 
   tree.totalLength = sumBranchLengths(tree);

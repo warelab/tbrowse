@@ -124,7 +124,15 @@
     url('fonts/MSA-Plain.eot') format('embedded-opentype')
 }
 
-.msa { position: relative; overflow-x: scroll; font-size: 16px; white-space: nowrap; z-index:1;}
+.msa { position: relative; overflow-x: scroll; line-height:24px; font-size: 16px ;font-family: 'msaplain', monospace; white-space: nowrap }
+.domain {
+    opacity: 0.1;
+    pointer-events: all;
+}
+.domain:hover {
+    cursor: pointer;
+}
+
 .msaplain { font-family: 'msaplain', monospace; }
 .clustal { font-family: 'clustal', monospace; }
 .zappo   { font-family: 'zappo', monospace; }
@@ -159,12 +167,10 @@
 .turn.highlight    { font-family: 'highturn', monospace; }
 .buried.highlight  { font-family: 'highburied', monospace; }
 
-.gaps { position: relative; z-index:10; font-family: 'msaplain', monospace; }
 .gap-vline {
     width: 1px;
     transform: translate(-0.5px);
     background: blue;
-    height: 378px;
     position: absolute;
 }
 .closed-gap {
@@ -175,6 +181,9 @@
     border-top: 1ch solid blue;
     border-left: 1ch solid transparent;
     border-right: 1ch solid transparent;
+}
+.closed-gap:hover {
+  cursor: pointer;
 }
 .open-gap-right {
     position: absolute;
@@ -191,6 +200,9 @@
     border-top: 1px solid blue;
     border-bottom: 1px solid blue;
     height:1ch;
+}
+.open-gap-center:hover {
+  cursor: pointer;
 }
 .open-gap-left {
     position: absolute;

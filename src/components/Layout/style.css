@@ -23,14 +23,13 @@
 .tbrowse-zone-config {
     height: 20px;
     padding: 4px;
-    /*border: 1px dotted #7e8585;*/
-    /*border-radius: 4px;*/
+    border: 1px solid rgba(1,1,1,0);
+    border-radius: 6px;
     transition: border .1s;
     position: relative;
     z-index: 1000;
 }
 .tbrowse-zone-config:hover {
     border: 1px solid #7a8181;
-    border-radius: 6px;
 }
 a { cursor: pointer }

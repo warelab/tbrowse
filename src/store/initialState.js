@@ -7,7 +7,8 @@ const genetreesDefaults = {
   treeId: 'ENSGT00390000003602',
   genomes: [],
   genesOfInterest: ['ENSG00000139618'],
-  trees: {}
+  trees: {},
+  nodeHeight: 24
 };
 const defaultZones = ['tree', 'label', 'msa'];
 const zoneDefaults = {

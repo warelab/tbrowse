@@ -1,7 +1,9 @@
 import React from 'react'
 import { connect } from 'react-redux'
 import _ from 'lodash';
+let d3 = require('d3-scale');
 import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
+import { mergeOverlaps } from "../../utils/treeTools";
 import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
@@ -57,9 +59,11 @@ const mapState = (state, ownProps) => {
       const gaps = tree.gaps[gapParams];
       let zoneHeight=0;
       nodes.forEach(n => {
+        n.displayInfo.offset = zoneHeight;
         zoneHeight += n.displayInfo.height
       });
-      return { gaps, nodes, highlight, zoneHeight, ...zone }
+      const interpro = state.genetrees.interpro;
+      return { gaps, nodes, highlight, interpro, zoneHeight, ...zone }
     }
 
     return { nodes, ...zone }
@@ -77,16 +81,18 @@ const MSAHeader = (props) => (
 );
 
 const MSABody = (props) => (
-  <div className='msa' style={{top:'-1em'}}>
-    <MSAAxis {...props}/>
-    {props.nodes.map((node, idx) => (
-      <MSASequence key={idx} node={node} {...props}/>
-      // <MSAOverview key={idx} node={node} {...props}/>
-    ))}
+  <div className='msa' style={{height:props.zoneHeight + props.nodes[0].displayInfo.height}}>
+    <div style={{zIndex:1}}>
+      {props.nodes.map((node,idx) => <MSASequence key={idx} node={node} {...props}/>)}
+    </div>
+    <div style={{zIndex:2, display:'none'}}>
+      {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
+    </div>
+    <MSAGaps {...props}/>
   </div>
 );
 
-const MSAAxis = (props) => {
+const MSAGaps = (props) => {
   const gaps = props.gaps;
   const zoneHeight = props.zoneHeight;
   const gapParams = getGapParams(props);
@@ -98,7 +104,7 @@ const MSAAxis = (props) => {
     overflow: { adjustX: true, adjustY: true }
   };
   return (
-    <div className='gaps'>&nbsp;
+    <div style={{zIndex:10}}>&nbsp;
       {gaps.gaps.map((block,idx) => {
         const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
         const marker = block.collapsed ? (
@@ -161,11 +167,175 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
   return <div
     onMouseOver={_.debounce(onHover,200)}
     className={colorScheme + classes}
-    style={{lineHeight: `${node.displayInfo.height}px`}}
+    style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
   >
     {node.model.consensus.alignSeq.map((s, i) => {
       return <span key={i}>{s}</span>
     })}
   </div>
 };
+
+function splitByDomain(region, domainHits, domainIdx) {
+  let regionStart = region.offset;
+  let regionEnd = region.offset + region.len;
+  let subregions = [];
+  let dIdx = 0;
+  while (dIdx < domainHits.length && domainHits[dIdx].start < regionEnd) {
+    let domain = domainHits[dIdx];
+    dIdx++;
+    if (domain.end > regionStart) {
+      if (domain.start > regionStart) {
+        subregions.push({
+          start: regionStart,
+          end: domain.start
+        });
+        regionStart = domain.start;
+      }
+      if (domain.end <= regionEnd) {
+        subregions.push({
+          start: regionStart,
+          end: domain.end,
+          domain: domainIdx[domain.id]
+        });
+        regionStart = domain.end;
+      }
+      else {
+        subregions.push({
+          start: regionStart,
+          end: regionEnd,
+          domain: domainIdx[domain.id]
+        });
+        regionStart = regionEnd;
+      }
+    }
+  }
+  if (regionStart < regionEnd) {
+    subregions.push({
+      start: regionStart,
+      end: regionEnd
+    });
+  }
+  return subregions;
+}
+
+
+const MSAOverview = (props) => {
+  let DA = props.node.model.domainArchitecture;
+  let consensus = props.node.model.consensus;
+  let domainIdx = props.interpro;
+  let domainHits=[];
+  if (domainIdx && DA && DA.hasOwnProperty('Domain')) {
+    Object.keys(DA.Domain).forEach(rootId => {
+      Array.prototype.push.apply(domainHits,DA.Domain[rootId].hits);
+    });
+    domainHits = mergeOverlaps(domainHits,0,'max');
+  }
+
+  let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
+  let colorScale = grayScale;
+  let blocks = [];
+  let block = {
+    start: 0,
+    coverage: 0
+  };
+  function endBlock(coverage) {
+    if (block.coverage > 0) {
+      block.width = pos - block.start;
+      block.fill = colorScale(block.coverage/consensus.nSeqs);
+      blocks.push(block)
+    }
+    block = {
+      start: pos,
+      coverage: coverage || 0
+    }
+  }
+
+  let domainRegions = [];
+  let currDomain;
+  let pos = 0;
+  props.gaps.mask.forEach(maskRegion => {
+    splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
+      // if this region is a different domain finish the last block
+      // and change the colorScale
+      if (currDomain) {
+        if (!region.domain) {
+          endBlock();
+          colorScale = grayScale;
+        }
+        else if (region.domain.id !== currDomain.domain.id) {
+          endBlock();
+          colorScale = region.domain.colorScale;
+        }
+      }
+      else if (region.domain) {
+        endBlock();
+        colorScale = region.domain.colorScale;
+      }
+
+      if (region.domain) {
+        if (currDomain) {
+          if (region.domain.id !== currDomain.domain.id) {
+            currDomain.width = pos - currDomain.start;
+            domainRegions.push(currDomain);
+            currDomain = {
+              start: pos,
+              domain: region.domain
+            };
+          }
+        }
+        else {
+          currDomain = {
+            start: pos,
+            domain: region.domain
+          };
+        }
+      }
+      else if (currDomain) {
+        currDomain.width = pos - currDomain.start;
+        domainRegions.push(currDomain);
+        currDomain = undefined;
+      }
+      for (let i = region.start; i < region.end; i++) {
+        if (consensus.coverage[i] !== block.coverage) { // change in coverage
+          endBlock(consensus.coverage[i]);
+        }
+        pos++;
+      }
+    });
+  });
+  if (currDomain) {
+    currDomain.width = pos - currDomain.start;
+    domainRegions.push(currDomain);
+  }
+  let domainBlocks = domainRegions.map((d, idx) => {
+    const style = {
+      background: d.domain.colorScale(1),
+      left: `${d.start}ch`,
+      width: `${d.width}ch`,
+      top: '1px',
+      position: 'absolute',
+      height: '20px'
+    };
+    return <div className='domain' key={idx} style={style}/>
+  });
+  endBlock();
+
+  let coverageBlocks = blocks.map((b,idx) => {
+    const style = {
+      left: `${b.start}ch`,
+      width: `${b.width}ch`,
+      top: '4px',
+      position: 'absolute',
+      background: b.fill,
+      height: '17px'
+    };
+    return <div key={idx} style={style}/>
+  });
+  return (
+    <div style={{position:'absolute', top:props.node.displayInfo.offset+props.nodes[0].displayInfo.height, lineHeight:props.node.displayInfo.height}}>
+      <div className='coverage-blocks'>{coverageBlocks}</div>
+      <div className='domain-blocks'>{domainBlocks}</div>
+    </div>
+  );
+}
 

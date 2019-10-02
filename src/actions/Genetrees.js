@@ -130,7 +130,7 @@ const fetchTree = (url,params) => {
     return fetch(url)
       .then(response => response.json())
       .then(json => {
-        let tree = prepTree(json);
+        let tree = prepTree(json, state.genetrees.nodeHeight);
         expandToGenes(tree, params.genesOfInterest || state.genetrees.genesOfInterest, false);
         let indexes = indexVisibleNodes(tree);
 
