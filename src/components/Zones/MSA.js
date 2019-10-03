@@ -2,8 +2,10 @@ import React from 'react'
 import { connect } from 'react-redux'
 import _ from 'lodash';
 let d3 = require('d3-scale');
+let units = require('units-css');
 import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
 import { mergeOverlaps } from "../../utils/treeTools";
+import { toPx } from "../../utils/toPx";
 import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
@@ -29,7 +31,7 @@ class MSAComponent extends React.Component {
     if (this.props.gaps) {
       return (
         <div>
-          <MSAHeader/>
+          <MSAHeader {...this.props} />
           <MSABody {...this.props} />
         </div>
       );
@@ -63,7 +65,8 @@ const mapState = (state, ownProps) => {
         zoneHeight += n.displayInfo.height
       });
       const interpro = state.genetrees.interpro;
-      return { gaps, nodes, highlight, interpro, zoneHeight, ...zone }
+      const root = tree;
+      return { gaps, nodes, highlight, interpro, zoneHeight, root, ...zone }
     }
 
     return { nodes, ...zone }
@@ -76,22 +79,58 @@ const mapDispatch = dispatch => bindActionCreators({ calculateGaps, toggleGap, h
 export default connect(mapState, mapDispatch)(MSAComponent);
 
 
-const MSAHeader = (props) => (
-  <p>MSA Header</p>
-);
-
-const MSABody = (props) => (
-  <div className='msa' style={{height:props.zoneHeight + props.nodes[0].displayInfo.height}}>
-    <div style={{zIndex:1}}>
-      {props.nodes.map((node,idx) => <MSASequence key={idx} node={node} {...props}/>)}
+const MSAHeader = (props) => {
+  let px = toPx(props.gaps.maskLen+'ch');
+  return (
+    <div className='zone-header' style={{
+      transform: `translateX(-50%)scaleX(${props.width / px})translateX(50%)`,
+      width: `${px}px`
+    }}>
+      <MSAOverview node={props.root} {...props}/>
     </div>
-    <div style={{zIndex:2, display:'none'}}>
-      {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
-    </div>
-    <MSAGaps {...props}/>
-  </div>
-);
+  )
+}
 
+class MSABody extends React.Component {
+  constructor(props) {
+    super(props);
+    this.myRef = React.createRef();
+  }
+  componentDidMount() {
+    this.myRef.current.addEventListener('mousewheel', function(event) {
+      // We don't want to scroll below zero or above the width and height 
+      var maxX = this.scrollWidth - this.offsetWidth;
+      var maxY = this.scrollHeight - this.offsetHeight;
+
+      // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually 
+      if (this.scrollLeft + event.deltaX < 0 || 
+          this.scrollLeft + event.deltaX > maxX || 
+          this.scrollTop + event.deltaY < 0 || 
+          this.scrollTop + event.deltaY > maxY) {
+
+        event.preventDefault();
+
+        // Manually set the scroll to the boundary
+        this.scrollLeft = Math.max(0, Math.min(maxX, this.scrollLeft + event.deltaX));
+        this.scrollTop = Math.max(0, Math.min(maxY, this.scrollTop + event.deltaY));
+      }
+    }, false);
+  }
+  render() {
+    const props = this.props;
+    return (
+      <div ref={this.myRef} className='msa' style={{height:props.zoneHeight + props.nodes[0].displayInfo.height}}>
+        <div style={{zIndex:1}}>
+          {props.nodes.map((node,idx) => <MSASequence key={idx} node={node} {...props}/>)}
+        </div>
+        <div style={{zIndex:2, display:'block'}}>
+          {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
+        </div>
+        <MSAGaps {...props}/>
+      </div>
+    )
+  }
+}
 const MSAGaps = (props) => {
   const gaps = props.gaps;
   const zoneHeight = props.zoneHeight;
@@ -164,8 +203,8 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
   }
   const classes = highlight[node.model.nodeId] ? ' highlight' : '';
   function onHover() { hoverNode(node.model.nodeId) }
+//    onMouseOver={_.debounce(onHover,200)}
   return <div
-    onMouseOver={_.debounce(onHover,200)}
     className={colorScheme + classes}
     style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
   >
@@ -331,8 +370,10 @@ const MSAOverview = (props) => {
     };
     return <div key={idx} style={style}/>
   });
+  let top = props.node.displayInfo.offset || 0;
+  top += props.nodes[0].displayInfo.height;
   return (
-    <div style={{position:'absolute', top:props.node.displayInfo.offset+props.nodes[0].displayInfo.height, lineHeight:props.node.displayInfo.height}}>
+    <div style={{position:'absolute', top:top, lineHeight:props.node.displayInfo.height}}>
       <div className='coverage-blocks'>{coverageBlocks}</div>
       <div className='domain-blocks'>{domainBlocks}</div>
     </div>

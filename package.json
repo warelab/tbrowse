@@ -37,6 +37,7 @@
     "redux-thunk": "^2.3.0",
     "swagger-client": "^3.8.25",
     "tree-model": "^1.0.7",
+    "units-css": "^0.4.0",
     "url-parse": "^1.4.4"
   },
   "peerDependencies": {

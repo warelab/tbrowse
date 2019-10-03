@@ -212,4 +212,7 @@
     border-top: 1ch solid blue;
     border-left: 1ch solid transparent;
 }
+.zone-header {
+  height:50px;
+}
 
