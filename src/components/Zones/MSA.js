@@ -59,6 +59,8 @@ const mapState = (state, ownProps) => {
     const gapParams = JSON.stringify(getGapParams(zone));
     if (tree.gaps.hasOwnProperty(gapParams)) {
       const gaps = tree.gaps[gapParams];
+      const msaLength = toPx(gaps.maskLen+'ch');
+      const msaResolution = gaps.maskLen / msaLength;
       let zoneHeight=0;
       nodes.forEach(n => {
         n.displayInfo.offset = zoneHeight;
@@ -66,7 +68,7 @@ const mapState = (state, ownProps) => {
       });
       const interpro = state.genetrees.interpro;
       const root = tree;
-      return { gaps, nodes, highlight, interpro, zoneHeight, root, ...zone }
+      return { gaps, nodes, highlight, interpro, zoneHeight, msaLength, msaResolution, root, ...zone }
     }
 
     return { nodes, ...zone }
@@ -80,13 +82,15 @@ export default connect(mapState, mapDispatch)(MSAComponent);
 
 
 const MSAHeader = (props) => {
-  let px = toPx(props.gaps.maskLen+'ch');
+  let px = props.msaLength;
   return (
     <div className='zone-header' style={{
-      transform: `translateX(-50%)scaleX(${props.width / px})translateX(50%)`,
+      transformOrigin: '0 0',
+      transform: `scaleX(${props.width / px})`,
       width: `${px}px`
     }}>
       <MSAOverview node={props.root} {...props}/>
+      <MSAOverviewClass node={props.root} {...props}/>
     </div>
   )
 }
@@ -98,32 +102,31 @@ class MSABody extends React.Component {
   }
   componentDidMount() {
     this.myRef.current.addEventListener('mousewheel', function(event) {
-      // We don't want to scroll below zero or above the width and height 
-      var maxX = this.scrollWidth - this.offsetWidth;
-      var maxY = this.scrollHeight - this.offsetHeight;
+      // We don't want to scroll below zero or above the width
+      const maxX = this.scrollWidth - this.offsetWidth;
 
       // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually 
       if (this.scrollLeft + event.deltaX < 0 || 
-          this.scrollLeft + event.deltaX > maxX || 
-          this.scrollTop + event.deltaY < 0 || 
-          this.scrollTop + event.deltaY > maxY) {
+          this.scrollLeft + event.deltaX > maxX) {
 
         event.preventDefault();
 
         // Manually set the scroll to the boundary
         this.scrollLeft = Math.max(0, Math.min(maxX, this.scrollLeft + event.deltaX));
-        this.scrollTop = Math.max(0, Math.min(maxY, this.scrollTop + event.deltaY));
       }
     }, false);
   }
   render() {
     const props = this.props;
     return (
-      <div ref={this.myRef} className='msa' style={{height:props.zoneHeight + props.nodes[0].displayInfo.height}}>
+      <div ref={this.myRef} className='msa' style={{
+        height:props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
+        width:props.width+'px'
+      }}>
         <div style={{zIndex:1}}>
           {props.nodes.map((node,idx) => <MSASequence key={idx} node={node} {...props}/>)}
         </div>
-        <div style={{zIndex:2, display:'block'}}>
+        <div style={{zIndex:2, visibility:'hidden'}}>
           {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
         </div>
         <MSAGaps {...props}/>
@@ -131,6 +134,7 @@ class MSABody extends React.Component {
     )
   }
 }
+
 const MSAGaps = (props) => {
   const gaps = props.gaps;
   const zoneHeight = props.zoneHeight;
@@ -346,6 +350,8 @@ const MSAOverview = (props) => {
     currDomain.width = pos - currDomain.start;
     domainRegions.push(currDomain);
   }
+  endBlock();
+
   let domainBlocks = domainRegions.map((d, idx) => {
     const style = {
       background: d.domain.colorScale(1),
@@ -357,7 +363,6 @@ const MSAOverview = (props) => {
     };
     return <div className='domain' key={idx} style={style}/>
   });
-  endBlock();
 
   let coverageBlocks = blocks.map((b,idx) => {
     const style = {
@@ -378,5 +383,151 @@ const MSAOverview = (props) => {
       <div className='domain-blocks'>{domainBlocks}</div>
     </div>
   );
+}
+
+class MSAOverviewClass extends React.Component {
+  constructor(props) {
+    super(props);
+    this.canvas1 = React.createRef();
+  }
+
+  setup(props) {
+    let DA = props.node.model.domainArchitecture;
+    let consensus = props.node.model.consensus;
+    let domainIdx = props.interpro;
+    let domainHits=[];
+    if (domainIdx && DA && DA.hasOwnProperty('Domain')) {
+      Object.keys(DA.Domain).forEach(rootId => {
+        Array.prototype.push.apply(domainHits,DA.Domain[rootId].hits);
+      });
+      domainHits = mergeOverlaps(domainHits,0,'max');
+    }
+
+    let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
+    let colorScale = grayScale;
+    let blocks = [];
+    let block = {
+      start: 0,
+      coverage: 0
+    };
+    function endBlock(coverage) {
+      if (block.coverage > 0) {
+        block.width = pos - block.start;
+        block.fill = colorScale(block.coverage/consensus.nSeqs);
+        blocks.push(block)
+      }
+      block = {
+        start: pos,
+        coverage: coverage || 0
+      }
+    }
+
+    let domainRegions = [];
+    let currDomain;
+    let pos = 0;
+    props.gaps.mask.forEach(maskRegion => {
+      splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
+        // if this region is a different domain finish the last block
+        // and change the colorScale
+        if (currDomain) {
+          if (!region.domain) {
+            endBlock();
+            colorScale = grayScale;
+          }
+          else if (region.domain.id !== currDomain.domain.id) {
+            endBlock();
+            colorScale = region.domain.colorScale;
+          }
+        }
+        else if (region.domain) {
+          endBlock();
+          colorScale = region.domain.colorScale;
+        }
+
+        if (region.domain) {
+          if (currDomain) {
+            if (region.domain.id !== currDomain.domain.id) {
+              currDomain.width = pos - currDomain.start;
+              domainRegions.push(currDomain);
+              currDomain = {
+                start: pos,
+                domain: region.domain
+              };
+            }
+          }
+          else {
+            currDomain = {
+              start: pos,
+              domain: region.domain
+            };
+          }
+        }
+        else if (currDomain) {
+          currDomain.width = pos - currDomain.start;
+          domainRegions.push(currDomain);
+          currDomain = undefined;
+        }
+        for (let i = region.start; i < region.end; i++) {
+          if (consensus.coverage[i] !== block.coverage) { // change in coverage
+            endBlock(consensus.coverage[i]);
+          }
+          pos++;
+        }
+      });
+    });
+    if (currDomain) {
+      currDomain.width = pos - currDomain.start;
+      domainRegions.push(currDomain);
+    }
+    endBlock();
+    this.domains = domainRegions;
+    this.blocks = blocks;
+  }
+
+  draw(props) {
+    let res = props.msaLength / props.gaps.maskLen;
+    let canvas = this.canvas1.current;
+    canvas.offScreenCanvas = document.createElement('canvas');
+    canvas.offScreenCanvas.width = canvas.width;
+    canvas.offScreenCanvas.height = canvas.height;
+    let ctx = canvas.offScreenCanvas.getContext('2d');
+    this.blocks.forEach(block => {
+      ctx.fillStyle = block.fill;
+      ctx.fillRect(Math.floor(block.start*res), 0, Math.ceil(block.width*res), 18);
+    });
+    canvas.getContext('2d').drawImage(canvas.offScreenCanvas, 0, 0);
+  }
+
+  componentDidMount() {
+    this.setup(this.props);
+    this.draw(this.props);
+  }
+
+  componentDidUpdate() {
+    this.setup(this.props);
+    this.draw(this.props);
+  }
+
+  // shouldComponentUpdate(nextProps) {
+  //   if (Math.floor(nextProps.width) !== Math.floor(this.props.width)) {
+  //     return true;
+  //   }
+  //   if (nextProps.gaps.maskLen !== this.props.gaps.maskLen) {
+  //     this.setup(nextProps);
+  //     this.draw(nextProps);
+  //   }
+  //   return false;
+  // }
+
+  render() {
+    return (
+      <canvas style={{
+        background: 'red',
+        position: 'absolute',
+        left: '0px',
+        top: `${this.props.node.displayInfo.offset}px`
+      }} ref={this.canvas1} height="18px" width={`${this.props.msaLength}px`}/>
+    )
+  }
 }
 

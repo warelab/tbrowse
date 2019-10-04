@@ -1,7 +1,7 @@
 // cache con, el for reused
 var con, el
 // high sample will more accurate?
-var sample = 1000
+var sample = 10000
 
 function initElements () {
   con = document.createElement('div')
@@ -10,17 +10,15 @@ function initElements () {
   con.style.height = 0
   con.style.visibility = 'hidden'
   con.style.overflow = 'hidden'
-  con.style['z-index'] = -1234;
-  con.style['font-family'] = 'monospace'
-  con.style['font-size'] = '16px'
+  con.className = 'msa zappo'
   el = document.createElement('div')
-
   con.appendChild(el)
 }
 
 function pxPerUnit (unit, element) {
   if (!con) initElements()
   el.style.width = sample + unit;
+  el.innerHTML = 'ATTACA';
   (element || document.body).appendChild(con)
   var dimension = el.getBoundingClientRect()
   con.parentNode.removeChild(con)
