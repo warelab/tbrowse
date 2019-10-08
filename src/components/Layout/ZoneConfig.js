@@ -94,7 +94,7 @@ class ZoneConfig extends React.Component {
         </select>
         {zone.configurable && <a onClick={() => this.toggleConfig()}><i style={{float:'right'}} className="fa fa-cog"/></a>}
         {this.state.showConfig &&
-          <table style={{padding:20, backgroundColor:"#ffb", width:'100%'}}>
+          <table className='tbrowse-param-table'>
             <thead>
               <tr>
                 <th>Parameter</th>

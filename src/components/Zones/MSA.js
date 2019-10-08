@@ -82,18 +82,16 @@ export default connect(mapState, mapDispatch)(MSAComponent);
 
 
 const MSAHeader = (props) => {
-  let px = props.msaLength;
   return (
     <div className='zone-header' style={{
       transformOrigin: '0 0',
-      transform: `scaleX(${props.width / px})`,
-      width: `${px}px`
+      transform: `scaleX(${props.width / props.gaps.maskLen})`,
+      width: `${props.gaps.maskLen}px`
     }}>
-      <MSAOverview node={props.root} {...props}/>
       <MSAOverviewClass node={props.root} {...props}/>
     </div>
   )
-}
+};
 
 class MSABody extends React.Component {
   constructor(props) {
@@ -484,40 +482,30 @@ class MSAOverviewClass extends React.Component {
     this.blocks = blocks;
   }
 
-  draw(props) {
-    let res = props.msaLength / props.gaps.maskLen;
+  draw() {
     let canvas = this.canvas1.current;
     canvas.offScreenCanvas = document.createElement('canvas');
     canvas.offScreenCanvas.width = canvas.width;
     canvas.offScreenCanvas.height = canvas.height;
-    let ctx = canvas.offScreenCanvas.getContext('2d');
+    const ctx = canvas.offScreenCanvas.getContext('2d');
     this.blocks.forEach(block => {
       ctx.fillStyle = block.fill;
-      ctx.fillRect(Math.floor(block.start*res), 0, Math.ceil(block.width*res), 18);
+      ctx.fillRect(block.start, 0, block.width, 18);
     });
     canvas.getContext('2d').drawImage(canvas.offScreenCanvas, 0, 0);
   }
 
   componentDidMount() {
     this.setup(this.props);
-    this.draw(this.props);
+    this.draw();
   }
 
-  componentDidUpdate() {
-    this.setup(this.props);
-    this.draw(this.props);
+  componentDidUpdate(prevProps) {
+    if (prevProps.gaps.maskLen !== this.props.gaps.maskLen) {
+      this.setup(this.props);
+    }
+    this.draw();
   }
-
-  // shouldComponentUpdate(nextProps) {
-  //   if (Math.floor(nextProps.width) !== Math.floor(this.props.width)) {
-  //     return true;
-  //   }
-  //   if (nextProps.gaps.maskLen !== this.props.gaps.maskLen) {
-  //     this.setup(nextProps);
-  //     this.draw(nextProps);
-  //   }
-  //   return false;
-  // }
 
   render() {
     return (
@@ -526,7 +514,7 @@ class MSAOverviewClass extends React.Component {
         position: 'absolute',
         left: '0px',
         top: `${this.props.node.displayInfo.offset}px`
-      }} ref={this.canvas1} height="18px" width={`${this.props.msaLength}px`}/>
+      }} ref={this.canvas1} height="18px" width={`${this.props.gaps.maskLen}px`}/>
     )
   }
 }
