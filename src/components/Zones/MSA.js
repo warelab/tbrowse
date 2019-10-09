@@ -2,7 +2,6 @@ import React from 'react'
 import { connect } from 'react-redux'
 import _ from 'lodash';
 let d3 = require('d3-scale');
-let units = require('units-css');
 import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
 import { mergeOverlaps } from "../../utils/treeTools";
 import { toPx } from "../../utils/toPx";
@@ -126,7 +125,7 @@ class MSABody extends React.Component {
         </div>
         <div style={{
           zIndex:2,
-          visibility:'block',
+          visibility:'hidden',
           transformOrigin: '0 0',
           transform: `scaleX(${props.width / props.gaps.maskLen})`,
           width: `${props.gaps.maskLen}px`
@@ -395,18 +394,42 @@ class MSAOverview extends React.Component {
     this.draw();
   }
 
+  formatDomain(domain) {
+    return (
+      <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
+    )
+  }
+
   render() {
     if (this.props.gaps.maskLen !== this.maskLen) {
       this.setup(this.props);
     }
     let canvases = [];
+    const alignParams = {
+      points: ['tc','bc'],
+      offset: [0,3],
+      targetOffset: [0,0],
+      overflow: { adjustX: true, adjustY: true }
+    };
     this.canvasRefs.forEach((cRef, idx) => {
-      canvases.push(<canvas
-        ref={cRef}
-        key={idx}
-        height="18px"
-        width={`${this.domains[idx].len}px`}
-      />);
+      const canvas = <canvas ref={cRef}
+                             key={idx}
+                             height="18px"
+                             width={`${this.domains[idx].len}px`}
+      />;
+      if (this.domains[idx].domain) {
+        canvases.push(
+            <Tooltip placement="top"
+                     overlay={this.formatDomain(this.domains[idx].domain)}
+                     align={alignParams}
+            >
+              {canvas}
+            </Tooltip>
+          );
+      }
+      else {
+        canvases.push(canvas);
+      }
     });
     let top = this.props.node.displayInfo.offset || 0;
     top += this.props.nodes[0].displayInfo.height;

@@ -125,13 +125,6 @@
 }
 
 .msa { position: relative; overflow-x: scroll; line-height:24px; font-size: 16px ;font-family: 'msaplain', monospace; white-space: nowrap }
-.domain {
-    opacity: 0.1;
-    pointer-events: all;
-}
-.domain:hover {
-    cursor: pointer;
-}
 
 .msaplain { font-family: 'msaplain', monospace; }
 .clustal { font-family: 'clustal', monospace; }
