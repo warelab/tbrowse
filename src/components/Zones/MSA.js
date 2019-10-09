@@ -124,8 +124,14 @@ class MSABody extends React.Component {
         <div style={{zIndex:1}}>
           {props.nodes.map((node,idx) => <MSASequence key={idx} node={node} {...props}/>)}
         </div>
-        <div style={{zIndex:2, visibility:'hidden'}}>
-          {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
+        <div style={{
+          zIndex:2,
+          visibility:'block',
+          transformOrigin: '0 0',
+          transform: `scaleX(${props.width / props.gaps.maskLen})`,
+          width: `${props.maskLen}px`
+        }}>
+          {props.nodes.map((node,idx) => <MSAOverviewClass key={idx} node={node} {...props}/>)}
         </div>
         <MSAGaps {...props}/>
       </div>
@@ -386,7 +392,10 @@ const MSAOverview = (props) => {
 class MSAOverviewClass extends React.Component {
   constructor(props) {
     super(props);
-    this.canvas1 = React.createRef();
+    this.setup(props);
+    this.canvasRefs = this.domains.map(d => {
+      return React.createRef();
+    })
   }
 
   setup(props) {
@@ -404,15 +413,24 @@ class MSAOverviewClass extends React.Component {
     let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
     let colorScale = grayScale;
     let blocks = [];
+    let blockIdx=0;
     let block = {
       start: 0,
       coverage: 0
     };
+    let pos = 0;
+    let domainRegions = [];
+    let currDomain = {
+      firstBlock:0,
+      offset:0
+    };
+
     function endBlock(coverage) {
       if (block.coverage > 0) {
         block.width = pos - block.start;
         block.fill = colorScale(block.coverage/consensus.nSeqs);
-        blocks.push(block)
+        blocks.push(block);
+        blockIdx++;
       }
       block = {
         start: pos,
@@ -420,50 +438,41 @@ class MSAOverviewClass extends React.Component {
       }
     }
 
-    let domainRegions = [];
-    let currDomain;
-    let pos = 0;
+    function endDomain(domain) {
+      currDomain.nBlocks = blockIdx - currDomain.firstBlock;
+      if (currDomain.nBlocks) {
+        currDomain.len = pos - blocks[currDomain.firstBlock].start;
+        domainRegions.push(currDomain);
+      }
+      currDomain = {
+        firstBlock: blockIdx,
+        offset: pos
+      };
+      if (domain) {
+        currDomain.domain = domain;
+      }
+    }
+
     props.gaps.mask.forEach(maskRegion => {
       splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
         // if this region is a different domain finish the last block
         // and change the colorScale
-        if (currDomain) {
+        if (currDomain.domain) {
           if (!region.domain) {
             endBlock();
+            endDomain();
             colorScale = grayScale;
           }
           else if (region.domain.id !== currDomain.domain.id) {
             endBlock();
+            endDomain(region.domain);
             colorScale = region.domain.colorScale;
           }
         }
         else if (region.domain) {
           endBlock();
+          endDomain(region.domain);
           colorScale = region.domain.colorScale;
-        }
-
-        if (region.domain) {
-          if (currDomain) {
-            if (region.domain.id !== currDomain.domain.id) {
-              currDomain.width = pos - currDomain.start;
-              domainRegions.push(currDomain);
-              currDomain = {
-                start: pos,
-                domain: region.domain
-              };
-            }
-          }
-          else {
-            currDomain = {
-              start: pos,
-              domain: region.domain
-            };
-          }
-        }
-        else if (currDomain) {
-          currDomain.width = pos - currDomain.start;
-          domainRegions.push(currDomain);
-          currDomain = undefined;
         }
         for (let i = region.start; i < region.end; i++) {
           if (consensus.coverage[i] !== block.coverage) { // change in coverage
@@ -473,49 +482,59 @@ class MSAOverviewClass extends React.Component {
         }
       });
     });
-    if (currDomain) {
-      currDomain.width = pos - currDomain.start;
-      domainRegions.push(currDomain);
-    }
     endBlock();
-    this.domains = domainRegions;
+    endDomain();
+    this.domains = domainRegions.filter(d => d.nBlocks > 0);
     this.blocks = blocks;
   }
 
   draw() {
-    let canvas = this.canvas1.current;
-    canvas.offScreenCanvas = document.createElement('canvas');
-    canvas.offScreenCanvas.width = canvas.width;
-    canvas.offScreenCanvas.height = canvas.height;
-    const ctx = canvas.offScreenCanvas.getContext('2d');
-    this.blocks.forEach(block => {
-      ctx.fillStyle = block.fill;
-      ctx.fillRect(block.start, 0, block.width, 18);
-    });
-    canvas.getContext('2d').drawImage(canvas.offScreenCanvas, 0, 0);
+    this.canvasRefs.forEach((cRef,idx) => {
+      let canvas = cRef.current;
+      canvas.offScreenCanvas = document.createElement('canvas');
+      canvas.offScreenCanvas.width = canvas.width;
+      canvas.offScreenCanvas.height = canvas.height;
+      const ctx = canvas.offScreenCanvas.getContext('2d');
+      const d = this.domains[idx];
+      const from=d.firstBlock;
+      const to=from+d.nBlocks;
+      for(let i=from;i<to;i++) {
+        const block = this.blocks[i];
+        ctx.fillStyle = block.fill;
+        ctx.fillRect(block.start - d.offset, 0, block.width, 18);
+      }
+      const mainCtx = canvas.getContext('2d');
+      mainCtx.clearRect(0,0,canvas.width,canvas.height);
+      mainCtx.drawImage(canvas.offScreenCanvas, 0, 0);
+    })
   }
 
   componentDidMount() {
+    this.draw();
+  }
+
+  componentDidUpdate() {
     this.setup(this.props);
     this.draw();
   }
 
-  componentDidUpdate(prevProps) {
-    if (prevProps.gaps.maskLen !== this.props.gaps.maskLen) {
-      this.setup(this.props);
-    }
-    this.draw();
-  }
-
   render() {
-    return (
-      <canvas style={{
-        background: 'red',
-        position: 'absolute',
-        left: '0px',
-        top: `${this.props.node.displayInfo.offset}px`
-      }} ref={this.canvas1} height="18px" width={`${this.props.gaps.maskLen}px`}/>
-    )
+    let canvases = [];
+    this.canvasRefs.forEach((cRef, idx) => {
+      canvases.push(<canvas
+        ref={cRef}
+        key={idx}
+        height="18px"
+        width={`${this.domains[idx].len}px`}
+      />);
+    });
+    let top = this.props.node.displayInfo.offset || 0;
+    top += this.props.nodes[0].displayInfo.height;
+    return <div style={{
+      position: 'absolute',
+      left: '0px',
+      top: `${top+3}px`
+    }}>{canvases}</div>;
   }
 }
 
