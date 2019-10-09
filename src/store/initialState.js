@@ -35,7 +35,7 @@ const zoneDefaults = {
           {id: 'clustal', label: 'Clustal'},
           {id: 'zappo', label: 'Zappo'},
           {id: 'taylor', label: 'Taylor'},
-          {id: 'hydrophobicity', label: 'Hydrophobicity'},
+          {id: 'hydro', label: 'Hydrophobicity'},
           {id: 'helix', label: 'Helix Propensity'},
           {id: 'strand', label: 'Strand Propensity'},
           {id: 'turn', label: 'Turn Propensity'},
