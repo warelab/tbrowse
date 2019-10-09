@@ -88,7 +88,7 @@ const MSAHeader = (props) => {
       transform: `scaleX(${props.width / props.gaps.maskLen})`,
       width: `${props.gaps.maskLen}px`
     }}>
-      <MSAOverviewClass node={props.root} {...props}/>
+      <MSAOverview node={props.root} {...props}/>
     </div>
   )
 };
@@ -129,9 +129,9 @@ class MSABody extends React.Component {
           visibility:'block',
           transformOrigin: '0 0',
           transform: `scaleX(${props.width / props.gaps.maskLen})`,
-          width: `${props.maskLen}px`
+          width: `${props.gaps.maskLen}px`
         }}>
-          {props.nodes.map((node,idx) => <MSAOverviewClass key={idx} node={node} {...props}/>)}
+          {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
         </div>
         <MSAGaps {...props}/>
       </div>
@@ -266,130 +266,7 @@ function splitByDomain(region, domainHits, domainIdx) {
 }
 
 
-const MSAOverview = (props) => {
-  let DA = props.node.model.domainArchitecture;
-  let consensus = props.node.model.consensus;
-  let domainIdx = props.interpro;
-  let domainHits=[];
-  if (domainIdx && DA && DA.hasOwnProperty('Domain')) {
-    Object.keys(DA.Domain).forEach(rootId => {
-      Array.prototype.push.apply(domainHits,DA.Domain[rootId].hits);
-    });
-    domainHits = mergeOverlaps(domainHits,0,'max');
-  }
-
-  let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
-  let colorScale = grayScale;
-  let blocks = [];
-  let block = {
-    start: 0,
-    coverage: 0
-  };
-  function endBlock(coverage) {
-    if (block.coverage > 0) {
-      block.width = pos - block.start;
-      block.fill = colorScale(block.coverage/consensus.nSeqs);
-      blocks.push(block)
-    }
-    block = {
-      start: pos,
-      coverage: coverage || 0
-    }
-  }
-
-  let domainRegions = [];
-  let currDomain;
-  let pos = 0;
-  props.gaps.mask.forEach(maskRegion => {
-    splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
-      // if this region is a different domain finish the last block
-      // and change the colorScale
-      if (currDomain) {
-        if (!region.domain) {
-          endBlock();
-          colorScale = grayScale;
-        }
-        else if (region.domain.id !== currDomain.domain.id) {
-          endBlock();
-          colorScale = region.domain.colorScale;
-        }
-      }
-      else if (region.domain) {
-        endBlock();
-        colorScale = region.domain.colorScale;
-      }
-
-      if (region.domain) {
-        if (currDomain) {
-          if (region.domain.id !== currDomain.domain.id) {
-            currDomain.width = pos - currDomain.start;
-            domainRegions.push(currDomain);
-            currDomain = {
-              start: pos,
-              domain: region.domain
-            };
-          }
-        }
-        else {
-          currDomain = {
-            start: pos,
-            domain: region.domain
-          };
-        }
-      }
-      else if (currDomain) {
-        currDomain.width = pos - currDomain.start;
-        domainRegions.push(currDomain);
-        currDomain = undefined;
-      }
-      for (let i = region.start; i < region.end; i++) {
-        if (consensus.coverage[i] !== block.coverage) { // change in coverage
-          endBlock(consensus.coverage[i]);
-        }
-        pos++;
-      }
-    });
-  });
-  if (currDomain) {
-    currDomain.width = pos - currDomain.start;
-    domainRegions.push(currDomain);
-  }
-  endBlock();
-
-  let domainBlocks = domainRegions.map((d, idx) => {
-    const style = {
-      background: d.domain.colorScale(1),
-      left: `${d.start}ch`,
-      width: `${d.width}ch`,
-      top: '1px',
-      position: 'absolute',
-      height: '20px'
-    };
-    return <div className='domain' key={idx} style={style}/>
-  });
-
-  let coverageBlocks = blocks.map((b,idx) => {
-    const style = {
-      left: `${b.start}ch`,
-      width: `${b.width}ch`,
-      top: '4px',
-      position: 'absolute',
-      background: b.fill,
-      height: '17px'
-    };
-    return <div key={idx} style={style}/>
-  });
-  let top = props.node.displayInfo.offset || 0;
-  top += props.nodes[0].displayInfo.height;
-  return (
-    <div style={{position:'absolute', top:top, lineHeight:props.node.displayInfo.height}}>
-      <div className='coverage-blocks'>{coverageBlocks}</div>
-      <div className='domain-blocks'>{domainBlocks}</div>
-    </div>
-  );
-}
-
-class MSAOverviewClass extends React.Component {
+class MSAOverview extends React.Component {
   constructor(props) {
     super(props);
     this.setup(props);
@@ -486,6 +363,7 @@ class MSAOverviewClass extends React.Component {
     endDomain();
     this.domains = domainRegions.filter(d => d.nBlocks > 0);
     this.blocks = blocks;
+    this.maskLen = props.gaps.maskLen;
   }
 
   draw() {
@@ -514,11 +392,13 @@ class MSAOverviewClass extends React.Component {
   }
 
   componentDidUpdate() {
-    this.setup(this.props);
     this.draw();
   }
 
   render() {
+    if (this.props.gaps.maskLen !== this.maskLen) {
+      this.setup(this.props);
+    }
     let canvases = [];
     this.canvasRefs.forEach((cRef, idx) => {
       canvases.push(<canvas
