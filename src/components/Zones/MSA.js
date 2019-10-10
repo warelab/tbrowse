@@ -21,8 +21,12 @@ class MSAComponent extends React.Component {
   constructor(props) {
     super(props);
     this.state={};
+    this.bodyRef = React.createRef();
   }
-
+  handleRangeChange(from,to) {
+    let range = {from,to};
+    this.setState({range});
+  }
   componentDidUpdate() {
     if (this.props.nodes && !this.props.gaps) {
       this.props.calculateGaps(this.props)
@@ -40,7 +44,7 @@ class MSAComponent extends React.Component {
       return (
         <div>
           <MSAHeader {...this.props} range={this.state.range} />
-          <MSABody {...this.props} range={this.state.range} />
+          <MSABody onRangeChange={(f,t)=>this.handleRangeChange(f,t)} {...this.props} range={this.state.range} />
         </div>
       );
     }
@@ -87,17 +91,55 @@ const mapDispatch = dispatch => bindActionCreators({ calculateGaps, toggleGap, h
 export default connect(mapState, mapDispatch)(MSAComponent);
 
 
-const MSAHeader = (props) => {
-  return (
-    <div className='zone-header' style={{
-      transformOrigin: '0 0',
-      transform: `scaleX(${props.width / props.gaps.maskLen})`,
-      width: `${props.gaps.maskLen}px`
-    }}>
-      <MSAOverview node={props.root} {...props}/>
-    </div>
-  )
-};
+class MSAHeader extends React.Component {
+  constructor(props) {
+    super(props);
+    this.canvasRef = React.createRef();
+    this.grayScale = d3.scaleLinear().domain([0,1]).range(["#000000","#eeeeee"]);
+  }
+  draw() {
+    const span = this.props.range.to - this.props.range.from;
+    const ratio = span/this.props.gaps.maskLen;
+    const canvas = this.canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const grd = ctx.createLinearGradient(0,0,0,25);
+    grd.addColorStop(0, this.grayScale(ratio));
+    grd.addColorStop(1, this.grayScale(1));
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.beginPath();
+    ctx.moveTo(this.props.range.from, 0);
+    ctx.lineTo(this.props.range.to, 0);
+    ctx.lineTo(this.props.gaps.maskLen, 25);
+    ctx.lineTo(0, 25);
+    ctx.closePath();
+    ctx.fillStyle = grd;
+    ctx.fill();
+  }
+  componentDidMount() {
+    this.draw();
+  }
+  componentDidUpdate() {
+    this.draw();
+  }
+  render() {
+    const props = this.props;
+    let top = 2*props.nodes[0].displayInfo.height;
+    return (
+      <div className='zone-header' style={{
+        transformOrigin: '0 0',
+        transform: `scaleX(${props.width / props.gaps.maskLen})`,
+        width: `${props.gaps.maskLen}px`
+      }}>
+        <MSAOverview node={props.root} {...props}/>
+        <canvas width={`${props.gaps.maskLen}px`} height='25px' ref={this.canvasRef}
+                style={{
+                  position: 'absolute',
+                  top: `${top}px`
+                }}/>
+      </div>
+    )
+  }
+}
 
 class MSABody extends React.Component {
   constructor(props) {
@@ -105,11 +147,11 @@ class MSABody extends React.Component {
     this.myRef = React.createRef();
   }
   componentDidMount() {
+    let cmp = this;
     this.myRef.current.addEventListener('mousewheel', function(event) {
       // We don't want to scroll below zero or above the width
       const maxX = this.scrollWidth - this.offsetWidth;
-
-      // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually 
+      // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually
       if (this.scrollLeft + event.deltaX < 0 || 
           this.scrollLeft + event.deltaX > maxX) {
 
@@ -118,11 +160,18 @@ class MSABody extends React.Component {
         // Manually set the scroll to the boundary
         this.scrollLeft = Math.max(0, Math.min(maxX, this.scrollLeft + event.deltaX));
       }
+      const visibleProportion = this.clientWidth/this.scrollWidth;
+      const maskLen = cmp.props.gaps.maskLen;
+      const visibleLen = visibleProportion*maskLen;
+      const from = maskLen*this.scrollLeft/this.scrollWidth;
+      cmp.props.onRangeChange(Math.floor(from),Math.floor(from+visibleLen));
     }, false);
+  }
+  shouldComponentUpdate(nextProps) {
+    return (nextProps.gaps.maskLen !== this.props.gaps.maskLen || nextProps.width !== this.props.width)
   }
   render() {
     const props = this.props;
-    if (!props.range) return
     const span = props.range.to - props.range.from;
     const residuesPerPixel = span / props.width;
     const pixelsPerResidue = props.width / span;
@@ -168,8 +217,8 @@ const MSAGaps = (props) => {
     <div style={{
       zIndex:10,
       transformOrigin: '0 0',
-      transform: `scaleX(${pixelsPerResidue})`,
-      width: `${span}ch`
+      // transform: `scaleX(${pixelsPerResidue})`,
+      // width: `${span}ch`
     }}>&nbsp;
       {gaps.gaps.map((block,idx) => {
         const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
@@ -444,6 +493,7 @@ class MSAOverview extends React.Component {
                      key={idx}
                      overlay={this.formatDomain(this.domains[idx].domain)}
                      align={alignParams}
+                     trigger={['click']}
             >
               {canvas}
             </Tooltip>
