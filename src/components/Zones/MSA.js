@@ -20,18 +20,27 @@ const override = css`
 class MSAComponent extends React.Component {
   constructor(props) {
     super(props);
+    this.state={};
   }
+
   componentDidUpdate() {
     if (this.props.nodes && !this.props.gaps) {
       this.props.calculateGaps(this.props)
     }
+    if (this.props.gaps && !this.state.range) {
+      let range = {
+        from: 0,
+        to: this.props.gaps.maskLen
+      };
+      this.setState({range});
+    }
   }
   render() {
-    if (this.props.gaps) {
+    if (this.state.range && this.props.gaps) {
       return (
         <div>
-          <MSAHeader {...this.props} />
-          <MSABody {...this.props} />
+          <MSAHeader {...this.props} range={this.state.range} />
+          <MSABody {...this.props} range={this.state.range} />
         </div>
       );
     }
@@ -58,8 +67,6 @@ const mapState = (state, ownProps) => {
     const gapParams = JSON.stringify(getGapParams(zone));
     if (tree.gaps.hasOwnProperty(gapParams)) {
       const gaps = tree.gaps[gapParams];
-      const msaLength = toPx(gaps.maskLen+'ch');
-      const msaResolution = gaps.maskLen / msaLength;
       let zoneHeight=0;
       nodes.forEach(n => {
         n.displayInfo.offset = zoneHeight;
@@ -67,7 +74,7 @@ const mapState = (state, ownProps) => {
       });
       const interpro = state.genetrees.interpro;
       const root = tree;
-      return { gaps, nodes, highlight, interpro, zoneHeight, msaLength, msaResolution, root, ...zone }
+      return { gaps, nodes, highlight, interpro, zoneHeight, root, ...zone }
     }
 
     return { nodes, ...zone }
@@ -115,24 +122,30 @@ class MSABody extends React.Component {
   }
   render() {
     const props = this.props;
+    if (!props.range) return
+    const span = props.range.to - props.range.from;
+    const residuesPerPixel = span / props.width;
+    const pixelsPerResidue = props.width / span;
     return (
       <div ref={this.myRef} className='msa' style={{
         height:props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
         width:props.width+'px'
       }}>
-        <div style={{zIndex:1}}>
-          {props.nodes.map((node,idx) => <MSASequence key={idx} node={node} {...props}/>)}
+        { pixelsPerResidue > 4 &&
+        <div style={{zIndex: 1}}>
+          {props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...props}/>)}
         </div>
+        }
         <div style={{
           zIndex:2,
-          visibility:'hidden',
+          visibility:'block',
           transformOrigin: '0 0',
-          transform: `scaleX(${props.width / props.gaps.maskLen})`,
-          width: `${props.gaps.maskLen}px`
+          transform: `scaleX(${pixelsPerResidue})`,
+          width: `${span}px`,
         }}>
           {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
         </div>
-        <MSAGaps {...props}/>
+        { residuesPerPixel <= 1 && <MSAGaps {...props}/> }
       </div>
     )
   }
@@ -140,6 +153,8 @@ class MSABody extends React.Component {
 
 const MSAGaps = (props) => {
   const gaps = props.gaps;
+  const span = props.range.to - props.range.from;
+  const pixelsPerResidue = props.width / toPx(`${span}ch`);
   const zoneHeight = props.zoneHeight;
   const gapParams = getGapParams(props);
   let compression = 0;
@@ -150,7 +165,12 @@ const MSAGaps = (props) => {
     overflow: { adjustX: true, adjustY: true }
   };
   return (
-    <div style={{zIndex:10}}>&nbsp;
+    <div style={{
+      zIndex:10,
+      transformOrigin: '0 0',
+      transform: `scaleX(${pixelsPerResidue})`,
+      width: `${span}ch`
+    }}>&nbsp;
       {gaps.gaps.map((block,idx) => {
         const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
         const marker = block.collapsed ? (
@@ -416,10 +436,12 @@ class MSAOverview extends React.Component {
                              key={idx}
                              height="18px"
                              width={`${this.domains[idx].len}px`}
+                             style={{position:'absolute', left: `${this.domains[idx].offset}px`}}
       />;
       if (this.domains[idx].domain) {
         canvases.push(
             <Tooltip placement="top"
+                     key={idx}
                      overlay={this.formatDomain(this.domains[idx].domain)}
                      align={alignParams}
             >
