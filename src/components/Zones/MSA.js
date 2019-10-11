@@ -148,7 +148,7 @@ class MSABody extends React.Component {
   }
   componentDidMount() {
     let cmp = this;
-    this.myRef.current.addEventListener('mousewheel', function(event) {
+    this.myRef.current.addEventListener('scroll', function(event) {
       // We don't want to scroll below zero or above the width
       const maxX = this.scrollWidth - this.offsetWidth;
       // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually
@@ -166,9 +166,6 @@ class MSABody extends React.Component {
       const from = maskLen*this.scrollLeft/this.scrollWidth;
       cmp.props.onRangeChange(Math.floor(from),Math.floor(from+visibleLen));
     }, false);
-    this.myRef.current.addEventListener('touchmove', function(event) {
-      cmp.myRef.current.trigger('mousewheel');
-    })
   }
   shouldComponentUpdate(nextProps) {
     return (nextProps.gaps.maskLen !== this.props.gaps.maskLen || nextProps.width !== this.props.width)

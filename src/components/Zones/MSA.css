@@ -124,7 +124,15 @@
     url('fonts/MSA-Plain.eot') format('embedded-opentype')
 }
 
-.msa { position: relative; overflow-x: scroll; line-height:24px; font-size: 16px ;font-family: 'msaplain', monospace; white-space: nowrap }
+.msa {
+    position: relative;
+    overflow-x: scroll;
+    line-height:24px;
+    font-size: 16px;
+    font-family: 'msaplain', monospace;
+    white-space: nowrap;
+    touch-action: pinch-zoom pan-x;
+}
 
 .msaplain { font-family: 'msaplain', monospace; }
 .clustal { font-family: 'clustal', monospace; }
