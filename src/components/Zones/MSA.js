@@ -148,18 +148,23 @@ class MSABody extends React.Component {
   }
   componentDidMount() {
     let cmp = this;
-    this.myRef.current.addEventListener('scroll', function(event) {
-      // We don't want to scroll below zero or above the width
-      const maxX = this.scrollWidth - this.offsetWidth;
-      // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually
-      if (this.scrollLeft + event.deltaX < 0 || 
-          this.scrollLeft + event.deltaX > maxX) {
-
-        event.preventDefault();
-
-        // Manually set the scroll to the boundary
-        this.scrollLeft = Math.max(0, Math.min(maxX, this.scrollLeft + event.deltaX));
+    this.myRef.current.addEventListener('wheel', function(event) {
+      if (Math.abs(event.deltaX) < 0.5*Math.abs(event.deltaY)) {
+        const visibleProportion = this.clientWidth/this.scrollWidth;
+        const maskLen = cmp.props.gaps.maskLen;
+        if (event.deltaY < 0 && this.scrollWidth < toPx(`${maskLen}ch`)) {
+          // zoom in
+          console.log('zoom in');
+          event.preventDefault();
+        }
+        if (event.deltaY > 0 && visibleProportion < 1) {
+          // zoom out
+          console.log('zoom out');
+          event.preventDefault();
+        }
       }
+    });
+    this.myRef.current.addEventListener('scroll', function(event) {
       const visibleProportion = this.clientWidth/this.scrollWidth;
       const maskLen = cmp.props.gaps.maskLen;
       const visibleLen = visibleProportion*maskLen;
