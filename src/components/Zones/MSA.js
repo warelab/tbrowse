@@ -166,6 +166,9 @@ class MSABody extends React.Component {
       const from = maskLen*this.scrollLeft/this.scrollWidth;
       cmp.props.onRangeChange(Math.floor(from),Math.floor(from+visibleLen));
     }, false);
+    this.myRef.current.addEventListener('touchmove', function(event) {
+      cmp.myRef.current.trigger('mousewheel');
+    })
   }
   shouldComponentUpdate(nextProps) {
     return (nextProps.gaps.maskLen !== this.props.gaps.maskLen || nextProps.width !== this.props.width)
