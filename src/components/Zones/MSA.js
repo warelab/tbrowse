@@ -109,8 +109,12 @@ class MSAHeader extends React.Component {
     ctx.beginPath();
     ctx.moveTo(this.props.range.from, 0);
     ctx.lineTo(this.props.range.to, 0);
+    ctx.lineTo(this.props.range.to,3);
+    ctx.lineTo(this.props.gaps.maskLen, 22);
     ctx.lineTo(this.props.gaps.maskLen, 25);
     ctx.lineTo(0, 25);
+    ctx.lineTo(0, 22);
+    ctx.lineTo(this.props.range.from,3);
     ctx.closePath();
     ctx.fillStyle = grd;
     ctx.fill();
@@ -145,22 +149,34 @@ class MSABody extends React.Component {
   constructor(props) {
     super(props);
     this.myRef = React.createRef();
+    this.overviewRef = React.createRef();
   }
   componentDidMount() {
     let cmp = this;
     this.myRef.current.addEventListener('wheel', function(event) {
-      if (Math.abs(event.deltaX) < 0.5*Math.abs(event.deltaY)) {
+      if (Math.abs(event.deltaY) > 0 && event.shiftKey) {
+        event.preventDefault();
         const visibleProportion = this.clientWidth/this.scrollWidth;
         const maskLen = cmp.props.gaps.maskLen;
+        const span = cmp.props.range.to - cmp.props.range.from;
+        const delta = Math.ceil(0.01*span);
+        let from = cmp.props.range.from;
+        let to = cmp.props.range.to;
         if (event.deltaY < 0 && this.scrollWidth < toPx(`${maskLen}ch`)) {
           // zoom in
-          console.log('zoom in');
-          event.preventDefault();
+          from += delta;
+          to -= delta;
+          cmp.props.onRangeChange(from,to);
+          cmp.changeRange(from,to);
         }
         if (event.deltaY > 0 && visibleProportion < 1) {
           // zoom out
-          console.log('zoom out');
-          event.preventDefault();
+          from -= delta;
+          to += delta;
+          if (from < 0) {from = 0;}
+          if (to > maskLen) {to = maskLen;}
+          cmp.props.onRangeChange(from,to);
+          cmp.changeRange(from,to);
         }
       }
     });
@@ -172,8 +188,18 @@ class MSABody extends React.Component {
       cmp.props.onRangeChange(Math.floor(from),Math.floor(from+visibleLen));
     }, false);
   }
+  changeRange(from, to) {
+    let el = this.overviewRef.current;
+    const span = to - from;
+    const pixelsPerResidue = this.props.width / span;
+    el.style.transform = `scaleX(${pixelsPerResidue})`;
+    el.style.width = `${span}px`;
+  }
   shouldComponentUpdate(nextProps) {
-    return (nextProps.gaps.maskLen !== this.props.gaps.maskLen || nextProps.width !== this.props.width)
+    return (nextProps.gaps.maskLen !== this.props.gaps.maskLen
+      || nextProps.width !== this.props.width
+      // || nextProps.range.to - nextProps.range.from !== this.props.range.to - this.props.range.from
+    )
   }
   render() {
     const props = this.props;
@@ -185,12 +211,12 @@ class MSABody extends React.Component {
         height:props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
         width:props.width+'px'
       }}>
-        { pixelsPerResidue > 4 &&
+        { pixelsPerResidue > 4000 &&
         <div style={{zIndex: 1}}>
           {props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...props}/>)}
         </div>
         }
-        <div style={{
+        <div ref={this.overviewRef} style={{
           zIndex:2,
           visibility:'block',
           transformOrigin: '0 0',
@@ -199,7 +225,7 @@ class MSABody extends React.Component {
         }}>
           {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
         </div>
-        { residuesPerPixel <= 1 && <MSAGaps {...props}/> }
+        { residuesPerPixel <= -1 && <MSAGaps {...props}/> }
       </div>
     )
   }
