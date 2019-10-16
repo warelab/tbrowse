@@ -95,14 +95,14 @@ class MSAHeader extends React.Component {
   constructor(props) {
     super(props);
     this.canvasRef = React.createRef();
-    this.grayScale = d3.scaleLinear().domain([0,1]).range(["#000000","#eeeeee"]);
+    this.grayScale = d3.scaleLinear().domain([0, 1]).range(["#000000", "#eeeeee"]);
   }
   draw() {
     const span = this.props.range.to - this.props.range.from;
     const ratio = span/this.props.gaps.maskLen;
     const canvas = this.canvasRef.current;
     const ctx = canvas.getContext('2d');
-    const grd = ctx.createLinearGradient(0,0,0,25);
+    const grd = ctx.createLinearGradient(0,0,0,canvas.height);
     grd.addColorStop(0, this.grayScale(ratio));
     grd.addColorStop(1, this.grayScale(1));
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -110,10 +110,10 @@ class MSAHeader extends React.Component {
     ctx.moveTo(this.props.range.from, 0);
     ctx.lineTo(this.props.range.to, 0);
     ctx.lineTo(this.props.range.to,3);
-    ctx.lineTo(this.props.gaps.maskLen, 22);
-    ctx.lineTo(this.props.gaps.maskLen, 25);
-    ctx.lineTo(0, 25);
-    ctx.lineTo(0, 22);
+    ctx.lineTo(this.props.gaps.maskLen, canvas.height - 3);
+    ctx.lineTo(this.props.gaps.maskLen, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.lineTo(0, canvas.height - 3);
     ctx.lineTo(this.props.range.from,3);
     ctx.closePath();
     ctx.fillStyle = grd;
@@ -135,14 +135,26 @@ class MSAHeader extends React.Component {
         width: `${props.gaps.maskLen}px`
       }}>
         <MSAOverview node={props.root} {...props}/>
-        <canvas width={`${props.gaps.maskLen}px`} height='25px' ref={this.canvasRef}
+        <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef}
                 style={{
                   position: 'absolute',
-                  top: `${top}px`
+                  top: `${top - 3}px`
                 }}/>
       </div>
     )
   }
+}
+
+function getZoomLevel({width,range}) {
+  const residues = range.to - range.from;
+  const pixelsPerResidue = width/residues;
+  if (pixelsPerResidue >= 5) {
+    return 1
+  }
+  if (pixelsPerResidue >= 2) {
+    return 2
+  }
+  return 3
 }
 
 class MSABody extends React.Component {
@@ -150,19 +162,22 @@ class MSABody extends React.Component {
     super(props);
     this.myRef = React.createRef();
     this.overviewRef = React.createRef();
+    this.state = {
+      zoomLevel: getZoomLevel(props)
+    }
   }
   componentDidMount() {
     let cmp = this;
     this.myRef.current.addEventListener('wheel', function(event) {
       if (Math.abs(event.deltaY) > 0 && event.shiftKey) {
         event.preventDefault();
-        const visibleProportion = this.clientWidth/this.scrollWidth;
         const maskLen = cmp.props.gaps.maskLen;
-        const span = cmp.props.range.to - cmp.props.range.from;
-        const delta = Math.ceil(0.01*span);
+        const visibleProportion = this.clientWidth/this.scrollWidth;
         let from = cmp.props.range.from;
         let to = cmp.props.range.to;
-        if (event.deltaY < 0 && this.scrollWidth < toPx(`${maskLen}ch`)) {
+        const span = cmp.state.zoomLevel === 3 ? to - from : toPx(`${to - from}ch`);
+        const delta = cmp.state.zoomLevel === 3 ? Math.ceil(0.01*span) : cmp.state.zoomLevel;
+        if (event.deltaY < 0 && (cmp.state.zoomLevel > 1 || this.clientWidth > cmp.props.width)) {
           // zoom in
           from += delta;
           to -= delta;
@@ -181,51 +196,79 @@ class MSABody extends React.Component {
       }
     });
     this.myRef.current.addEventListener('scroll', function(event) {
-      const visibleProportion = this.clientWidth/this.scrollWidth;
       const maskLen = cmp.props.gaps.maskLen;
-      const visibleLen = visibleProportion*maskLen;
-      const from = maskLen*this.scrollLeft/this.scrollWidth;
-      cmp.props.onRangeChange(Math.floor(from),Math.floor(from+visibleLen));
+      const span = cmp.props.range.to - cmp.props.range.from;
+      const from = Math.floor(maskLen*this.scrollLeft/this.scrollWidth);
+      cmp.props.onRangeChange(from,from+span);
     }, false);
   }
+
   changeRange(from, to) {
-    let el = this.overviewRef.current;
-    const span = to - from;
-    const pixelsPerResidue = this.props.width / span;
-    el.style.transform = `scaleX(${pixelsPerResidue})`;
-    el.style.width = `${span}px`;
+    let zoomLevel = getZoomLevel({
+      width: this.props.width,
+      range: {from, to}
+    });
+    if (zoomLevel !== this.state.zoomLevel) {
+      this.setState({zoomLevel});
+    }
+    else {
+      const span = (zoomLevel === 3) ? to - from : toPx(`${to - from}ch`);
+      const pixelsPerResidue = this.props.width / span;
+      let el = this.myRef.current;
+      el.style.transform = `scaleX(${pixelsPerResidue})`;
+      el.style.width = `${span}px`;
+      el.scrollLeft = el.scrollWidth * from / this.props.gaps.maskLen;
+    }
   }
-  shouldComponentUpdate(nextProps) {
-    return (nextProps.gaps.maskLen !== this.props.gaps.maskLen
-      || nextProps.width !== this.props.width
-      // || nextProps.range.to - nextProps.range.from !== this.props.range.to - this.props.range.from
+
+  shouldComponentUpdate(nextProps, nextState) {
+    return !(
+      nextProps.nodes === this.props.nodes &&
+      nextProps.gaps.maskLen === this.props.gaps.maskLen &&
+      nextProps.width === this.props.width &&
+      nextState.zoomLevel === this.state.zoomLevel &&
+      nextProps.colorScheme === this.props.colorScheme
     )
   }
+
+  componentDidUpdate() {
+    const el = this.myRef.current;
+    el.scrollLeft = el.scrollWidth * this.props.range.from / this.props.gaps.maskLen;
+    if (this.state.zoomLevel === 1 && el.clientWidth < this.props.width) {
+      const span = this.props.range.to - this.props.range.from;
+      const fat = Math.floor((span * this.props.width / el.clientWidth - span)/2);
+      let from = this.props.range.from - fat;
+      let to = this.props.range.to + fat;
+      if (from < 0) {
+        to -= from;
+        from=0;
+      }
+      if (to > this.props.gaps.maskLen) {
+        from -= to - this.props.gaps.maskLen;
+        to = this.props.gaps.maskLen;
+        if (from < 0) {
+          from = 0;
+        }
+      }
+      this.changeRange(from, to);
+    }
+  }
+
   render() {
     const props = this.props;
-    const span = props.range.to - props.range.from;
-    const residuesPerPixel = span / props.width;
-    const pixelsPerResidue = props.width / span;
+    const span = (this.state.zoomLevel === 3)
+      ? props.range.to - props.range.from
+      : toPx(`${props.range.to - props.range.from}ch`);
     return (
       <div ref={this.myRef} className='msa' style={{
-        height:props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
-        width:props.width+'px'
+        height: props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
+        width: `${span}px`,
+        transformOrigin: '0 0',
+        transform: `scaleX(${props.width / span})`,
       }}>
-        { pixelsPerResidue > 4000 &&
-        <div style={{zIndex: 1}}>
-          {props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...props}/>)}
-        </div>
-        }
-        <div ref={this.overviewRef} style={{
-          zIndex:2,
-          visibility:'block',
-          transformOrigin: '0 0',
-          transform: `scaleX(${pixelsPerResidue})`,
-          width: `${span}px`,
-        }}>
-          {props.nodes.map((node,idx) => <MSAOverview key={idx} node={node} {...props}/>)}
-        </div>
-        { residuesPerPixel <= -1 && <MSAGaps {...props}/> }
+        {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}
+        {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
+        {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
       </div>
     )
   }
@@ -247,9 +290,6 @@ const MSAGaps = (props) => {
   return (
     <div style={{
       zIndex:10,
-      transformOrigin: '0 0',
-      // transform: `scaleX(${pixelsPerResidue})`,
-      // width: `${span}ch`
     }}>&nbsp;
       {gaps.gaps.map((block,idx) => {
         const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
@@ -298,7 +338,7 @@ function chunkSubstr(str, size) {
   return chunks
 }
 
-const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
+const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel}) => {
   if (!node.model.consensus.alignSeq) {
     let alignSeq = '';
     const seqBuffer = node.model.consensus.alignSeqArray.buffer;
@@ -308,9 +348,12 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme}) => {
     });
     node.model.consensus.alignSeq = chunkSubstr(alignSeq, 256); // speeds up scrolling in safari
   }
-  const classes = highlight[node.model.nodeId] ? ' highlight' : '';
+  let classes = highlight[node.model.nodeId] ? ' highlight' : '';
   function onHover() { hoverNode(node.model.nodeId) }
 //    onMouseOver={_.debounce(onHover,200)}
+  if (zoomLevel === 2) {
+    classes += ' blank';
+  }
   return <div
     className={colorScheme + classes}
     style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}

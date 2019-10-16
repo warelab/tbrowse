@@ -131,7 +131,7 @@
     font-size: 16px;
     font-family: 'msaplain', monospace;
     white-space: nowrap;
-    touch-action: pinch-zoom pan-x;
+    /*touch-action: pinch-zoom pan-x;*/
 }
 
 .msaplain { font-family: 'msaplain', monospace; }
