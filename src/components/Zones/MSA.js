@@ -9,7 +9,10 @@ import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import Tooltip from 'rc-tooltip';
+import Slider from 'rc-slider'
 import './MSA.css';
+
+const chWidth = toPx('1ch');
 
 const override = css`
   display: block;
@@ -43,7 +46,7 @@ class MSAComponent extends React.Component {
     if (this.state.range && this.props.gaps) {
       return (
         <div>
-          <MSAHeader {...this.props} range={this.state.range} />
+          <MSAHeader {...this.props} range={this.state.range} updateRange={(f,t)=>this.handleRangeChange(f,t)}/>
           <MSABody onRangeChange={(f,t)=>this.handleRangeChange(f,t)} {...this.props} range={this.state.range} />
         </div>
       );
@@ -96,6 +99,8 @@ class MSAHeader extends React.Component {
     super(props);
     this.canvasRef = React.createRef();
     this.grayScale = d3.scaleLinear().domain([0, 1]).range(["#000000", "#eeeeee"]);
+    this.sliderRef = React.createRef();
+    this.state = {span: props.range.to - props.range.from};
   }
   draw() {
     const span = this.props.range.to - this.props.range.from;
@@ -123,23 +128,64 @@ class MSAHeader extends React.Component {
     this.draw();
   }
   componentDidUpdate() {
+    const span = this.props.range.to - this.props.range.from;
+    if (span !== this.state.span) {
+      this.setState({span});
+    }
+    this.sliderRef.current.state.value = this.props.gaps.maskLen - span;
     this.draw();
   }
+  handleSliderChange(span) {
+    if (span !== this.state.span) {
+      let delta = (span - this.state.span)/2;
+      let from = this.props.range.from - delta;
+      if (from < 0) {
+        delta -= from;
+        from = 0;
+      }
+      let to = this.props.range.to + delta;
+      if (to > this.props.gaps.maskLen) {
+        from -= to - this.props.gaps.maskLen;
+        to = this.props.gaps.maskLen
+      }
+      this.props.updateRange(Math.floor(from), Math.floor(to));
+    }
+  }
+  renderSlider() {
+    return (
+      <div>
+        <span style={{float:'left'}}>{this.props.range.from}</span>
+        <Slider min={0}
+                max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
+                defaultValue={0}
+                ref={this.sliderRef}
+                className='rc-slider'
+                onChange={(x)=>this.handleSliderChange(this.props.gaps.maskLen - x)}/>
+        <span style={{float:'right'}}>{this.props.range.to}</span>
+      </div>
+    )
+  }
+
   render() {
     const props = this.props;
     let top = 2*props.nodes[0].displayInfo.height;
     return (
-      <div className='zone-header' style={{
-        transformOrigin: '0 0',
-        transform: `scaleX(${props.width / props.gaps.maskLen})`,
-        width: `${props.gaps.maskLen}px`
-      }}>
-        <MSAOverview node={props.root} {...props}/>
-        <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef}
-                style={{
-                  position: 'absolute',
-                  top: `${top - 3}px`
-                }}/>
+      <div className='zone-header'>
+        {this.renderSlider()}
+        <div style={{
+          transformOrigin: '0 0',
+          transform: `scaleX(${props.width / props.gaps.maskLen})`,
+          width: `${props.gaps.maskLen}px`,
+          position: 'absolute',
+          top: '34px'
+        }}>
+          <MSAOverview node={props.root} {...props}/>
+          <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef}
+                  style={{
+                    position: 'absolute',
+                    top: `${top - 3}px`
+                  }}/>
+        </div>
       </div>
     )
   }
@@ -198,7 +244,7 @@ class MSABody extends React.Component {
     this.myRef.current.addEventListener('scroll', function(event) {
       const maskLen = cmp.props.gaps.maskLen;
       const span = cmp.props.range.to - cmp.props.range.from;
-      const from = Math.floor(maskLen*this.scrollLeft/this.scrollWidth);
+      const from = Math.floor(maskLen*this.scrollLeft/this.scrollWidth + 0.5);
       cmp.props.onRangeChange(from,from+span);
     }, false);
   }
@@ -222,13 +268,19 @@ class MSABody extends React.Component {
   }
 
   shouldComponentUpdate(nextProps, nextState) {
-    return !(
+    if (
       nextProps.nodes === this.props.nodes &&
       nextProps.gaps.maskLen === this.props.gaps.maskLen &&
       nextProps.width === this.props.width &&
       nextState.zoomLevel === this.state.zoomLevel &&
       nextProps.colorScheme === this.props.colorScheme
-    )
+    ) {
+      if (nextProps.range !== this.props.range) {
+        this.changeRange(nextProps.range.from, nextProps.range.to);
+      }
+      return false;
+    }
+    return true;
   }
 
   componentDidUpdate() {

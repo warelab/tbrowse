@@ -134,6 +134,13 @@
     /*touch-action: pinch-zoom pan-x;*/
 }
 
+.rc-slider {
+    width: 60%;
+    left: 20%;
+    float: left;
+    position: absolute;
+}
+
 .msaplain { font-family: 'msaplain', monospace; }
 .clustal { font-family: 'clustal', monospace; }
 .zappo   { font-family: 'zappo', monospace; }
