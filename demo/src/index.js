@@ -5,16 +5,16 @@ import parse from 'url-parse'
 
 const url = parse(document.location.href, true);
 const props = {
-  setId: url.query.setId || "compara_95",
-  treeId: url.query.treeId || "ENSGT00390000003602",
-  genesOfInterest: ['ENSG00000139618'],
+  setId: url.query.setId || "compara_plants_98",
+  treeId: url.query.treeId || "EPlGT00940000164376",
+  genesOfInterest: ['AT1G32900'],
   zones: [{
     type: 'tree'
   },{
     type: 'label'
   },{
     type: 'msa',
-    colorScheme: 'zappo'
+    colorScheme: 'clustal'
   }]
 };
 

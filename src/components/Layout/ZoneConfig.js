@@ -92,24 +92,26 @@ class ZoneConfig extends React.Component {
             {id > 0 && <option value="__delete">Delete</option>}
           </optgroup>
         </select>
-        {zone.configurable && <a onClick={() => this.toggleConfig()}><i style={{float:'right'}} className="fa fa-cog"/></a>}
+        {zone.configurable && <a onClick={() => this.toggleConfig()}>&nbsp;<i style={{float:'right'}} className="fa fa-cog"/>&nbsp;</a>}
         {this.state.showConfig &&
-          <table className='tbrowse-param-table'>
-            <thead>
-              <tr>
-                <th>Parameter</th>
-                <th>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {zone.configurable.map((p,idx) => <ConfigurableParameter key={idx}
-                                                                       param={p}
-                                                                       value={zone[p.id]}
-                                                                       onUpdate={updateParam}
-                                                                       extraArgs={{idx:id}}
-                                                                       />)}
-            </tbody>
-          </table>
+          <div className='tbrowse-param-table-wrapper'>
+            <table className='tbrowse-param-table'>
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {zone.configurable.map((p,idx) => <ConfigurableParameter key={idx}
+                                                                         param={p}
+                                                                         value={zone[p.id]}
+                                                                         onUpdate={updateParam}
+                                                                         extraArgs={{idx:id}}
+                                                                         />)}
+              </tbody>
+            </table>
+          </div>
         }
       </div>
     );

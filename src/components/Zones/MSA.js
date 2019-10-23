@@ -135,33 +135,59 @@ class MSAHeader extends React.Component {
     this.sliderRef.current.state.value = this.props.gaps.maskLen - span;
     this.draw();
   }
-  handleSliderChange(span) {
-    if (span !== this.state.span) {
-      let delta = (span - this.state.span)/2;
-      let from = this.props.range.from - delta;
+  changeRange(delta) {
+    let from = this.props.range.from - delta;
+    if (from < 0) {
+      delta -= from;
+      from = 0;
+    }
+    let to = this.props.range.to + delta;
+    if (to > this.props.gaps.maskLen) {
+      from -= to - this.props.gaps.maskLen;
+      to = this.props.gaps.maskLen
       if (from < 0) {
-        delta -= from;
         from = 0;
       }
-      let to = this.props.range.to + delta;
-      if (to > this.props.gaps.maskLen) {
-        from -= to - this.props.gaps.maskLen;
-        to = this.props.gaps.maskLen
-      }
-      this.props.updateRange(Math.floor(from), Math.floor(to));
     }
+    this.props.updateRange(Math.floor(from), Math.floor(to));
+  }
+  handleSliderChange(span) {
+    if (span !== this.state.span) {
+      this.changeRange((span - this.state.span)/2);
+    }
+  }
+  zoomOut() {
+    this.changeRange(Math.floor(0.1*this.state.span));
+  }
+  zoomIn() {
+    this.changeRange(- Math.floor(0.1*this.state.span));
   }
   renderSlider() {
     return (
-      <div>
-        <span style={{float:'left'}}>{this.props.range.from}</span>
-        <Slider min={0}
-                max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
-                defaultValue={0}
-                ref={this.sliderRef}
-                className='rc-slider'
-                onChange={(x)=>this.handleSliderChange(this.props.gaps.maskLen - x)}/>
-        <span style={{float:'right'}}>{this.props.range.to}</span>
+      <div style={{position:'absolute', top:'39px', left:'calc(100% - 200px'}}>
+          <a style={{position:'absolute'}} onClick={()=>this.zoomOut()}><i className="fa fa-minus-square" /></a>
+          <Slider min={0}
+                  max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
+                  defaultValue={0}
+                  handleStyle={{
+                    borderColor: 'black',
+                    borderRadius: 1,
+                    height: 22,
+                    width: 8,
+                    marginLeft: 0,
+                    marginTop: -9,
+                    backgroundColor: 'rgba(255,255,255,0.5)',
+                  }}
+                  style={{
+                    width: '150px',
+                    left: '20px',
+                    top: '1px',
+                    position: 'absolute'
+                  }}
+                  ref={this.sliderRef}
+                  className='rc-slider'
+                  onChange={(x)=>this.handleSliderChange(this.props.gaps.maskLen - x)}/>
+          <a style={{position:'absolute',left:'181px'}} onClick={()=>this.zoomIn()}><i className="fa fa-plus-square" /></a>
       </div>
     )
   }

@@ -134,11 +134,11 @@
     /*touch-action: pinch-zoom pan-x;*/
 }
 
-.rc-slider {
-    width: 60%;
-    left: 20%;
-    float: left;
-    position: absolute;
+.rc-slider-track {
+    background-color: #7a8181;
+}
+.rc-slider-rail {
+    background-color: #7a8181;
 }
 
 .msaplain { font-family: 'msaplain', monospace; }
