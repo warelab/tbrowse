@@ -28,7 +28,7 @@ const zoneDefaults = {
     colorScheme: 'zappo',
     configurable: [
       {id: 'minDepth', type: 'integer', label: 'Min coverage', min:0, max:100},
-      {id: 'minGapLength', type: 'integer', label: 'Min gap length', min:0, max:10},
+      {id: 'minGapLength', type: 'integer', label: 'Min gap length', min:1, max:10},
       {id: 'gapPadding', type: 'integer', label: 'Gap padding', min:0, max:10},
       {id: 'colorScheme', type: 'enum', label: 'Color scheme', values:
         [
