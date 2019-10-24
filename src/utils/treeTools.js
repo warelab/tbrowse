@@ -312,7 +312,8 @@ export function getGapMask(node, minDepth, minGapLength, gapPadding) {
           len: len - 2*gapPadding,
           coverage: maxCoverage,
           collapsed: true
-        })
+        });
+        maxCoverage = 0;
       }
       pos = i + 1;
       len = 0;
