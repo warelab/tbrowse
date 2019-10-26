@@ -92,7 +92,7 @@ class ZoneConfig extends React.Component {
             {id > 0 && <option value="__delete">Delete</option>}
           </optgroup>
         </select>
-        {zone.configurable && <a onClick={() => this.toggleConfig()}>&nbsp;<i style={{float:'right', fontSize:'20px'}} className="fa fa-cog"/>&nbsp;</a>}
+        {zone.configurable && <a onClick={() => this.toggleConfig()}><i style={{float:'right', fontSize:'20px'}} className="fa fa-cog"/></a>}
         {this.state.showConfig &&
           <div className='tbrowse-param-table-wrapper'>
             <table className='tbrowse-param-table'>
