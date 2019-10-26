@@ -101,7 +101,9 @@ class MSAHeader extends React.Component {
     this.canvasRef = React.createRef();
     this.grayScale = d3.scaleLinear().domain([0, 1]).range(["#000000", "#eeeeee"]);
     this.sliderRef = React.createRef();
-    this.state = {span: props.range.to - props.range.from};
+    this.state = {
+      span: props.range.to - props.range.from
+    };
   }
   draw() {
     const span = this.props.range.to - this.props.range.from;
@@ -165,7 +167,7 @@ class MSAHeader extends React.Component {
   }
   renderSlider() {
     return (
-      <div style={{position:'absolute', top:'32px', left:'calc(100% - 200px'}}>
+      <div style={{position:'absolute', top:'11px', left:'calc(100% - 220px'}}>
           <a style={{position:'absolute'}} onClick={()=>this.zoomOut()}><i className="fa fa-minus-square" /></a>
           <Slider min={0}
                   max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
@@ -195,18 +197,15 @@ class MSAHeader extends React.Component {
 
   render() {
     const props = this.props;
-    let top = 2*props.nodes[0].displayInfo.height;
     const maskLenPx = toPx(props.gaps.maskLen+'ch');
     return (
       <div className='zone-header'>
         {this.renderSlider()}
-        <div style={{
-          transformOrigin: '0 0',
-          transform: `scaleX(${props.width / maskLenPx})`,
+        <div className='msa' style={{
           width: `${maskLenPx}px`,
-          position: 'absolute',
-          top: '56px',
-          whiteSpace: 'nowrap'
+          height: '23px',
+          transformOrigin: '0 0',
+          transform: `scaleX(${props.width / maskLenPx})`
         }}>
           <MSAHistogram node={props.root} {...props}/>
         </div>
@@ -214,14 +213,8 @@ class MSAHeader extends React.Component {
           transformOrigin: '0 0',
           transform: `scaleX(${props.width / props.gaps.maskLen})`,
           width: `${props.gaps.maskLen}px`
-          // position: 'absolute',
-          // top: '34px'
         }}>
-          <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef}
-                  style={{
-                    position: 'absolute',
-                    top: `${top - 3}px`
-                  }}/>
+          <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef} />
         </div>
       </div>
     )
@@ -357,6 +350,7 @@ class MSABody extends React.Component {
       }}>
         {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}
         {this.state.zoomLevel === 4 && props.nodes.map((node, idx) => <MSAHistogram key={idx} node={node} {...this.state} {...props}/>)}
+        {this.state.zoomLevel === 5 && <MSAHistogram node={props.root} {...this.state} {...props}/>}
         {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
         {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
         {/*{this.state.zoomLevel < 3 && <SpliceJunctions {...props}/>}*/}
