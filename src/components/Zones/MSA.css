@@ -1,4 +1,9 @@
 @font-face {
+    font-family: 'heatmap';
+    src: url('fonts/Heatmap.woff2') format('woff2'),
+    url('fonts/Heatmap.eot') format('embedded-opentype')
+}
+@font-face {
     font-family: 'clustal';
     src: url('fonts/Clustal-Regular.woff2') format('woff2'),
     url('fonts/Clustal-Regular.eot') format('embedded-opentype')
@@ -141,6 +146,7 @@
     background-color: #7a8181;
 }
 
+.heatmap { font-family: 'heatmap', monospace; font-size: 16px; }
 .msaplain { font-family: 'msaplain', monospace; }
 .clustal { font-family: 'clustal', monospace; }
 .zappo   { font-family: 'zappo', monospace; }

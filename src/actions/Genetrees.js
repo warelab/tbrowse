@@ -26,7 +26,7 @@ function receiveTree(tree, indexes, interpro) {
 const useTree = (url) => {
   return {
     type: USED_TREE,
-    url
+    urldeldel
   }
 };
 
@@ -82,6 +82,9 @@ function deleteAlignSeq(tree) {
   Object.values(tree.indices.nodeId).forEach(node => {
     if (node.model.consensus.hasOwnProperty('alignSeq')) {
       delete node.model.consensus.alignSeq;
+    }
+    if (node.model.consensus.hasOwnProperty('alignHist')) {
+      delete node.model.consensus.alignHist;
     }
   });
 }

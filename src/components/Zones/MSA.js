@@ -11,6 +11,7 @@ import { BarLoader } from 'react-spinners';
 import Tooltip from 'rc-tooltip';
 import Slider from 'rc-slider'
 import './MSA.css';
+import ggp from "gramene-gene-positions";
 
 const chWidth = toPx('1ch');
 
@@ -164,7 +165,7 @@ class MSAHeader extends React.Component {
   }
   renderSlider() {
     return (
-      <div style={{position:'absolute', top:'39px', left:'calc(100% - 200px'}}>
+      <div style={{position:'absolute', top:'32px', left:'calc(100% - 200px'}}>
           <a style={{position:'absolute'}} onClick={()=>this.zoomOut()}><i className="fa fa-minus-square" /></a>
           <Slider min={0}
                   max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
@@ -195,17 +196,27 @@ class MSAHeader extends React.Component {
   render() {
     const props = this.props;
     let top = 2*props.nodes[0].displayInfo.height;
+    const maskLenPx = toPx(props.gaps.maskLen+'ch');
     return (
       <div className='zone-header'>
         {this.renderSlider()}
         <div style={{
           transformOrigin: '0 0',
-          transform: `scaleX(${props.width / props.gaps.maskLen})`,
-          width: `${props.gaps.maskLen}px`,
+          transform: `scaleX(${props.width / maskLenPx})`,
+          width: `${maskLenPx}px`,
           position: 'absolute',
-          top: '34px'
+          top: '56px',
+          whiteSpace: 'nowrap'
         }}>
-          <MSAOverview node={props.root} {...props}/>
+          <MSAHistogram node={props.root} {...props}/>
+        </div>
+        <div style={{
+          transformOrigin: '0 0',
+          transform: `scaleX(${props.width / props.gaps.maskLen})`,
+          width: `${props.gaps.maskLen}px`
+          // position: 'absolute',
+          // top: '34px'
+        }}>
           <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef}
                   style={{
                     position: 'absolute',
@@ -223,10 +234,10 @@ function getZoomLevel({width,range}) {
   if (pixelsPerResidue >= 5) {
     return 1
   }
-  if (pixelsPerResidue >= 2) {
+  if (pixelsPerResidue >= 3) {
     return 2
   }
-  return 3
+  return 4
 }
 
 class MSABody extends React.Component {
@@ -345,13 +356,26 @@ class MSABody extends React.Component {
         transform: `scaleX(${props.width / span})`,
       }}>
         {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}
+        {this.state.zoomLevel === 4 && props.nodes.map((node, idx) => <MSAHistogram key={idx} node={node} {...this.state} {...props}/>)}
         {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
         {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
+        {/*{this.state.zoomLevel < 3 && <SpliceJunctions {...props}/>}*/}
       </div>
     )
   }
 }
 
+const SpliceJunctions = (props) => {
+  return (
+    <div>
+      {props.node.model.gene_structure && props.node.model.gene_structure.exons.map((exon,idx) => {
+        if (idx > 0) {
+          const junction = ggp.remap(props.node.model,exon.start,'gene','protein');
+        }
+      })}
+    </div>
+  )
+};
 const MSAGaps = (props) => {
   const gaps = props.gaps;
   const span = props.range.to - props.range.from;
@@ -417,6 +441,7 @@ function chunkSubstr(str, size) {
 }
 
 const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel}) => {
+  const chunkSize=200;
   if (!node.model.consensus.alignSeq) {
     let alignSeq = '';
     const seqBuffer = node.model.consensus.alignSeqArray.buffer;
@@ -424,7 +449,7 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
       const mySlice = new Uint16Array(seqBuffer, block.offset * 2, block.len);
       alignSeq += String.fromCharCode.apply(null, mySlice);
     });
-    node.model.consensus.alignSeq = chunkSubstr(alignSeq, 256); // speeds up scrolling in safari
+    node.model.consensus.alignSeq = chunkSubstr(alignSeq, chunkSize); // speeds up scrolling in safari
   }
   let classes = highlight[node.model.nodeId] ? ' highlight' : '';
   function onHover() { hoverNode(node.model.nodeId) }
@@ -437,7 +462,10 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
     style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
   >
     {node.model.consensus.alignSeq.map((s, i) => {
-      return <span key={i}>{s}</span>
+      return <span key={i} style={{
+        position:'absolute',
+        left: `${i*chunkSize}ch`
+      }}>{s}</span>
     })}
   </div>
 };
@@ -486,7 +514,7 @@ function splitByDomain(region, domainHits, domainIdx) {
 }
 
 
-class MSAOverview extends React.Component {
+class MSAOverviewCanvases extends React.Component {
   constructor(props) {
     super(props);
     this.setup(props);
@@ -665,3 +693,205 @@ class MSAOverview extends React.Component {
   }
 }
 
+class MSAOverview extends React.Component {
+  constructor(props) {
+    super(props);
+    this.setup(props);
+    this.canvasRefs = this.domains.map(d => {
+      return React.createRef();
+    })
+  }
+
+  setup(props) {
+    let DA = props.node.model.domainArchitecture;
+    let consensus = props.node.model.consensus;
+    let domainIdx = props.interpro;
+    let domainHits=[];
+    if (domainIdx && DA && DA.hasOwnProperty('Domain')) {
+      Object.keys(DA.Domain).forEach(rootId => {
+        Array.prototype.push.apply(domainHits,DA.Domain[rootId].hits);
+      });
+      domainHits = mergeOverlaps(domainHits,0,'max');
+    }
+
+    let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
+    let colorScale = grayScale;
+    let blocks = [];
+    let blockIdx=0;
+    let block = {
+      start: 0,
+      coverage: 0
+    };
+    let pos = 0;
+    let domainRegions = [];
+    let currDomain = {
+      firstBlock:0,
+      offset:0
+    };
+
+    function endBlock(coverage) {
+      if (block.coverage > 0) {
+        block.width = pos - block.start;
+        block.fill = colorScale(block.coverage/consensus.nSeqs);
+        blocks.push(block);
+        blockIdx++;
+      }
+      block = {
+        start: pos,
+        coverage: coverage || 0
+      }
+    }
+
+    function endDomain(domain) {
+      currDomain.nBlocks = blockIdx - currDomain.firstBlock;
+      if (currDomain.nBlocks) {
+        currDomain.len = pos - blocks[currDomain.firstBlock].start;
+        domainRegions.push(currDomain);
+      }
+      currDomain = {
+        firstBlock: blockIdx,
+        offset: pos
+      };
+      if (domain) {
+        currDomain.domain = domain;
+      }
+    }
+
+    props.gaps.mask.forEach(maskRegion => {
+      splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
+        // if this region is a different domain finish the last block
+        // and change the colorScale
+        if (currDomain.domain) {
+          if (!region.domain) {
+            endBlock();
+            endDomain();
+            colorScale = grayScale;
+          }
+          else if (region.domain.id !== currDomain.domain.id) {
+            endBlock();
+            endDomain(region.domain);
+            colorScale = region.domain.colorScale;
+          }
+        }
+        else if (region.domain) {
+          endBlock();
+          endDomain(region.domain);
+          colorScale = region.domain.colorScale;
+        }
+        for (let i = region.start; i < region.end; i++) {
+          if (consensus.coverage[i] !== block.coverage) { // change in coverage
+            endBlock(consensus.coverage[i]);
+          }
+          pos++;
+        }
+      });
+    });
+    endBlock();
+    endDomain();
+    this.domains = domainRegions.filter(d => d.nBlocks > 0);
+    this.blocks = blocks;
+    this.maskLen = props.gaps.maskLen;
+  }
+
+  draw() {
+    this.canvasRefs.forEach((cRef,idx) => {
+      let canvas = cRef.current;
+      canvas.offScreenCanvas = document.createElement('canvas');
+      canvas.offScreenCanvas.width = canvas.width;
+      canvas.offScreenCanvas.height = canvas.height;
+      const ctx = canvas.offScreenCanvas.getContext('2d');
+      const d = this.domains[idx];
+      const from=d.firstBlock;
+      const to=from+d.nBlocks;
+      for(let i=from;i<to;i++) {
+        const block = this.blocks[i];
+        ctx.fillStyle = block.fill;
+        ctx.fillRect(block.start - d.offset, 0, block.width, 18);
+      }
+      const mainCtx = canvas.getContext('2d');
+      mainCtx.clearRect(0,0,canvas.width,canvas.height);
+      mainCtx.drawImage(canvas.offScreenCanvas, 0, 0);
+    })
+  }
+
+  componentDidMount() {
+    this.draw();
+  }
+
+  componentDidUpdate() {
+    this.draw();
+  }
+
+  formatDomain(domain) {
+    return (
+      <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
+    )
+  }
+
+  render() {
+    if (this.props.gaps.maskLen !== this.maskLen) {
+      this.setup(this.props);
+    }
+    let canvases = [];
+    const alignParams = {
+      points: ['tc','bc'],
+      offset: [0,3],
+      targetOffset: [0,0],
+      overflow: { adjustX: true, adjustY: true }
+    };
+    this.canvasRefs.forEach((cRef, idx) => {
+      const canvas = <canvas ref={cRef}
+                             key={idx}
+                             height="18px"
+                             width={`${this.domains[idx].len}px`}
+                             style={{position:'absolute', left: `${this.domains[idx].offset}px`}}
+      />;
+      if (this.domains[idx].domain) {
+        canvases.push(
+          <Tooltip placement="top"
+                   key={idx}
+                   overlay={this.formatDomain(this.domains[idx].domain)}
+                   align={alignParams}
+                   trigger={['click']}
+          >
+            {canvas}
+          </Tooltip>
+        );
+      }
+      else {
+        canvases.push(canvas);
+      }
+    });
+    let top = this.props.node.displayInfo.offset || 0;
+    top += this.props.nodes[0].displayInfo.height;
+    return <div style={{
+      position: 'absolute',
+      left: '0px',
+      top: `${top+3}px`
+    }}>{canvases}</div>;
+  }
+}
+
+const MSAHistogram = ({node, gaps}) => {
+  const chunkSize=200;
+  if (!node.model.consensus.alignHist) {
+    let alignHist = '';
+    const buffer = node.model.consensus.heatmap.buffer;
+    gaps.mask.forEach(block => {
+      let mySlice = new Uint16Array(buffer, block.offset * 2, block.len);
+      alignHist += String.fromCharCode.apply(null, mySlice);
+    });
+    node.model.consensus.alignHist = chunkSubstr(alignHist, chunkSize); // speeds up scrolling in safari
+  }
+  return <div
+    className='heatmap'
+    style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
+  >
+    {node.model.consensus.alignHist.map((s, i) => {
+      return <div key={i} style={{
+        position:'absolute',
+        left: `${i*chunkSize}ch`
+      }}>{s}</div>
+    })}
+  </div>
+};

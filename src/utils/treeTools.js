@@ -188,6 +188,7 @@ export function addConsensus(tree) {
     let coverage = new Uint16Array(clength);
     let alignSeqArray = new Uint16Array(clength);
 
+
     pieces.forEach(function (piece) {
       if (piece === "M") {
         if (stretch === 0) stretch = 1;
@@ -257,7 +258,20 @@ export function addConsensus(tree) {
     }
   }
 
+  function addHeatmap(node) {
+    let heatmap = new Uint16Array(clength);
+    const nSeqs = node.model.consensus.nSeqs;
+    node.model.consensus.coverage.forEach((c,i) => {
+      heatmap[i] = c > 0 ? 43 - Math.ceil(10*c/nSeqs) : 126;
+    });
+    node.model.consensus.heatmap = heatmap;
+    node.children.forEach(child => {
+      addHeatmap(child);
+    });
+  }
+
   addConsensusToNode(tree);
+  addHeatmap(tree);
 }
 
 export function makeMask(gaps, totalLength) {

@@ -1,7 +1,7 @@
 // cache con, el for reused
 var con, el
 // high sample will more accurate?
-var sample = 10000
+var sample = 100
 
 function initElements () {
   con = document.createElement('div')
@@ -10,7 +10,7 @@ function initElements () {
   con.style.height = 0
   con.style.visibility = 'hidden'
   con.style.overflow = 'hidden'
-  con.className = 'msa zappo'
+  con.className = 'heatmap'
   el = document.createElement('div')
   con.appendChild(el)
 }
@@ -18,7 +18,7 @@ function initElements () {
 function pxPerUnit (unit, element) {
   if (!con) initElements()
   el.style.width = sample + unit;
-  el.innerHTML = 'ATTACA';
+  el.innerHTML = "AAAAAAAAA";
   (element || document.body).appendChild(con)
   var dimension = el.getBoundingClientRect()
   con.parentNode.removeChild(con)
