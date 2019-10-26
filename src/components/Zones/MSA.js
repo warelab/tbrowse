@@ -167,7 +167,7 @@ class MSAHeader extends React.Component {
   }
   renderSlider() {
     return (
-      <div style={{position:'absolute', top:'11px', left:'calc(100% - 220px'}}>
+      <div style={{position:'absolute', top:'11px', left:'calc(100% - 220px', zIndex:1200}}>
           <a style={{position:'absolute'}} onClick={()=>this.zoomOut()}><i className="fa fa-minus-square" /></a>
           <Slider min={0}
                   max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
