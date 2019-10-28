@@ -262,7 +262,7 @@ export function addConsensus(tree) {
     let heatmap = new Uint16Array(clength);
     const nSeqs = node.model.consensus.nSeqs;
     node.model.consensus.coverage.forEach((c,i) => {
-      heatmap[i] = c > 0 ? 43 - Math.ceil(10*c/nSeqs) : 126;
+      heatmap[i] = c > 0 ? 42 - Math.ceil(9*c/nSeqs) : 42;
     });
     node.model.consensus.heatmap = heatmap;
     node.children.forEach(child => {
@@ -538,16 +538,35 @@ export function addDomainArchitecture(tree, api, callback) {
         }
       }
       node.model.domainArchitecture = domains;
+      if (domains.hasOwnProperty('Domain')) {
+        let domainHits=[];
+        Object.keys(domains.Domain).forEach(rootId => {
+          Array.prototype.push.apply(domainHits,domains.Domain[rootId].hits);
+        });
+        domainHits = mergeOverlaps(domainHits,0,'max');
+        domainHits.forEach(dh => {
+          const domain = domainIdx[dh.id];
+          for(let i=dh.start; i<=dh.end; i++) {
+            if (node.model.consensus.heatmap[i] < 43) {
+              node.model.consensus.heatmap[i] += domain.colorOffset;
+            }
+          }
+        })
+      }
       return domains;
     }
-    let rootDomains = mergeDomains(tree);
     let colors = d3chrom.schemeCategory10;
+    const nColors = 6;
     _.each(domainIdx, (ipr,id) => {
       let colorIdx = ipr.rootId % 10;
       let full = colors[colorIdx];
       let pale = d3.scaleLinear().domain([0,1]).range(['#FFFFFF',full])(0.5);
       ipr.colorScale = d3.scaleLinear().domain([0, 1]).range([pale,full]);
+      ipr.colorOffset = (ipr.rootId % nColors + 1) * 10;
     });
+
+    let rootDomains = mergeDomains(tree);
+
     callback(domainIdx, rootDomains);
   }).catch((error) => {
     console.log('error searching',params,error);
