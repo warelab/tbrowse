@@ -314,7 +314,8 @@ class MSABody extends React.Component {
       nextProps.gaps.maskLen === this.props.gaps.maskLen &&
       nextProps.width === this.props.width &&
       nextState.zoomLevel === this.state.zoomLevel &&
-      nextProps.colorScheme === this.props.colorScheme
+      nextProps.colorScheme === this.props.colorScheme &&
+      nextProps.zoneHeight === this.props.zoneHeight
     ) {
       if (nextProps.range !== this.props.range) {
         this.changeRange(nextProps.range.from, nextProps.range.to);

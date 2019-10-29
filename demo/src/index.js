@@ -17,12 +17,27 @@ const props = {
     colorScheme: 'clustal'
   }]
 };
+const props2 = {
+  setId: url.query.setId || "compara_95",
+  treeId: url.query.treeId || "ENSGT00950000183153",
+  genesOfInterest: ['ENSG00000141510'],
+  zones: [{
+    type: 'tree'
+  },{
+    type: 'label'
+  },{
+    type: 'msa',
+    colorScheme: 'clustal'
+  }]
+};
 
 class Demo extends Component {
   render() {
     return <div>
-      <h1>tbrowse Demo</h1>
+      <h1>Waxy</h1>
       <TBrowse {...props}/>
+      <h1>Tp53</h1>
+      <TBrowse {...props2}/>
     </div>
   }
 }
