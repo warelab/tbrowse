@@ -556,7 +556,7 @@ export function addDomainArchitecture(tree, api, callback) {
       return domains;
     }
     let colors = d3chrom.schemeCategory10;
-    const nColors = 6;
+    const nColors = 8;
     _.each(domainIdx, (ipr,id) => {
       let colorIdx = ipr.rootId % 10;
       let full = colors[colorIdx];
