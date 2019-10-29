@@ -245,6 +245,17 @@ class MSABody extends React.Component {
   componentDidMount() {
     let cmp = this;
     this.myRef.current.addEventListener('wheel', function(event) {
+      // We don't want to scroll below zero or above the width
+      const maxX = this.scrollWidth - this.offsetWidth;
+      // If this event looks like it will scroll beyond the bounds of the element, prevent it and set the scroll to the boundary manually
+      if (this.scrollLeft + event.deltaX < 0 ||
+        this.scrollLeft + event.deltaX > maxX) {
+
+        event.preventDefault();
+
+        // Manually set the scroll to the boundary
+        this.scrollLeft = Math.max(0, Math.min(maxX, this.scrollLeft + event.deltaX));
+      }
       if (Math.abs(event.deltaY) > 0 && event.shiftKey) {
         event.preventDefault();
         const maskLen = cmp.props.gaps.maskLen;
@@ -274,8 +285,8 @@ class MSABody extends React.Component {
     this.myRef.current.addEventListener('scroll', function(event) {
       const maskLen = cmp.props.gaps.maskLen;
       const span = cmp.props.range.to - cmp.props.range.from;
-      const from = Math.floor(maskLen*this.scrollLeft/this.scrollWidth + 0.5);
-      cmp.props.onRangeChange(from,from+span);
+      const from = Math.floor(maskLen * this.scrollLeft / this.scrollWidth + 0.5);
+      cmp.props.onRangeChange(from, from + span);
     }, false);
   }
 
