@@ -9,6 +9,7 @@ import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import Tooltip from 'rc-tooltip';
+import ReactTooltip from 'react-tooltip';
 import Slider from 'rc-slider'
 import './MSA.css';
 import ggp from "gramene-gene-positions";
@@ -49,6 +50,13 @@ class MSAComponent extends React.Component {
         <div>
           <MSAHeader {...this.props} range={this.state.range} updateRange={(f,t)=>this.handleRangeChange(f,t)}/>
           <MSABody onRangeChange={(f,t)=>this.handleRangeChange(f,t)} {...this.props} range={this.state.range} />
+          <ReactTooltip id='domain'
+                        getContent={(dataTip) => `domain? ${dataTip}`}
+                        effect='float'
+                        place={'bottom'}
+                        border={true}
+                        type={'light'}
+          />
         </div>
       );
     }
@@ -880,24 +888,79 @@ class MSAOverview extends React.Component {
 
 const MSAHistogram = ({node, gaps}) => {
   const chunkSize=200;
-  if (!node.model.consensus.alignHist) {
-    let alignHist = '';
-    const buffer = node.model.consensus.heatmap.buffer;
-    gaps.mask.forEach(block => {
-      let mySlice = new Uint16Array(buffer, block.offset * 2, block.len);
-      alignHist += String.fromCharCode.apply(null, mySlice);
+  const unmaskedLen = node.model.consensus.heatmap.length;
+  let regions = [{
+    start: 0,
+    end: unmaskedLen
+  }];
+  let lastRegion = regions[0];
+  if (node.model.domainHits) {
+    node.model.domainHits.forEach(dh => {
+      lastRegion = regions[regions.length - 1];
+      if (dh.start < lastRegion.end) {
+        lastRegion.end = dh.start
+      }
+      if (dh.start > lastRegion.end) {
+        regions.push({
+          start: lastRegion.end,
+          end: dh.start
+        })
+      }
+      regions.push(dh);
     });
-    node.model.consensus.alignHist = chunkSubstr(alignHist, chunkSize); // speeds up scrolling in safari
+    lastRegion = regions[regions.length - 1];
+    if (lastRegion.end < unmaskedLen) {
+      regions.push({
+        start: lastRegion.end,
+        end: unmaskedLen
+      })
+    }
   }
-  return <div
-    className='heatmap'
-    style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
-  >
-    {node.model.consensus.alignHist.map((s, i) => {
-      return <div key={i} style={{
-        position:'absolute',
-        left: `${i*chunkSize}ch`
-      }}>{s}</div>
-    })}
-  </div>
-};
+  const mask = gaps.mask;
+  const buffer = node.model.consensus.heatmap.buffer;
+  let blockIdx = 0;
+  let offsetInMSA=0;
+  return (
+    <div
+      className='heatmap'
+      style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
+    >
+      {regions.map((region,i) => {
+        let alignHist = '';
+        if (blockIdx < mask.length && mask[blockIdx].offset < region.start) {
+          // block started in prior region
+          let len = region.end - region.start;
+          if (mask[blockIdx].offset + mask[blockIdx].len <= region.end) {
+            // block ends within region
+            len = mask[blockIdx].len - (region.start - mask[blockIdx].offset);
+            blockIdx++;
+          }
+          const mySlice = new Uint16Array(buffer, region.start * 2, len);
+          alignHist += String.fromCharCode.apply(null, mySlice);
+        }
+        while (blockIdx < mask.length && mask[blockIdx].offset + mask[blockIdx].len <= region.end) {
+          // block is within the region
+          const mySlice = new Uint16Array(buffer, mask[blockIdx].offset * 2, mask[blockIdx].len);
+          alignHist += String.fromCharCode.apply(null, mySlice);
+          blockIdx++;
+        }
+        if (blockIdx < mask.length && mask[blockIdx].offset < region.end) {
+          // block spans region boundary
+          const mySlice = new Uint16Array(buffer, mask[blockIdx].offset * 2, region.end - mask[blockIdx].offset);
+          alignHist += String.fromCharCode.apply(null, mySlice);
+        }
+        return (
+          <div key={i} data-for='domain' data-tip={region.id ? 'yes' : 'no'} style={{cursor: region.id ? 'pointer' : 'default'}}>
+            {chunkSubstr(alignHist, chunkSize).map((s,j) => {
+              let chunkCmp = (
+                <div key={j} style={{left:`${offsetInMSA}ch`, top:0, position:'absolute'}}>{s}</div>
+              );
+              offsetInMSA += s.length;
+              return chunkCmp;
+            })}
+          </div>
+        )
+      })}
+    </div>
+  );
+}

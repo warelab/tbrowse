@@ -344,7 +344,57 @@ export function getGapMask(node, minDepth, minGapLength, gapPadding) {
   return makeMask(gaps, coverage.length);
 }
 
+function maxOverlaps(regions) {
+  regions.sort((a,b) => a.coverage - b.coverage);
+  let results = [];
+  while(regions.length > 0) {
+    let a = regions.pop(); // region with highest coverage
+    if (results.length === 0) {
+      results.push(a);
+    }
+    else {
+      let merged = [];
+      while(results.length > 0) {
+        let b = results.shift();
+        if (a.end <= b.start) {
+          merged.push(a, b);
+          while (results.length > 0) {
+            merged.push(results.pop());
+          }
+        }
+        else if (a.start >= b.end) {
+          merged.push(b);
+        }
+        else {
+          // a and b overlap
+          if (a.start < b.start) {
+            if (a.end > b.end) {
+              let c = _.clone(a);
+              c.start = b.end;
+              regions.push(c);
+            }
+            a.end = b.start;
+            merged.push(a,b);
+            while (results.length > 0) {
+              merged.push(results.pop());
+            }
+          }
+          else if (a.end > b.end) {
+            a.start = b.end;
+            merged.push(b);
+          }
+        }
+      }
+      results = merged;
+    }
+  }
+  return results;
+}
+
 export function mergeOverlaps(regions, minOverlap, coverageMode) {
+  if (coverageMode === 'max') {
+    return maxOverlaps(regions);
+  }
   regions.sort((a,b) => a.start - b.start);
   let clusters = [];
   let ipr = regions.shift();
@@ -486,7 +536,7 @@ export function addDomainArchitecture(tree, api, callback) {
         coverage: region.coverage,
         start: mask[lb1].offset + region.start - startPositions[lb1],
         end:   mask[lb2].offset + region.end   - startPositions[lb2]
-      };
+      }
     }
     function leafDomains(node) {
       if (!node.model.hasOwnProperty('interpro')) return {};
@@ -544,6 +594,7 @@ export function addDomainArchitecture(tree, api, callback) {
           Array.prototype.push.apply(domainHits,domains.Domain[rootId].hits);
         });
         domainHits = mergeOverlaps(domainHits,0,'max');
+        node.model.domainHits = domainHits;
         domainHits.forEach(dh => {
           const domain = domainIdx[dh.id];
           for(let i=dh.start; i<=dh.end; i++) {

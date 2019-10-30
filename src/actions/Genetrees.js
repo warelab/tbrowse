@@ -26,7 +26,7 @@ function receiveTree(tree, indexes, interpro) {
 const useTree = (url) => {
   return {
     type: USED_TREE,
-    urldeldel
+    url
   }
 };
 
