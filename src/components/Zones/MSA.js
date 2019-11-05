@@ -51,7 +51,12 @@ class MSAComponent extends React.Component {
           <MSAHeader {...this.props} range={this.state.range} updateRange={(f,t)=>this.handleRangeChange(f,t)}/>
           <MSABody onRangeChange={(f,t)=>this.handleRangeChange(f,t)} {...this.props} range={this.state.range} />
           <ReactTooltip id='domain'
-                        getContent={(dataTip) => `domain? ${dataTip}`}
+                        getContent={(dataTip) => {
+                          const domain = JSON.parse(dataTip);
+                          return domain && (
+                            <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
+                          )
+                        }}
                         effect='float'
                         place={'bottom'}
                         border={true}
@@ -886,7 +891,11 @@ class MSAOverview extends React.Component {
   }
 }
 
-const MSAHistogram = ({node, gaps}) => {
+const formatDomain = domain => (
+  <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
+);
+
+const MSAHistogram = ({node, gaps, interpro}) => {
   const chunkSize=200;
   const unmaskedLen = node.model.consensus.heatmap.length;
   let regions = [{
@@ -919,8 +928,8 @@ const MSAHistogram = ({node, gaps}) => {
   const mask = gaps.mask;
   const buffer = node.model.consensus.heatmap.buffer;
   let blockIdx = 0;
-  let offsetInMSA=0;
-  return (
+  let chunkOffset=0;
+  const cmp = (
     <div
       className='heatmap'
       style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
@@ -944,18 +953,30 @@ const MSAHistogram = ({node, gaps}) => {
           alignHist += String.fromCharCode.apply(null, mySlice);
           blockIdx++;
         }
-        if (blockIdx < mask.length && mask[blockIdx].offset < region.end) {
+        if (blockIdx < mask.length && mask[blockIdx].offset >= region.start && mask[blockIdx].offset < region.end) {
           // block spans region boundary
-          const mySlice = new Uint16Array(buffer, mask[blockIdx].offset * 2, region.end - mask[blockIdx].offset);
+          let offset = Math.max(region.start,mask[blockIdx].offset);
+          const mySlice = new Uint16Array(buffer, offset * 2, region.end - offset);
           alignHist += String.fromCharCode.apply(null, mySlice);
         }
-        return (
-          <div key={i} data-for='domain' data-tip={region.id ? 'yes' : 'no'} style={{cursor: region.id ? 'pointer' : 'default'}}>
+        return region.id ? (
+          <div key={i} data-for='domain' data-tip={JSON.stringify(interpro[region.id])} style={{cursor: 'pointer'}}>
             {chunkSubstr(alignHist, chunkSize).map((s,j) => {
               let chunkCmp = (
-                <div key={j} style={{left:`${offsetInMSA}ch`, top:0, position:'absolute'}}>{s}</div>
+                <div key={j} style={{left:`${chunkOffset}ch`, top:0, position:'absolute'}}>{s}</div>
               );
-              offsetInMSA += s.length;
+              chunkOffset += s.length;
+              return chunkCmp;
+            })}
+          </div>
+        ) :
+        (
+          <div key={i} style={{cursor: 'default'}}>
+            {chunkSubstr(alignHist, chunkSize).map((s,j) => {
+              let chunkCmp = (
+                <div key={j} style={{left:`${chunkOffset}ch`, top:0, position:'absolute'}}>{s}</div>
+              );
+              chunkOffset += s.length;
               return chunkCmp;
             })}
           </div>
@@ -963,4 +984,5 @@ const MSAHistogram = ({node, gaps}) => {
       })}
     </div>
   );
-}
+  return cmp;
+};

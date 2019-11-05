@@ -6,8 +6,8 @@ import parse from 'url-parse'
 const url = parse(document.location.href, true);
 const props = {
   setId: url.query.setId || "compara_plants_98",
-  treeId: url.query.treeId || "EPlGT00940000164376",
-  genesOfInterest: ['AT1G32900'],
+  treeId: url.query.treeId || "EPlGT00940000167757",
+  genesOfInterest: ['AT2G34710'],
   zones: [{
     type: 'tree'
   },{
@@ -34,7 +34,7 @@ const props2 = {
 class Demo extends Component {
   render() {
     return <div>
-      <h1>Waxy</h1>
+      <h1>PHA</h1>
       <TBrowse {...props}/>
       <h1>Tp53</h1>
       <TBrowse {...props2}/>

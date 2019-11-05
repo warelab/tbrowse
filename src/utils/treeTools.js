@@ -354,12 +354,14 @@ function maxOverlaps(regions) {
     }
     else {
       let merged = [];
+      let pushA = true;
       while(results.length > 0) {
         let b = results.shift();
         if (a.end <= b.start) {
           merged.push(a, b);
+          pushA = false;
           while (results.length > 0) {
-            merged.push(results.pop());
+            merged.push(results.shift());
           }
         }
         else if (a.start >= b.end) {
@@ -375,8 +377,9 @@ function maxOverlaps(regions) {
             }
             a.end = b.start;
             merged.push(a,b);
+            pushA = false;
             while (results.length > 0) {
-              merged.push(results.pop());
+              merged.push(results.shift());
             }
           }
           else if (a.end > b.end) {
@@ -385,15 +388,81 @@ function maxOverlaps(regions) {
           }
         }
       }
+      if (pushA) merged.push(a);
       results = merged;
     }
   }
   return results;
 }
 
+function flattenRegions(regions) {
+  regions.sort((a,b) => a.start - b.start);
+  let results = [];
+  while (regions.length > 0) {
+    let a = regions.shift();
+    let merged = [];
+    while (results.length > 0) {
+      let b = results.shift();
+      if (b.end <= a.start) {
+        merged.push(b);
+      }
+      else if (b.start >= a.end) {
+        merged.push(a,b);
+        while(results.length > 0) {
+          merged.push(results.shift());
+        }
+      }
+      else {
+        if (a.start < b.start) {
+          let c = _.clone(a);
+          c.end = b.start;
+          merged.push(c);
+        }
+        if (a.start > b.start) {
+          let c = _.clone(b);
+          c.end = a.start;
+          merged.push(c);
+        }
+        if (a.end < b.end) {
+          if (a.id === b.id) {
+            a.coverage += b.coverage;
+          }
+          merged.push(a);
+          b.start = a.end;
+          merged.push(b);
+          while(results.length > 0) {
+            merged.push(results.shift());
+          }
+        }
+        else if (a.end > b.end) {
+          if (a.id === b.id) {
+            b.coverage += a.coverage;
+          }
+          merged.push(b);
+          a.start = b.end;
+        }
+        else {
+          if (a.id === b.id) {
+            a.coverage += b.coverage;
+          }
+          merged.push(a);
+          while(results.length > 0) {
+            merged.push(results.shift());
+          }
+        }
+      }
+    }
+    results = merged;
+  }
+  return results;
+}
+
 export function mergeOverlaps(regions, minOverlap, coverageMode) {
-  if (coverageMode === 'max') {
+  if (coverageMode === 'maxm') {
     return maxOverlaps(regions);
+  }
+  if (coverageMode === 'sumd') {
+    return flattenRegions(regions);
   }
   regions.sort((a,b) => a.start - b.start);
   let clusters = [];
@@ -593,7 +662,7 @@ export function addDomainArchitecture(tree, api, callback) {
         Object.keys(domains.Domain).forEach(rootId => {
           Array.prototype.push.apply(domainHits,domains.Domain[rootId].hits);
         });
-        domainHits = mergeOverlaps(domainHits,0,'max');
+        domainHits = mergeOverlaps(domainHits,0,'maxm');
         node.model.domainHits = domainHits;
         domainHits.forEach(dh => {
           const domain = domainIdx[dh.id];
