@@ -44,6 +44,18 @@ class MSAComponent extends React.Component {
       this.setState({range});
     }
   }
+  componentDidMount() {
+    if (this.props.nodes && !this.props.gaps) {
+      this.props.calculateGaps(this.props)
+    }
+    if (this.props.gaps && !this.state.range) {
+      let range = {
+        from: 0,
+        to: this.props.gaps.maskLen
+      };
+      this.setState({range});
+    }
+  }
   render() {
     if (this.state.range && this.props.gaps) {
       return (
