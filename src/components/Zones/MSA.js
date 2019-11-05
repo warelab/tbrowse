@@ -243,7 +243,7 @@ function getZoomLevel({width,range}) {
   if (pixelsPerResidue >= 3) {
     return 2
   }
-  return 4
+  return 3
 }
 
 class MSABody extends React.Component {
@@ -275,8 +275,8 @@ class MSABody extends React.Component {
         const visibleProportion = this.clientWidth/this.scrollWidth;
         let from = cmp.props.range.from;
         let to = cmp.props.range.to;
-        const span = cmp.state.zoomLevel === 3 ? to - from : toPx(`${to - from}ch`);
-        const delta = cmp.state.zoomLevel === 3 ? Math.ceil(0.01*span) : cmp.state.zoomLevel;
+        const span = toPx(`${to - from}ch`);
+        const delta = cmp.state.zoomLevel === 3 ? Math.ceil(0.001*span) : cmp.state.zoomLevel;
         if (event.deltaY < 0 && (cmp.state.zoomLevel > 1 || this.clientWidth > cmp.props.width)) {
           // zoom in
           from += delta;
@@ -312,7 +312,7 @@ class MSABody extends React.Component {
       this.setState({zoomLevel});
     }
     else {
-      const span = (zoomLevel === 3) ? to - from : toPx(`${to - from}ch`);
+      const span = toPx(`${to - from}ch`);
       const pixelsPerResidue = this.props.width / span;
       let el = this.myRef.current;
       el.style.transform = `scaleX(${pixelsPerResidue})`;
@@ -363,9 +363,7 @@ class MSABody extends React.Component {
 
   render() {
     const props = this.props;
-    const span = (this.state.zoomLevel === 3)
-      ? props.range.to - props.range.from
-      : toPx(`${props.range.to - props.range.from}ch`);
+    const span = toPx(`${props.range.to - props.range.from}ch`);
     return (
       <div ref={this.myRef} className='msa' style={{
         height: props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
@@ -373,9 +371,9 @@ class MSABody extends React.Component {
         transformOrigin: '0 0',
         transform: `scaleX(${props.width / span})`,
       }}>
-        {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}
-        {this.state.zoomLevel === 4 && props.nodes.map((node, idx) => <MSAHistogram key={idx} node={node} {...this.state} {...props}/>)}
-        {this.state.zoomLevel === 5 && <MSAHistogram node={props.root} {...this.state} {...props}/>}
+        {/*{this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}*/}
+        {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAHistogram key={idx} node={node} {...this.state} {...props}/>)}
+        {/*{this.state.zoomLevel === 5 && <MSAHistogram node={props.root} {...this.state} {...props}/>}*/}
         {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
         {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
         {/*{this.state.zoomLevel < 3 && <SpliceJunctions {...props}/>}*/}
@@ -395,6 +393,7 @@ const SpliceJunctions = (props) => {
     </div>
   )
 };
+
 const MSAGaps = (props) => {
   const gaps = props.gaps;
   const span = props.range.to - props.range.from;
@@ -489,411 +488,6 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
   </div>
 };
 
-function splitByDomain(region, domainHits, domainIdx) {
-  let regionStart = region.offset;
-  let regionEnd = region.offset + region.len;
-  let subregions = [];
-  let dIdx = 0;
-  while (dIdx < domainHits.length && domainHits[dIdx].start < regionEnd) {
-    let domain = domainHits[dIdx];
-    dIdx++;
-    if (domain.end > regionStart) {
-      if (domain.start > regionStart) {
-        subregions.push({
-          start: regionStart,
-          end: domain.start
-        });
-        regionStart = domain.start;
-      }
-      if (domain.end <= regionEnd) {
-        subregions.push({
-          start: regionStart,
-          end: domain.end,
-          domain: domainIdx[domain.id]
-        });
-        regionStart = domain.end;
-      }
-      else {
-        subregions.push({
-          start: regionStart,
-          end: regionEnd,
-          domain: domainIdx[domain.id]
-        });
-        regionStart = regionEnd;
-      }
-    }
-  }
-  if (regionStart < regionEnd) {
-    subregions.push({
-      start: regionStart,
-      end: regionEnd
-    });
-  }
-  return subregions;
-}
-
-
-class MSAOverviewCanvases extends React.Component {
-  constructor(props) {
-    super(props);
-    this.setup(props);
-    this.canvasRefs = this.domains.map(d => {
-      return React.createRef();
-    })
-  }
-
-  setup(props) {
-    let DA = props.node.model.domainArchitecture;
-    let consensus = props.node.model.consensus;
-    let domainIdx = props.interpro;
-    let domainHits=[];
-    if (domainIdx && DA && DA.hasOwnProperty('Domain')) {
-      Object.keys(DA.Domain).forEach(rootId => {
-        Array.prototype.push.apply(domainHits,DA.Domain[rootId].hits);
-      });
-      domainHits = mergeOverlaps(domainHits,0,'max');
-    }
-
-    let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
-    let colorScale = grayScale;
-    let blocks = [];
-    let blockIdx=0;
-    let block = {
-      start: 0,
-      coverage: 0
-    };
-    let pos = 0;
-    let domainRegions = [];
-    let currDomain = {
-      firstBlock:0,
-      offset:0
-    };
-
-    function endBlock(coverage) {
-      if (block.coverage > 0) {
-        block.width = pos - block.start;
-        block.fill = colorScale(block.coverage/consensus.nSeqs);
-        blocks.push(block);
-        blockIdx++;
-      }
-      block = {
-        start: pos,
-        coverage: coverage || 0
-      }
-    }
-
-    function endDomain(domain) {
-      currDomain.nBlocks = blockIdx - currDomain.firstBlock;
-      if (currDomain.nBlocks) {
-        currDomain.len = pos - blocks[currDomain.firstBlock].start;
-        domainRegions.push(currDomain);
-      }
-      currDomain = {
-        firstBlock: blockIdx,
-        offset: pos
-      };
-      if (domain) {
-        currDomain.domain = domain;
-      }
-    }
-
-    props.gaps.mask.forEach(maskRegion => {
-      splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
-        // if this region is a different domain finish the last block
-        // and change the colorScale
-        if (currDomain.domain) {
-          if (!region.domain) {
-            endBlock();
-            endDomain();
-            colorScale = grayScale;
-          }
-          else if (region.domain.id !== currDomain.domain.id) {
-            endBlock();
-            endDomain(region.domain);
-            colorScale = region.domain.colorScale;
-          }
-        }
-        else if (region.domain) {
-          endBlock();
-          endDomain(region.domain);
-          colorScale = region.domain.colorScale;
-        }
-        for (let i = region.start; i < region.end; i++) {
-          if (consensus.coverage[i] !== block.coverage) { // change in coverage
-            endBlock(consensus.coverage[i]);
-          }
-          pos++;
-        }
-      });
-    });
-    endBlock();
-    endDomain();
-    this.domains = domainRegions.filter(d => d.nBlocks > 0);
-    this.blocks = blocks;
-    this.maskLen = props.gaps.maskLen;
-  }
-
-  draw() {
-    this.canvasRefs.forEach((cRef,idx) => {
-      let canvas = cRef.current;
-      canvas.offScreenCanvas = document.createElement('canvas');
-      canvas.offScreenCanvas.width = canvas.width;
-      canvas.offScreenCanvas.height = canvas.height;
-      const ctx = canvas.offScreenCanvas.getContext('2d');
-      const d = this.domains[idx];
-      const from=d.firstBlock;
-      const to=from+d.nBlocks;
-      for(let i=from;i<to;i++) {
-        const block = this.blocks[i];
-        ctx.fillStyle = block.fill;
-        ctx.fillRect(block.start - d.offset, 0, block.width, 18);
-      }
-      const mainCtx = canvas.getContext('2d');
-      mainCtx.clearRect(0,0,canvas.width,canvas.height);
-      mainCtx.drawImage(canvas.offScreenCanvas, 0, 0);
-    })
-  }
-
-  componentDidMount() {
-    this.draw();
-  }
-
-  componentDidUpdate() {
-    this.draw();
-  }
-
-  formatDomain(domain) {
-    return (
-      <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
-    )
-  }
-
-  render() {
-    if (this.props.gaps.maskLen !== this.maskLen) {
-      this.setup(this.props);
-    }
-    let canvases = [];
-    const alignParams = {
-      points: ['tc','bc'],
-      offset: [0,3],
-      targetOffset: [0,0],
-      overflow: { adjustX: true, adjustY: true }
-    };
-    this.canvasRefs.forEach((cRef, idx) => {
-      const canvas = <canvas ref={cRef}
-                             key={idx}
-                             height="18px"
-                             width={`${this.domains[idx].len}px`}
-                             style={{position:'absolute', left: `${this.domains[idx].offset}px`}}
-      />;
-      if (this.domains[idx].domain) {
-        canvases.push(
-            <Tooltip placement="top"
-                     key={idx}
-                     overlay={this.formatDomain(this.domains[idx].domain)}
-                     align={alignParams}
-                     trigger={['click']}
-            >
-              {canvas}
-            </Tooltip>
-          );
-      }
-      else {
-        canvases.push(canvas);
-      }
-    });
-    let top = this.props.node.displayInfo.offset || 0;
-    top += this.props.nodes[0].displayInfo.height;
-    return <div style={{
-      position: 'absolute',
-      left: '0px',
-      top: `${top+3}px`
-    }}>{canvases}</div>;
-  }
-}
-
-class MSAOverview extends React.Component {
-  constructor(props) {
-    super(props);
-    this.setup(props);
-    this.canvasRefs = this.domains.map(d => {
-      return React.createRef();
-    })
-  }
-
-  setup(props) {
-    let DA = props.node.model.domainArchitecture;
-    let consensus = props.node.model.consensus;
-    let domainIdx = props.interpro;
-    let domainHits=[];
-    if (domainIdx && DA && DA.hasOwnProperty('Domain')) {
-      Object.keys(DA.Domain).forEach(rootId => {
-        Array.prototype.push.apply(domainHits,DA.Domain[rootId].hits);
-      });
-      domainHits = mergeOverlaps(domainHits,0,'max');
-    }
-
-    let grayScale = d3.scaleLinear().domain([0,1]).range(["#DDDDDD","#444444"]);
-    let colorScale = grayScale;
-    let blocks = [];
-    let blockIdx=0;
-    let block = {
-      start: 0,
-      coverage: 0
-    };
-    let pos = 0;
-    let domainRegions = [];
-    let currDomain = {
-      firstBlock:0,
-      offset:0
-    };
-
-    function endBlock(coverage) {
-      if (block.coverage > 0) {
-        block.width = pos - block.start;
-        block.fill = colorScale(block.coverage/consensus.nSeqs);
-        blocks.push(block);
-        blockIdx++;
-      }
-      block = {
-        start: pos,
-        coverage: coverage || 0
-      }
-    }
-
-    function endDomain(domain) {
-      currDomain.nBlocks = blockIdx - currDomain.firstBlock;
-      if (currDomain.nBlocks) {
-        currDomain.len = pos - blocks[currDomain.firstBlock].start;
-        domainRegions.push(currDomain);
-      }
-      currDomain = {
-        firstBlock: blockIdx,
-        offset: pos
-      };
-      if (domain) {
-        currDomain.domain = domain;
-      }
-    }
-
-    props.gaps.mask.forEach(maskRegion => {
-      splitByDomain(maskRegion, domainHits, domainIdx).forEach(region => {
-        // if this region is a different domain finish the last block
-        // and change the colorScale
-        if (currDomain.domain) {
-          if (!region.domain) {
-            endBlock();
-            endDomain();
-            colorScale = grayScale;
-          }
-          else if (region.domain.id !== currDomain.domain.id) {
-            endBlock();
-            endDomain(region.domain);
-            colorScale = region.domain.colorScale;
-          }
-        }
-        else if (region.domain) {
-          endBlock();
-          endDomain(region.domain);
-          colorScale = region.domain.colorScale;
-        }
-        for (let i = region.start; i < region.end; i++) {
-          if (consensus.coverage[i] !== block.coverage) { // change in coverage
-            endBlock(consensus.coverage[i]);
-          }
-          pos++;
-        }
-      });
-    });
-    endBlock();
-    endDomain();
-    this.domains = domainRegions.filter(d => d.nBlocks > 0);
-    this.blocks = blocks;
-    this.maskLen = props.gaps.maskLen;
-  }
-
-  draw() {
-    this.canvasRefs.forEach((cRef,idx) => {
-      let canvas = cRef.current;
-      canvas.offScreenCanvas = document.createElement('canvas');
-      canvas.offScreenCanvas.width = canvas.width;
-      canvas.offScreenCanvas.height = canvas.height;
-      const ctx = canvas.offScreenCanvas.getContext('2d');
-      const d = this.domains[idx];
-      const from=d.firstBlock;
-      const to=from+d.nBlocks;
-      for(let i=from;i<to;i++) {
-        const block = this.blocks[i];
-        ctx.fillStyle = block.fill;
-        ctx.fillRect(block.start - d.offset, 0, block.width, 18);
-      }
-      const mainCtx = canvas.getContext('2d');
-      mainCtx.clearRect(0,0,canvas.width,canvas.height);
-      mainCtx.drawImage(canvas.offScreenCanvas, 0, 0);
-    })
-  }
-
-  componentDidMount() {
-    this.draw();
-  }
-
-  componentDidUpdate() {
-    this.draw();
-  }
-
-  formatDomain(domain) {
-    return (
-      <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
-    )
-  }
-
-  render() {
-    if (this.props.gaps.maskLen !== this.maskLen) {
-      this.setup(this.props);
-    }
-    let canvases = [];
-    const alignParams = {
-      points: ['tc','bc'],
-      offset: [0,3],
-      targetOffset: [0,0],
-      overflow: { adjustX: true, adjustY: true }
-    };
-    this.canvasRefs.forEach((cRef, idx) => {
-      const canvas = <canvas ref={cRef}
-                             key={idx}
-                             height="18px"
-                             width={`${this.domains[idx].len}px`}
-                             style={{position:'absolute', left: `${this.domains[idx].offset}px`}}
-      />;
-      if (this.domains[idx].domain) {
-        canvases.push(
-          <Tooltip placement="top"
-                   key={idx}
-                   overlay={this.formatDomain(this.domains[idx].domain)}
-                   align={alignParams}
-                   trigger={['click']}
-          >
-            {canvas}
-          </Tooltip>
-        );
-      }
-      else {
-        canvases.push(canvas);
-      }
-    });
-    let top = this.props.node.displayInfo.offset || 0;
-    top += this.props.nodes[0].displayInfo.height;
-    return <div style={{
-      position: 'absolute',
-      left: '0px',
-      top: `${top+3}px`
-    }}>{canvases}</div>;
-  }
-}
-
-const formatDomain = domain => (
-  <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
-);
 
 const MSAHistogram = ({node, gaps, interpro}) => {
   const chunkSize=200;
