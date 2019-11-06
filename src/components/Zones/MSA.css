@@ -181,6 +181,13 @@
 .turn.highlight    { font-family: 'highturn', monospace; }
 .buried.highlight  { font-family: 'highburied', monospace; }
 
+.splice-junction {
+    width: 1px;
+    height: 24px;
+    transform: translateX(-0.5px);
+    background: red;
+    position: absolute;
+}
 .gap-vline {
     width: 1px;
     transform: translate(-0.5px);

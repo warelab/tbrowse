@@ -1,9 +1,8 @@
 import React from 'react'
 import { connect } from 'react-redux'
-import _ from 'lodash';
 let d3 = require('d3-scale');
 import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
-import { mergeOverlaps } from "../../utils/treeTools";
+import { getGapMask, lowerBound } from "../../utils/treeTools";
 import { toPx } from "../../utils/toPx";
 import { bindActionCreators } from "redux";
 import { css } from '@emotion/core';
@@ -388,18 +387,50 @@ class MSABody extends React.Component {
         {/*{this.state.zoomLevel === 5 && <MSAHistogram node={props.root} {...this.state} {...props}/>}*/}
         {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
         {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
-        {/*{this.state.zoomLevel < 3 && <SpliceJunctions {...props}/>}*/}
+        {this.state.zoomLevel < 9 && props.nodes.map((node, idx) => <SpliceJunctions key={idx} node={node} {...this.state} {...props}/>)}
       </div>
     )
   }
 }
 
+const projectSeqToMSA = (pos,node) => {
+  if (!node.msaMap) {
+    const gaps = getGapMask(node, 1, 1, 0); // use this function to mark the regions in the msa
+    let startPositions = new Uint16Array(gaps.mask.length); // do binary search on this
+    let posInSeq = 0;
+    gaps.mask.forEach((region, idx) => {
+      startPositions[idx] = posInSeq;
+      posInSeq += region.len;
+    });
+    node.msaMap = {
+      arr: startPositions,
+      mask: gaps.mask
+    }
+  }
+  const i = lowerBound(0, node.msaMap.arr.length-1, node.msaMap.arr, pos);
+  return node.msaMap.mask[i].offset + pos - node.msaMap.arr[i];
+};
+
+const projectMSAToDisplay = (pos, gaps) => {
+  const arr = gaps.offsets;
+  const i = lowerBound(0, arr.length-1, arr, pos);
+  if (pos - arr[i] < gaps.mask[i].len) {
+    return gaps.starts[i] + pos - arr[i];
+  }
+  return -1;
+};
+
 const SpliceJunctions = (props) => {
   return (
-    <div>
+    <div
+      style={{position:'absolute', top:`${props.node.displayInfo.offset + 24}px`}}
+    >
       {props.node.model.gene_structure && props.node.model.gene_structure.exons.map((exon,idx) => {
         if (idx > 0) {
           const junction = ggp.remap(props.node.model,exon.start,'gene','protein');
+          const msaPos = projectSeqToMSA(junction,props.node);
+          const displayPos = projectMSAToDisplay(msaPos,props.gaps);
+          if (displayPos >= 0) return <div className='splice-junction' style={{left: `${displayPos}ch`}} key={idx}/>
         }
       })}
     </div>

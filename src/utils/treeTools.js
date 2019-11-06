@@ -300,7 +300,17 @@ export function makeMask(gaps, totalLength) {
       len: len
     })
   }
-  return ({gaps, mask, maskLen});
+
+  let starts = new Uint16Array(mask.length);
+  let offsets = new Uint16Array(mask.length);
+  let posInSeq=0;
+  mask.forEach((region,idx) => {
+    offsets[idx] = region.offset;
+    starts[idx] = posInSeq;
+    posInSeq += region.len;
+  });
+
+  return ({gaps, mask, maskLen, starts, offsets});
 }
 
 export function getGapMask(node, minDepth, minGapLength, gapPadding) {
@@ -525,6 +535,29 @@ export function mergeOverlaps(regions, minOverlap, coverageMode) {
   return clusters;
 }
 
+// find index of first element in arr that is <= x
+// arr is strictly increasing
+export function lowerBound(a,b,arr,x) {
+  while (a < b) {
+    let m = (a + b) >> 1;
+    if (arr[m] < x) {
+      if (a === m) {
+        return (arr[b] < x) ? b : a;
+      }
+      else {
+        a = m;
+      }
+    }
+    else if (arr[m] > x) {
+      b = m - 1;
+    }
+    else {
+      return m;
+    }
+  }
+  return a;
+}
+
 // 1. walk the tree and gather all of the interpro ids as keys in an object
 // 2. fetch the records from the API
 // 3. walk the tree again and set the domains field
@@ -576,28 +609,6 @@ export function addDomainArchitecture(tree, api, callback) {
       return merged;
     }
     function projectToMSA(region, startPositions, mask) {
-      // find index of first element in arr that is <= x
-      // arr is strictly increasing
-      function lowerBound(a,b,arr,x) {
-        while (a < b) {
-          let m = (a + b) >> 1;
-          if (arr[m] < x) {
-            if (a === m) {
-              return (arr[b] < x) ? b : a;
-            }
-            else {
-              a = m;
-            }
-          }
-          else if (arr[m] > x) {
-            b = m - 1;
-          }
-          else {
-            return m;
-          }
-        }
-        return a;
-      }
       let lb1 = lowerBound(0,   startPositions.length-1, startPositions, region.start);
       let lb2 = lowerBound(lb1, startPositions.length-1, startPositions, region.end-1);
       return {
