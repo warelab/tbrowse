@@ -6,6 +6,7 @@ import './style.css'
 import 'rc-slider/assets/index.css'
 import 'rc-tooltip/assets/bootstrap.css';
 import Slider from 'rc-slider'
+import Switch from 'react-toggle-switch';
 import Tooltip from 'rc-tooltip';
 const Handle = Slider.Handle;
 
@@ -43,6 +44,16 @@ const ConfigurableParameter = ({param, value, onUpdate, extraArgs}) => {
         <td><select value={value} onChange={(e)=>onUpdate({...extraArgs, id: param.id, value:e.target.value})}>
           {param.values.map((v,idx) => <option value={v.id} key={idx}>{v.label}</option>)}
         </select></td>
+      </tr>
+    )
+  }
+  else if (param.type === 'bool') {
+    return (
+      <tr>
+        <td>{param.label}</td>
+        <td style={{transform:'scale(0.6)'}}>
+          <Switch onClick={(e)=>onUpdate({...extraArgs, id: param.id, value:!value})} on={value}/>
+        </td>
       </tr>
     )
   }

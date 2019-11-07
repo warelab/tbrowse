@@ -36,9 +36,9 @@
 a { cursor: pointer }
 .tbrowse-param-table {
     background: #ffee77;
-    width: 300px;
+    width: 250px;
     position: absolute;
-    left: calc(100% - 320px);
+    left: calc(100% - 270px);
     top: 20px;
     box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
 }

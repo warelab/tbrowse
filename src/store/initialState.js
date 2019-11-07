@@ -46,7 +46,13 @@ const zoneDefaults = {
   label: {
     label: 'Label',
     width: 150,
-    minWidth: 10
+    minWidth: 10,
+    taxName: true,
+    geneName: true,
+    configurable: [
+      {id: 'taxName', type: 'bool', label: 'Taxonomy name'},
+      {id: 'geneName', type: 'bool', label: 'Gene name'}
+    ]
   },
   distance: {
     label: 'Distance',
