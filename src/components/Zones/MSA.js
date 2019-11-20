@@ -268,6 +268,8 @@ class MSABody extends React.Component {
   }
   componentDidMount() {
     let cmp = this;
+    const rpp = toPx(`${this.props.range.to - this.props.range.from}ch`)/this.props.width;
+    this.myRef.current.style.setProperty("--residues-per-pixel",rpp);
     this.myRef.current.addEventListener('wheel', function(event) {
       // We don't want to scroll below zero or above the width
       const maxX = this.scrollWidth - this.offsetWidth;
@@ -325,10 +327,12 @@ class MSABody extends React.Component {
     else {
       const span = toPx(`${to - from}ch`);
       const pixelsPerResidue = this.props.width / span;
+      const residuesPerPixel = span / this.props.width;
       let el = this.myRef.current;
       el.style.transform = `scaleX(${pixelsPerResidue})`;
       el.style.width = `${span}px`;
       el.scrollLeft = el.scrollWidth * from / this.props.gaps.maskLen;
+      el.style.setProperty("--residues-per-pixel", residuesPerPixel);
     }
   }
 
@@ -351,6 +355,8 @@ class MSABody extends React.Component {
 
   componentDidUpdate() {
     const el = this.myRef.current;
+    const rpp = toPx(`${this.props.range.to - this.props.range.from}ch`)/this.props.width;
+    el.style.setProperty("--residues-per-pixel",rpp);
     el.scrollLeft = el.scrollWidth * this.props.range.from / this.props.gaps.maskLen;
     if (this.state.zoomLevel === 1 && el.clientWidth < this.props.width) {
       const span = this.props.range.to - this.props.range.from;
@@ -420,35 +426,28 @@ const projectMSAToDisplay = (pos, gaps) => {
   return -1;
 };
 
-const SpliceJunctions = (props) => {
-  console.log('SpliceJunctions', props.range, props.width);
-  const residues = props.range.to - props.range.from;
-  const residuesInPx = toPx(`${residues}ch`);
-  const scaleX = residuesInPx/props.width;
-  return (
-    <div
-      style={{position:'absolute', top:`${props.node.displayInfo.offset + 24}px`}}
-    >
-      {props.node.model.gene_structure && props.node.model.gene_structure.exons.map((exon,idx) => {
-        if (idx > 0) {
-          const junction = ggp.remap(props.node.model,exon.start,'gene','protein');
-          if (junction > 0) {
-            const msaPos = projectSeqToMSA(junction - 1, props.node);
-            const displayPos = projectMSAToDisplay(msaPos, props.gaps);
-            if (displayPos >= 0) return <div
-              className='splice-junction'
-              style={{
-                left: `${displayPos}ch`,
-                transform: `scaleX(${scaleX})`
-              }}
-              key={idx}
-            />
-          }
+const SpliceJunctions = (props) => (
+  <div
+    style={{position:'absolute', top:`${props.node.displayInfo.offset + 24}px`}}
+  >
+    {props.node.model.gene_structure && props.node.model.gene_structure.exons.map((exon,idx) => {
+      if (idx > 0) {
+        const junction = ggp.remap(props.node.model,exon.start,'gene','protein');
+        if (junction > 0) {
+          const msaPos = projectSeqToMSA(junction - 1, props.node);
+          const displayPos = projectMSAToDisplay(msaPos, props.gaps);
+          if (displayPos >= 0) return <div
+            className='splice-junction'
+            style={{
+              left: `${displayPos}ch`
+            }}
+            key={idx}
+          />
         }
-      })}
-    </div>
-  )
-};
+      }
+    })}
+  </div>
+);
 
 const MSAGaps = (props) => {
   const gaps = props.gaps;

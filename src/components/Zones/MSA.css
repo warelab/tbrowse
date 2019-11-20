@@ -184,7 +184,7 @@
 .splice-junction {
     width: 0.2ch;
     height: 24px;
-    transform: translateX(-0.1ch);
+    transform: translateX(-0.1ch) scaleX(var(--residues-per-pixel));
     background: red;
     position: absolute;
 }
