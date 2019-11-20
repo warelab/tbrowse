@@ -182,9 +182,9 @@
 .buried.highlight  { font-family: 'highburied', monospace; }
 
 .splice-junction {
-    width: 1px;
+    width: 0.2ch;
     height: 24px;
-    transform: translateX(-0.5px);
+    transform: translateX(-0.1ch);
     background: red;
     position: absolute;
 }

@@ -421,6 +421,10 @@ const projectMSAToDisplay = (pos, gaps) => {
 };
 
 const SpliceJunctions = (props) => {
+  console.log('SpliceJunctions', props.range, props.width);
+  const residues = props.range.to - props.range.from;
+  const residuesInPx = toPx(`${residues}ch`);
+  const scaleX = residuesInPx/props.width;
   return (
     <div
       style={{position:'absolute', top:`${props.node.displayInfo.offset + 24}px`}}
@@ -428,9 +432,18 @@ const SpliceJunctions = (props) => {
       {props.node.model.gene_structure && props.node.model.gene_structure.exons.map((exon,idx) => {
         if (idx > 0) {
           const junction = ggp.remap(props.node.model,exon.start,'gene','protein');
-          const msaPos = projectSeqToMSA(junction,props.node);
-          const displayPos = projectMSAToDisplay(msaPos,props.gaps);
-          if (displayPos >= 0) return <div className='splice-junction' style={{left: `${displayPos}ch`}} key={idx}/>
+          if (junction > 0) {
+            const msaPos = projectSeqToMSA(junction - 1, props.node);
+            const displayPos = projectMSAToDisplay(msaPos, props.gaps);
+            if (displayPos >= 0) return <div
+              className='splice-junction'
+              style={{
+                left: `${displayPos}ch`,
+                transform: `scaleX(${scaleX})`
+              }}
+              key={idx}
+            />
+          }
         }
       })}
     </div>
