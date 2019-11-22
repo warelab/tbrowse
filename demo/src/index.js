@@ -11,10 +11,18 @@ const props = {
   zones: [{
     type: 'tree'
   },{
-    type: 'label'
+    type: 'label',
+    taxName: true,
+    geneName: false,
+    width: 150
   },{
     type: 'msa',
     colorScheme: 'clustal'
+  },{
+    type: 'label',
+    taxName: false,
+    geneName: true,
+    width: 170
   }]
 };
 const props2 = {

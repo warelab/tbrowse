@@ -16,7 +16,8 @@ const zoneDefaults = {
     genesOfInterest: ['ENSG00000139618'],
     label: 'Tree',
     width: 400,
-    minWidth: 100
+    minWidth: 100,
+    nodeRadius: 4
   },
   msa: {
     label: 'Alignment',

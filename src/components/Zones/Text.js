@@ -32,8 +32,13 @@ const nodeLabel = (node, props) => {
   if (props.taxName) {
     words.push(node.taxonName);
   }
-  if (props.geneName && (node.geneName || node.geneId)) {
-    words.push(node.geneName || `[${node.geneId}]`);
+  if (props.geneName) {
+    if (node.geneName || node.geneId) {
+      words.push(node.geneName || `[${node.geneId}]`);
+    }
+    else {
+      words.push('--')
+    }
   }
   return words.join(';');
 };
@@ -43,7 +48,7 @@ const LabelsComponent = props => {
     function onHover() { hoverNode(node.model.nodeId) }
 
     return (
-      <div className='text-zone'>
+      <div className='text-zone' style={{width:props.width}}>
         {props.nodes.map((n,idx) => {
           let style = {};
           if (props.highlight[n.model.nodeId]) style.fontWeight = 'bolder';

@@ -3,7 +3,8 @@ import { connect } from 'react-redux'
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import {bindActionCreators} from "redux";
-import { expandNode } from "../../actions/Genetrees";
+import {expandNode,collapseNode} from "../../actions/Genetrees";
+import './Tree.css';
 
 const override = css`
   display: block;
@@ -29,10 +30,17 @@ class Tree extends React.Component {
         </div>
       )
     }
+    const xScale = (this.props.width - (this.props.nodeRadius + 1)) / this.props.tree.maxExpandedDist;
     return (
-      <a onClick={()=>this.props.expandNode(this.props.tree, true)}>tree</a>
-
-    );
+      <svg width={this.props.width}
+           height={this.props.zoneHeight + 'px'}
+           style={{position:'absolute',top:'90px'}}
+      >
+        {this.props.tree.visibleNodes.map((node,idx) => (
+          <TreeNode key={idx} xScale={xScale} node={node} {...this.props}/>
+        ))}
+      </svg>
+    )
   }
 }
 
@@ -40,13 +48,114 @@ class Tree extends React.Component {
 const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   const url = state.genetrees.currentTree;
+  if (state.genetrees.trees.hasOwnProperty(url)) {
+    const tree = state.genetrees.trees[url];
+    const highlight = tree.highlight;
+    let zoneHeight=0;
+    tree.visibleUnexpanded.forEach(n => {
+      n.displayInfo.offset = zoneHeight;
+      zoneHeight += n.displayInfo.height
+    });
+    return {
+      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight
+    }
+  }
   return {
     isFetching: state.genetrees.isFetching,
-    tree: state.genetrees.trees[url],
     ...zone
   }
 };
 
-const mapDispatch = dispatch => bindActionCreators({ expandNode }, dispatch);
+const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode }, dispatch);
 
 export default connect(mapState, mapDispatch)(Tree);
+
+const TreeNode = (props) => {
+  const node = props.node;
+  const xScale = props.xScale;
+  const width = props.width;
+  const height = node.displayInfo.height;
+  const nodeRadius = props.nodeRadius;
+  const highlight = props.highlight[node.model.nodeId];
+
+  let marker,hline,vline,bbox,extension;
+  let x=node.scaledDistanceToRoot * xScale;
+  let y=(node.vindex-1) * height + height/2;
+  let parentX = node.parent ? node.parent.scaledDistanceToRoot * xScale : 0;
+  bbox = <rect x={parentX} y={y - height/2} width={x - parentX + nodeRadius} height={height} className='bbox'/>;
+  if (node.scaleFactor !== 1) {
+    hline = <line x1={parentX} y1={y} x2={x} y2={y} strokeDasharray="4, 4" className={`line${node.scaleFactor}`}/>;
+  }
+  else {
+    hline = <line x1={parentX} y1={y} x2={x} y2={y} className={`line`}/>;
+  }
+  if (node.children.length === 0) { // leaf
+    marker = <circle cx={x} cy={y} r={nodeRadius} className={node.class}/>;
+    extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
+    if (node.parent && node.parent.children.length === 2) {
+      const parentX = node.parent.scaledDistanceToRoot * xScale;
+      let parentY = (node.parent.vindex - 1) * height + height / 2;
+      if (parentY < y) { parentY += nodeRadius }
+      else { parentY -= nodeRadius }
+      let vlineClass = highlight ? 'vline highlight' : 'vline';
+      vline = <line x1={parentX} x2={parentX} y1={y} y2={parentY} className={vlineClass}/>;
+    }
+  }
+  else {
+    if (node.parent && node.parent.children.length === 2) {
+      const parentX = node.parent.scaledDistanceToRoot * xScale;
+      let parentY = (node.parent.vindex - 1) * height + height / 2;
+      if (parentY < y) { parentY += nodeRadius }
+      else { parentY -= nodeRadius }
+      let vlineClass = highlight ? 'vline highlight' : 'vline';
+      vline = <line x1={parentX} x2={parentX} y1={y} y2={parentY} className={vlineClass}/>;
+    }
+    if (node.displayInfo.expanded) {
+      let w = nodeRadius*1.5;
+      if (node.children.length === 2) { // internal
+        let child1Y = (node.children[0].vindex - 1) * height + height / 2;
+        let child2Y = (node.children[1].vindex - 1) * height + height / 2;
+        bbox = <rect x={parentX} y={child1Y} width={x - parentX + nodeRadius} height={child2Y - child1Y} className='bbox'/>;
+        marker = <rect x={x - w/2} y={y - w/2} width={w} height={w} className={node.class}/>;
+        // vline = <line x1={x} x2={x} y1={child1Y} y2={child2Y} className='line'/>;
+      }
+      else { // pruned child
+        w *= 0.3;
+        if (node.parent && node.model.leftIndex - 1 === node.parent.model.leftIndex) {
+          marker = <polygon points={`${x - w},${y} ${x},${y - 2 * w} ${x + 2 * w},${y - 2 * w} ${x + w},${y}`}
+                            className={node.class}/>;
+        }
+        else {
+          marker = <polygon points={`${x - w},${y} ${x},${y + 2 * w} ${x + 2 * w},${y + 2 * w} ${x + w},${y}`}
+                            className={node.class}/>;
+        }
+      }
+    }
+    else { // collapsed
+      marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${parentX},${y}`}
+                        className={node.class}/>;
+      extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
+      hline = null;
+    }
+  }
+  const nodeClass = highlight ? 'tree-node highlight' : 'tree-node';
+
+  const expandOrCollapse = node => {
+    if (node.displayInfo.expanded) {
+      props.collapseNode(node);
+    }
+    else {
+      props.expandNode(node, true);
+    }
+  };
+
+  return (
+    <g className={nodeClass} onClick={()=>expandOrCollapse(node)}>
+      {vline}
+      {extension}
+      {hline}
+      {marker}
+      {bbox}
+    </g>
+  )
+};

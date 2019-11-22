@@ -3,7 +3,7 @@
     top: 90px;
     line-height: 24px;
     white-space: nowrap;
-    overflow-x: hidden;
+    overflow-x: scroll;
 }
 .text-zone:highlight {
     font-weight: bolder;

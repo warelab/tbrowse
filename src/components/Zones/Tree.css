@@ -1,0 +1,76 @@
+.tree-node {
+    stroke-width: 1px;
+    /*transition: stroke-width .1s*/
+}
+.tree-node.highlight {
+    stroke-width: 2px;
+}
+.vline {
+    stroke-linecap: round;
+    stroke: black;
+}
+.vline.highlight {
+    stroke-linecap: butt
+}
+.line {
+    stroke-linecap: round;
+    stroke:black
+}
+.line10 {
+    stroke-linecap: round;
+    stroke:blue;
+}
+.line100 {
+    stroke-linecap: round;
+    stroke:red
+}
+.extension {
+    stroke:lightgrey
+}
+
+.bbox {
+    fill: rgba(255,255,255,0);
+    transition: fill 1s
+}
+.bbox:hover {
+    fill: rgba(255,150,0,0.3)
+}
+
+.speciation {
+    fill: #000080;
+    stroke:#000080
+}
+.duplication {
+    fill: #cd0000;
+    stroke: #cd0000
+}
+.dubious {
+    fill: cyan;
+    stroke: cyan
+}
+.gene_split {
+    fill: yellow;
+    stroke: yellow;
+    -webkit-animation: pulse linear .2s;
+    -webkit-animation-iteration-count: 50;
+    animation: pulse linear .2s;
+    animation-iteration-count: 50;
+}
+.geneOfInterest {
+    fill: red;
+    stroke: red;
+}
+@-webkit-keyframes pulse {
+    0% { fill: #cd0000; }
+    50% { fill: #ffff00; }
+    100% { fill: #0000ff; }
+}
+@keyframes pulse {
+    0% { fill: #cd0000; }
+    50% { fill: #ffff00; }
+    100% { fill: #0000ff; }
+}
+.coding {
+    stroke: #008000;
+    fill: #ffffff
+}
