@@ -231,7 +231,7 @@ class MSAHeader extends React.Component {
           transformOrigin: '0 0',
           transform: `scaleX(${props.width / maskLenPx})`
         }}>
-          <MSAHistogram node={props.root} {...props}/>
+          <MSAHistogram node={props.root} isHeader={true} {...props}/>
         </div>
         <div style={{
           transformOrigin: '0 0',
@@ -544,7 +544,7 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
 };
 
 
-const MSAHistogram = ({node, gaps, interpro}) => {
+const MSAHistogram = ({node, gaps, interpro, isHeader}) => {
   const chunkSize=200;
   const unmaskedLen = node.consensus.heatmap.length;
   let regions = [{
@@ -578,10 +578,11 @@ const MSAHistogram = ({node, gaps, interpro}) => {
   const buffer = node.consensus.heatmap.buffer;
   let blockIdx = 0;
   let chunkOffset=0;
+  const top = isHeader ? '0px' : `${node.displayInfo.offset + 24}px`;
   const cmp = (
     <div
       className='heatmap'
-      style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
+      style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top: top}}
     >
       {regions.map((region,i) => {
         let alignHist = '';
