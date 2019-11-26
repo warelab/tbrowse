@@ -60,6 +60,11 @@ const zoneDefaults = {
     width: 50,
     minWidth: 10
   },
+  taxonomy: {
+    label: 'Taxonomy',
+    width: 150,
+    minWidth: 10
+  },
   neighborhood: {
     label: 'Neighborhood',
     width: 400,

@@ -13,19 +13,17 @@ const override = css`
   border-color: red;
 `;
 
-const mapState = (state, ownProps) => {
-  const zone = state.layout.zones[ownProps.zoneId];
-  if (state.genetrees.trees.hasOwnProperty(state.genetrees.currentTree)) {
-    const tree = state.genetrees.trees[state.genetrees.currentTree];
-    const nodes = tree.visibleUnexpanded;
-    const highlight = tree.highlight;
-    return { nodes, highlight, ...zone }
-  }
-  return { ...zone }
-};
-
-const mapDispatch = dispatch => bindActionCreators({ hoverNode }, dispatch);
-
+const Loading = props => (
+  <div className='sweet-loading'>
+    <BarLoader
+      css={override}
+      sizeUnit={"px"}
+      size={props.width}
+      color={'#123abc'}
+      loading={!props.nodes}
+    />
+  </div>
+);
 
 const nodeLabel = (node, props) => {
   let words = [];
@@ -45,7 +43,7 @@ const nodeLabel = (node, props) => {
 
 const LabelsComponent = props => {
   if (props.nodes) {
-    function onHover() { hoverNode(node.nodeId) }
+    function onHover() { props.hoverNode(node.nodeId) }
 
     return (
       <div className='text-zone' style={{width:props.width}}>
@@ -60,43 +58,57 @@ const LabelsComponent = props => {
       </div>
     )
   }
-  return (
-    <div className='sweet-loading'>
-      <BarLoader
-        css={override}
-        sizeUnit={"px"}
-        size={props.width}
-        color={'#123abc'}
-        loading={!props.nodes}
-      />
-    </div>
-  )
+  return <Loading {...props}/>;
+};
+
+const TaxonomyComponent = props => {
+  if (props.nodes) {
+    function onHover() { props.hoverNode(node.nodeId) }
+
+    return (
+      <div className='text-zone' style={{width:props.width}}>
+        {props.nodes.map((n,idx) => {
+          let style = {};
+          if (props.highlight[n.nodeId]) style.fontWeight = 'bolder';
+          return <div style={style}
+                      key={idx}
+                      onMouseOver={() => props.hoverNode(n.nodeId)}
+          >{n.taxonName}</div>
+        })}
+      </div>
+    )
+  }
+  return <Loading {...props}/>
 };
 
 const DistancesComponent = props => {
   if (props.nodes) {
     return (
-      <div className='text-zone'>
+      <div className='text-zone' style={{width:props.width}}>
         {props.nodes.map((n,idx) => {
           return <div key={idx}>{n.distanceToParent}</div>
         })}
       </div>
     )
   }
-  return (
-    <div className='sweet-loading'>
-      <BarLoader
-        css={override}
-        sizeUnit={"px"}
-        size={props.width}
-        color={'#123abc'}
-        loading={!props.nodes}
-      />
-    </div>
-  )
+  return <Loading {...props}/>;
 };
+
+const mapState = (state, ownProps) => {
+  const zone = state.layout.zones[ownProps.zoneId];
+  if (state.genetrees.trees.hasOwnProperty(state.genetrees.currentTree)) {
+    const tree = state.genetrees.trees[state.genetrees.currentTree];
+    const nodes = tree.visibleUnexpanded;
+    const highlight = tree.highlight;
+    return { nodes, highlight, ...zone }
+  }
+  return { ...zone }
+};
+
+const mapDispatch = dispatch => bindActionCreators({ hoverNode }, dispatch);
 
 const Labels = connect(mapState, mapDispatch)(LabelsComponent);
 const Distances = connect(mapState, mapDispatch)(DistancesComponent);
+const Taxonomy = connect(mapState, mapDispatch)(TaxonomyComponent);
 
-export { Labels, Distances };
+export { Labels, Distances, Taxonomy };

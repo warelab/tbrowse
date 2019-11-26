@@ -12,10 +12,7 @@ const props = {
     type: 'tree',
     width: 300
   },{
-    type: 'label',
-    taxName: true,
-    geneName: false,
-    width: 150
+    type: 'taxonomy'
   },{
     type: 'msa',
     colorScheme: 'clustal',
