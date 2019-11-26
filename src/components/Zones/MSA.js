@@ -430,9 +430,9 @@ const SpliceJunctions = (props) => (
   <div
     style={{position:'absolute', top:`${props.node.displayInfo.offset + 24}px`}}
   >
-    {props.node.model.gene_structure && props.node.model.gene_structure.exons.map((exon,idx) => {
+    {props.node.gene_structure && props.node.gene_structure.exons.map((exon,idx) => {
       if (idx > 0) {
-        const junction = ggp.remap(props.node.model,exon.start,'gene','protein');
+        const junction = ggp.remap(props.node,exon.start,'gene','protein');
         if (junction > 0) {
           const msaPos = projectSeqToMSA(junction - 1, props.node);
           const displayPos = projectMSAToDisplay(msaPos, props.gaps);
@@ -515,17 +515,17 @@ function chunkSubstr(str, size) {
 
 const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel}) => {
   const chunkSize=200;
-  if (!node.model.consensus.alignSeq) {
+  if (!node.consensus.alignSeq) {
     let alignSeq = '';
-    const seqBuffer = node.model.consensus.alignSeqArray.buffer;
+    const seqBuffer = node.consensus.alignSeqArray.buffer;
     gaps.mask.forEach(block => {
       const mySlice = new Uint16Array(seqBuffer, block.offset * 2, block.len);
       alignSeq += String.fromCharCode.apply(null, mySlice);
     });
-    node.model.consensus.alignSeq = chunkSubstr(alignSeq, chunkSize); // speeds up scrolling in safari
+    node.consensus.alignSeq = chunkSubstr(alignSeq, chunkSize); // speeds up scrolling in safari
   }
-  let classes = highlight[node.model.nodeId] ? ' highlight' : '';
-  function onHover() { hoverNode(node.model.nodeId) }
+  let classes = highlight[node.nodeId] ? ' highlight' : '';
+  function onHover() { hoverNode(node.nodeId) }
 //    onMouseOver={_.debounce(onHover,200)}
   if (zoomLevel === 2) {
     classes += ' blank';
@@ -534,7 +534,7 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
     className={colorScheme + classes}
     style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
   >
-    {node.model.consensus.alignSeq.map((s, i) => {
+    {node.consensus.alignSeq.map((s, i) => {
       return <span key={i} style={{
         position:'absolute',
         left: `${i*chunkSize}ch`
@@ -546,14 +546,14 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
 
 const MSAHistogram = ({node, gaps, interpro}) => {
   const chunkSize=200;
-  const unmaskedLen = node.model.consensus.heatmap.length;
+  const unmaskedLen = node.consensus.heatmap.length;
   let regions = [{
     start: 0,
     end: unmaskedLen
   }];
   let lastRegion = regions[0];
-  if (node.model.domainHits) {
-    node.model.domainHits.forEach(dh => {
+  if (node.domainHits) {
+    node.domainHits.forEach(dh => {
       lastRegion = regions[regions.length - 1];
       if (dh.start < lastRegion.end) {
         lastRegion.end = dh.start
@@ -575,7 +575,7 @@ const MSAHistogram = ({node, gaps, interpro}) => {
     }
   }
   const mask = gaps.mask;
-  const buffer = node.model.consensus.heatmap.buffer;
+  const buffer = node.consensus.heatmap.buffer;
   let blockIdx = 0;
   let chunkOffset=0;
   const cmp = (

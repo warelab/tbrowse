@@ -45,17 +45,17 @@ const nodeLabel = (node, props) => {
 
 const LabelsComponent = props => {
   if (props.nodes) {
-    function onHover() { hoverNode(node.model.nodeId) }
+    function onHover() { hoverNode(node.nodeId) }
 
     return (
       <div className='text-zone' style={{width:props.width}}>
         {props.nodes.map((n,idx) => {
           let style = {};
-          if (props.highlight[n.model.nodeId]) style.fontWeight = 'bolder';
+          if (props.highlight[n.nodeId]) style.fontWeight = 'bolder';
           return <div style={style}
                       key={idx}
-                      onMouseOver={() => props.hoverNode(n.model.nodeId)}
-          >{nodeLabel(n.model,props)}</div>
+                      onMouseOver={() => props.hoverNode(n.nodeId)}
+          >{nodeLabel(n,props)}</div>
         })}
       </div>
     )
@@ -78,7 +78,7 @@ const DistancesComponent = props => {
     return (
       <div className='text-zone'>
         {props.nodes.map((n,idx) => {
-          return <div key={idx}>{n.model.distanceToParent}</div>
+          return <div key={idx}>{n.distanceToParent}</div>
         })}
       </div>
     )

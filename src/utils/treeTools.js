@@ -3,50 +3,74 @@ import _ from 'lodash';
 let d3 = require('d3-scale');
 let d3chrom = require('d3-scale-chromatic');
 
+export function reIndexTree(tree, attrs) {
+  tree.indices = {parentOf:{}};
+  attrs.forEach(a => {tree.indices[a] = {}});
+  const indexNode = (node,parent) => {
+
+    tree.indices.parentOf[node.nodeId] = parent;
+
+    attrs.forEach(a => {
+      let key = node[a];
+      if (!_.isUndefined(key)) {
+        tree.indices[a][key] = node;
+      }
+    });
+    node.children && node.children.forEach(child => {
+      indexNode(child,node);
+    });
+  };
+  indexNode(tree, undefined);
+}
 
 function indexTree(tree, attrs, nodeHeight) {
   const MIN_DIST = 0.05;
   const MAX_DIST = 2;
-
-  tree.indices = {};
+  tree.indices = {parentOf:{}};
   attrs.forEach(a => {tree.indices[a] = {}});
-  tree.walk(node => {
+  const indexNode = (node,parent) => {
     node.displayInfo = { expanded : false, height : nodeHeight };
-
-    node.class = node.model.nodeType; // todo: geneOfInterest/orthologs/paralogs
-
-    node.distanceToRoot = (node.parent ? node.parent.distanceToRoot : 0) + node.model.distanceToParent;
-
-    let parentDist = Math.max(node.model.distanceToParent, MIN_DIST);
+    node.class = node.nodeType; // todo: geneOfInterest/orthologs/paralogs
+    node.distanceToRoot = (parent ? parent.distanceToRoot : 0) + node.distanceToParent;
+    let parentDist = Math.max(node.distanceToParent, MIN_DIST);
     node.scaleFactor = 1;
     while (parentDist > MAX_DIST) {
       parentDist /= 10;
       node.scaleFactor *= 10;
     }
-    node.scaledDistanceToRoot = (node.parent ? node.parent.scaledDistanceToRoot : 0) + parentDist;
+    node.scaledDistanceToRoot = (parent ? parent.scaledDistanceToRoot : 0) + parentDist;
+
+    tree.indices.parentOf[node.nodeId] = parent;
+
     attrs.forEach(a => {
-      let key = node.model[a];
+      let key = node[a];
       if (!_.isUndefined(key)) {
         tree.indices[a][key] = node;
       }
     });
-  });
+    node.children && node.children.forEach(child => {
+      indexNode(child,node);
+    });
+  };
+  indexNode(tree, undefined);
 }
 
 function sumBranchLengths(node) {
-  let sum = node.model.distanceToParent;
-  node.children.forEach(child => {
+  let sum = node.distanceToParent;
+  node.children && node.children.forEach(child => {
     sum += sumBranchLengths(child);
   });
   return sum;
 }
 
 function flattenTree(node) {
-  if (node.children.length === 2) {
-    return _.concat(flattenTree(node.children[0]), node, flattenTree(node.children[1]));
-  }
-  if (node.children.length === 1) { // pruned branch
-    return _.concat(flattenTree(node.children[0], node));
+  if (node.children) {
+    if (node.children.length === 2) {
+      return _.concat(flattenTree(node.children[0]), node, flattenTree(node.children[1]));
+    }
+    if (node.children.length === 1) { // pruned branch
+      return _.concat(flattenTree(node.children[0], node));
+    }
   }
   return node;
 }
@@ -55,9 +79,9 @@ function colorByDistance(tree) {
   let nodeOrder = flattenTree(tree);
   let flatDist = 0;
   nodeOrder.forEach(node => {
-    let midpoint = flatDist + node.model.distanceToParent/2;
+    let midpoint = flatDist + node.distanceToParent/2;
     node.branchColor = d3chrom.interpolateRainbow(midpoint/tree.totalLength);
-    flatDist += node.model.distanceToParent
+    flatDist += node.distanceToParent
   });
 }
 
@@ -71,18 +95,21 @@ export function prepTree(genetree,nodeHeight) {
     }
   }
   let tree = new TreeModel({modelComparatorFn: leftIndexComparator}).parse(genetree);
-  indexTree(tree, ['geneId','nodeId'],nodeHeight);
+
+  genetree = tree.model; // we don't want the other decorations, just sorted children.
+
+  indexTree(genetree, ['geneId','nodeId'],nodeHeight);
 
 
-  tree.totalLength = sumBranchLengths(tree);
+  genetree.totalLength = sumBranchLengths(genetree);
 
-  return tree;
+  return genetree;
 }
 
 export function setGeneOfInterest(tree, geneId) {
   let node = tree.indices.geneId[geneId];
-  while (!node.isRoot()) {
-    const parent = node.parent;
+  while (tree.indices.parentOf[node.nodeId]) {
+    const parent = tree.indices.parentOf[node.nodeId];
     const siblings = parent.children;
     const indexCallback = (n) => n === node;
     const nodeIdx = _.findIndex(siblings, indexCallback);
@@ -102,16 +129,20 @@ export function expandToGenes(tree, genesOfInterest, hideCousins) {
   genesOfInterest.forEach(geneId => {
     let node = tree.indices.geneId[geneId];
     if (node) {
-      while (!node.isRoot()) {
-        node = node.parent;
+      while (tree.indices.parentOf[node.nodeId]) {
+        node = tree.indices.parentOf[node.nodeId];
         node.displayInfo.expanded = true;
       }
     }
   });
   if (!tree.displayInfo.expanded) { // no genesOfInterest in the tree, show everything
-    tree.all().forEach(node => {
+    const traverse = node => {
       node.displayInfo.expanded = true;
-    });
+      node.children.forEach(child => {
+        traverse(child);
+      })
+    };
+    traverse(tree);
   }
   setGeneOfInterest(tree, genesOfInterest[0]);
 }
@@ -125,7 +156,7 @@ export function indexVisibleNodes(tree) {
     if (node.scaledDistanceToRoot > maxExpandedDist) {
       maxExpandedDist = node.scaledDistanceToRoot
     }
-    if (node.displayInfo.expanded && node.children.length > 0) {
+    if (node.displayInfo.expanded && node.children && node.children.length > 0) {
       if (node.children.length === 2) {
         let leftExtrema = calcVIndexFor(node.children[0]); // left child
         let rightExtrema = calcVIndexFor(node.children[1]); // right child
@@ -162,7 +193,7 @@ export function addConsensus(tree) {
   // generate a consensus sequence and coverage for each node in the tree
   // for leaf nodes use the sequence and cigar attributes to define the node's consensus
   // for internal nodes (2 children) select the consensus based on the frequency in the child nodes
-  if (tree.model.consensus) return;
+  if (tree.consensus) return;
 
   let clength = 0;
 
@@ -240,32 +271,32 @@ export function addConsensus(tree) {
   }
 
   function addConsensusToNode(node) {
-    if (node.model.sequence && node.model.cigar) {
-      node.model.consensus = cigarToConsensus(node.model.cigar, node.model.sequence);
+    if (node.sequence && node.cigar) {
+      node.consensus = cigarToConsensus(node.cigar, node.sequence);
     }
     else if (node.children.length === 1) {
       addConsensusToNode(node.children[0]);
-      node.model.consensus = node.children[0].model.consensus;
+      node.consensus = node.children[0].consensus;
     }
     else if (node.children.length === 2) {
       addConsensusToNode(node.children[0]);
       addConsensusToNode(node.children[1]);
-      node.model.consensus = mergeConsensi(node.children[0].model.consensus, node.children[1].model.consensus);
+      node.consensus = mergeConsensi(node.children[0].consensus, node.children[1].consensus);
     }
     else {
       // tree doesn't have MSA
-      node.model.consensus = cigarToConsensus('M','X');
+      node.consensus = cigarToConsensus('M','X');
     }
   }
 
   function addHeatmap(node) {
     let heatmap = new Uint16Array(clength);
-    const nSeqs = node.model.consensus.nSeqs;
-    node.model.consensus.coverage.forEach((c,i) => {
+    const nSeqs = node.consensus.nSeqs;
+    node.consensus.coverage.forEach((c,i) => {
       heatmap[i] = c > 0 ? 42 - Math.ceil(9*c/nSeqs) : 42;
     });
-    node.model.consensus.heatmap = heatmap;
-    node.children.forEach(child => {
+    node.consensus.heatmap = heatmap;
+    node.children && node.children.forEach(child => {
       addHeatmap(child);
     });
   }
@@ -314,10 +345,10 @@ export function makeMask(gaps, totalLength) {
 }
 
 export function getGapMask(node, minDepth, minGapLength, gapPadding) {
-  if (!node.model.consensus) return;
+  if (!node.consensus) return;
   if (minGapLength < 3) gapPadding = 0;
 
-  const coverage = node.model.consensus.coverage;
+  const coverage = node.consensus.coverage;
   let gaps = [];
   let pos = 0;
   let len = 0;
@@ -562,17 +593,21 @@ export function lowerBound(a,b,arr,x) {
 // 2. fetch the records from the API
 // 3. walk the tree again and set the domains field
 export function addDomainArchitecture(tree, api, callback) {
-  if (tree.model.domainArchitecture) return;
+  if (tree.domainArchitecture) return;
   // 1. walk the tree and gather all of the interpro ids as keys in an object
   let idSet = {};
-  tree.walk(node => {
-    if (node.model.interpro) {
-      node.model.interpro.forEach(ipr => {
+  const setupInterpro = node => {
+    if (node.interpro) {
+      node.interpro.forEach(ipr => {
         idSet[ipr.id] = 'x';
         ipr.start--; // convert to half-open intervals
-      })
+      });
     }
-  });
+    node.children && node.children.forEach(child => {
+      setupInterpro(child);
+    });
+  };
+  setupInterpro(tree);
   let idList = Object.keys(idSet);
   let params = {
     setId: 'interpro_71',
@@ -619,10 +654,10 @@ export function addDomainArchitecture(tree, api, callback) {
       }
     }
     function leafDomains(node) {
-      if (!node.model.hasOwnProperty('interpro')) return {};
+      if (!node.hasOwnProperty('interpro')) return {};
       // group by nodeType and hierarchy root
       let groups = {};
-      node.model.interpro.forEach(hit => {
+      node.interpro.forEach(hit => {
         let domain = domainIdx[hit.id];
         hit.coverage = 1;
         if (domain) {
@@ -658,7 +693,7 @@ export function addDomainArchitecture(tree, api, callback) {
     }
     function mergeDomains(node) {
       let domains = [];
-      if (node.children.length === 0) {
+      if (!node.children || node.children.length === 0) {
         domains = leafDomains(node);
       }
       else {
@@ -667,19 +702,19 @@ export function addDomainArchitecture(tree, api, callback) {
           domains = doMerge(domains, mergeDomains(node.children[i]));
         }
       }
-      node.model.domainArchitecture = domains;
+      node.domainArchitecture = domains;
       if (domains.hasOwnProperty('Domain')) {
         let domainHits=[];
         Object.keys(domains.Domain).forEach(rootId => {
           Array.prototype.push.apply(domainHits,domains.Domain[rootId].hits);
         });
         domainHits = mergeOverlaps(domainHits,0,'maxm');
-        node.model.domainHits = domainHits;
+        node.domainHits = domainHits;
         domainHits.forEach(dh => {
           const domain = domainIdx[dh.id];
           for(let i=dh.start; i<=dh.end; i++) {
-            if (node.model.consensus.heatmap[i] < 43) {
-              node.model.consensus.heatmap[i] += domain.colorOffset;
+            if (node.consensus.heatmap[i] < 43) {
+              node.consensus.heatmap[i] += domain.colorOffset;
             }
           }
         })

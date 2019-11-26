@@ -9,7 +9,8 @@ const props = {
   treeId: url.query.treeId || "EPlGT00940000167757",
   genesOfInterest: ['AT2G34710'],
   zones: [{
-    type: 'tree'
+    type: 'tree',
+    width: 300
   },{
     type: 'label',
     taxName: true,
@@ -17,7 +18,8 @@ const props = {
     width: 150
   },{
     type: 'msa',
-    colorScheme: 'clustal'
+    colorScheme: 'clustal',
+    width: 800
   },{
     type: 'label',
     taxName: false,
@@ -44,8 +46,8 @@ class Demo extends Component {
     return <div>
       <h1>PHA</h1>
       <TBrowse {...props}/>
-      <h1>Tp53</h1>
-      <TBrowse {...props2}/>
+      {/*<h1>Tp53</h1>*/}
+      {/*<TBrowse {...props2}/>*/}
     </div>
   }
 }

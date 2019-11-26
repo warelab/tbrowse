@@ -4,6 +4,7 @@ import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import {bindActionCreators} from "redux";
 import {expandNode,collapseNode} from "../../actions/Genetrees";
+import {reIndexTree} from "../../utils/treeTools";
 import './Tree.css';
 
 const override = css`
@@ -50,14 +51,17 @@ const mapState = (state, ownProps) => {
   const url = state.genetrees.currentTree;
   if (state.genetrees.trees.hasOwnProperty(url)) {
     const tree = state.genetrees.trees[url];
+    // need reference to parent node on each.
     const highlight = tree.highlight;
+    reIndexTree(tree, ['geneId','nodeId']);
+    const parentOf = tree.indices.parentOf;
     let zoneHeight=0;
     tree.visibleUnexpanded.forEach(n => {
       n.displayInfo.offset = zoneHeight;
       zoneHeight += n.displayInfo.height
     });
     return {
-      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight
+      isFetching: state.genetrees.isFetching, ...zone, tree, parentOf, highlight, zoneHeight
     }
   }
   return {
@@ -76,12 +80,13 @@ const TreeNode = (props) => {
   const width = props.width;
   const height = node.displayInfo.height;
   const nodeRadius = props.nodeRadius;
-  const highlight = props.highlight[node.model.nodeId];
+  const highlight = props.highlight[node.nodeId];
 
   let marker,hline,vline,bbox,extension;
   let x=node.scaledDistanceToRoot * xScale;
   let y=(node.vindex-1) * height + height/2;
-  let parentX = node.parent ? node.parent.scaledDistanceToRoot * xScale : 0;
+  const parent = props.parentOf[node.nodeId];
+  let parentX = parent ? parent.scaledDistanceToRoot * xScale : 0;
   bbox = <rect x={parentX} y={y - height/2} width={x - parentX + nodeRadius} height={height} className='bbox'/>;
   if (node.scaleFactor !== 1) {
     hline = <line x1={parentX} y1={y} x2={x} y2={y} strokeDasharray="4, 4" className={`line${node.scaleFactor}`}/>;
@@ -89,12 +94,12 @@ const TreeNode = (props) => {
   else {
     hline = <line x1={parentX} y1={y} x2={x} y2={y} className={`line`}/>;
   }
-  if (node.children.length === 0) { // leaf
+  if (!node.children || node.children.length === 0) { // leaf
     marker = <circle cx={x} cy={y} r={nodeRadius} className={node.class}/>;
     extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
-    if (node.parent && node.parent.children.length === 2) {
-      const parentX = node.parent.scaledDistanceToRoot * xScale;
-      let parentY = (node.parent.vindex - 1) * height + height / 2;
+    if (parent && parent.children.length === 2) {
+      const parentX = parent.scaledDistanceToRoot * xScale;
+      let parentY = (parent.vindex - 1) * height + height / 2;
       if (parentY < y) { parentY += nodeRadius }
       else { parentY -= nodeRadius }
       let vlineClass = highlight ? 'vline highlight' : 'vline';
@@ -102,9 +107,9 @@ const TreeNode = (props) => {
     }
   }
   else {
-    if (node.parent && node.parent.children.length === 2) {
-      const parentX = node.parent.scaledDistanceToRoot * xScale;
-      let parentY = (node.parent.vindex - 1) * height + height / 2;
+    if (parent && parent.children.length === 2) {
+      const parentX = parent.scaledDistanceToRoot * xScale;
+      let parentY = (parent.vindex - 1) * height + height / 2;
       if (parentY < y) { parentY += nodeRadius }
       else { parentY -= nodeRadius }
       let vlineClass = highlight ? 'vline highlight' : 'vline';
@@ -121,7 +126,7 @@ const TreeNode = (props) => {
       }
       else { // pruned child
         w *= 0.3;
-        if (node.parent && node.model.leftIndex - 1 === node.parent.model.leftIndex) {
+        if (parent && node.leftIndex - 1 === parent.leftIndex) {
           marker = <polygon points={`${x - w},${y} ${x},${y - 2 * w} ${x + 2 * w},${y - 2 * w} ${x + w},${y}`}
                             className={node.class}/>;
         }
@@ -132,10 +137,10 @@ const TreeNode = (props) => {
       }
     }
     else { // collapsed
-      marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${parentX},${y}`}
+      marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${Math.max(parentX,x-4*nodeRadius)},${y}`}
                         className={node.class}/>;
       extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
-      hline = null;
+      // hline = null;
     }
   }
   const nodeClass = highlight ? 'tree-node highlight' : 'tree-node';

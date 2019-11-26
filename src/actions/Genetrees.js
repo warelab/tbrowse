@@ -55,7 +55,7 @@ export const expandNode = (node, recursive) => {
   function makeNodeVisible(n, recursive) {
     n.displayInfo.expanded = true;
     if (recursive) {
-      n.children.forEach(child => makeNodeVisible(child, recursive));
+      n.children && n.children.forEach(child => makeNodeVisible(child, recursive));
     }
   }
   makeNodeVisible(node, recursive);
@@ -80,11 +80,11 @@ function saveGaps(gapKey, gaps) {
 
 function deleteAlignSeq(tree) {
   Object.values(tree.indices.nodeId).forEach(node => {
-    if (node.model.consensus.hasOwnProperty('alignSeq')) {
-      delete node.model.consensus.alignSeq;
+    if (node.consensus.hasOwnProperty('alignSeq')) {
+      delete node.consensus.alignSeq;
     }
-    if (node.model.consensus.hasOwnProperty('alignHist')) {
-      delete node.model.consensus.alignHist;
+    if (node.consensus.hasOwnProperty('alignHist')) {
+      delete node.consensus.alignHist;
     }
   });
 }
@@ -117,7 +117,7 @@ export const toggleGap = (idx, gapParams) => {
     else {
       gaps[idx].collapsed = true;
     }
-    dispatch(saveGaps(gapKey, makeMask(gaps, tree.model.consensus.coverage.length)));
+    dispatch(saveGaps(gapKey, makeMask(gaps, tree.consensus.coverage.length)));
   }
 };
 

@@ -47,12 +47,16 @@ function trees(
       let highlight = {};
       highlight[action.nodeId] = true;
       let hoveredNode = tree.indices.nodeId[action.nodeId];
-      hoveredNode.walk(node => {
-        highlight[node.model.nodeId] = true;
-      });
+      const walk = node => {
+        highlight[node.nodeId] = true;
+        node.children && node.children.forEach(child => {
+          walk(child)
+        })
+      };
+      walk(hoveredNode);
       while(hoveredNode.parent) {
         hoveredNode = hoveredNode.parent;
-        highlight[hoveredNode.model.nodeId] = true;
+        highlight[hoveredNode.nodeId] = true;
       }
       tree.highlight = highlight;
       return Object.assign({}, state);
