@@ -65,6 +65,11 @@ const zoneDefaults = {
     width: 150,
     minWidth: 10
   },
+  location: {
+    label: 'Location',
+    width: 150,
+    minWidth: 10
+  },
   neighborhood: {
     label: 'Neighborhood',
     width: 400,

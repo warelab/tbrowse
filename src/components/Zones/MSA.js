@@ -343,7 +343,8 @@ class MSABody extends React.Component {
       nextProps.width === this.props.width &&
       nextState.zoomLevel === this.state.zoomLevel &&
       nextProps.colorScheme === this.props.colorScheme &&
-      nextProps.zoneHeight === this.props.zoneHeight
+      nextProps.zoneHeight === this.props.zoneHeight &&
+      nextProps.highlight === this.props.highlight
     ) {
       if (nextProps.range !== this.props.range) {
         this.changeRange(nextProps.range.from, nextProps.range.to);
@@ -524,13 +525,18 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
     });
     node.consensus.alignSeq = chunkSubstr(alignSeq, chunkSize); // speeds up scrolling in safari
   }
-  let classes = highlight[node.nodeId] ? ' highlight' : '';
-  function onHover() { hoverNode(node.nodeId) }
+  let classes = zoomLevel === 1 && highlight[node.nodeId] ? ' highlight' : '';
+  function onHover() {
+    if(zoomLevel === 1) {
+      hoverNode(node.nodeId)
+    }
+  }
 //    onMouseOver={_.debounce(onHover,200)}
   if (zoomLevel === 2) {
     classes += ' blank';
   }
   return <div
+    onMouseOver={_.debounce(onHover,10)}
     className={colorScheme + classes}
     style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
   >

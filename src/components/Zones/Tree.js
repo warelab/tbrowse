@@ -3,7 +3,7 @@ import { connect } from 'react-redux'
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import {bindActionCreators} from "redux";
-import {expandNode,collapseNode} from "../../actions/Genetrees";
+import {expandNode,collapseNode,hoverNode} from "../../actions/Genetrees";
 import {reIndexTree} from "../../utils/treeTools";
 import './Tree.css';
 
@@ -70,7 +70,7 @@ const mapState = (state, ownProps) => {
   }
 };
 
-const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode }, dispatch);
+const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode, hoverNode }, dispatch);
 
 export default connect(mapState, mapDispatch)(Tree);
 
@@ -155,7 +155,7 @@ const TreeNode = (props) => {
   };
 
   return (
-    <g className={nodeClass} onClick={()=>expandOrCollapse(node)}>
+    <g className={nodeClass} onClick={()=>expandOrCollapse(node)} onMouseOver={()=>props.hoverNode(node.nodeId)}>
       {vline}
       {extension}
       {hline}

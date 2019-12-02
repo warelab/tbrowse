@@ -2,7 +2,7 @@ import Checkboxes from './Zones/Checkboxes'
 import LocalData from './Zones/LocalData'
 import MSA from './Zones/MSA'
 import Neighborhoods from './Zones/Neighborhoods'
-import { Labels, Distances, Taxonomy } from './Zones/Text'
+import { Labels, Distances, Taxonomy, Location } from './Zones/Text'
 import Tree from './Zones/Tree'
 
 export const components = {
@@ -13,5 +13,6 @@ export const components = {
   local: LocalData,
   label: Labels,
   distance: Distances,
-  taxonomy: Taxonomy
+  taxonomy: Taxonomy,
+  location: Location
 };

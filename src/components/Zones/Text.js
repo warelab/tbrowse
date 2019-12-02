@@ -81,6 +81,35 @@ const TaxonomyComponent = props => {
   return <Loading {...props}/>
 };
 
+const getLocation = node => {
+  if (node.gene_structure) {
+    const l = node.gene_structure.location;
+    const s = l.strand === -1 ? '-' : '+';
+    return `${l.region}:${s}:${l.start}-${l.end}`;
+  }
+  return '--';
+};
+
+const LocationComponent = props => {
+  if (props.nodes) {
+    function onHover() { props.hoverNode(node.nodeId) }
+
+    return (
+      <div className='text-zone' style={{width:props.width}}>
+        {props.nodes.map((n,idx) => {
+          let style = {};
+          if (props.highlight[n.nodeId]) style.fontWeight = 'bolder';
+          return <div style={style}
+                      key={idx}
+                      onMouseOver={() => props.hoverNode(n.nodeId)}
+          >{getLocation(n)}</div>
+        })}
+      </div>
+    )
+  }
+  return <Loading {...props}/>
+};
+
 const DistancesComponent = props => {
   if (props.nodes) {
     return (
@@ -110,5 +139,6 @@ const mapDispatch = dispatch => bindActionCreators({ hoverNode }, dispatch);
 const Labels = connect(mapState, mapDispatch)(LabelsComponent);
 const Distances = connect(mapState, mapDispatch)(DistancesComponent);
 const Taxonomy = connect(mapState, mapDispatch)(TaxonomyComponent);
+const Location = connect(mapState, mapDispatch)(LocationComponent);
 
-export { Labels, Distances, Taxonomy };
+export { Labels, Distances, Taxonomy, Location };
