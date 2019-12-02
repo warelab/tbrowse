@@ -54,14 +54,13 @@ const mapState = (state, ownProps) => {
     // need reference to parent node on each.
     const highlight = tree.highlight;
     reIndexTree(tree, ['geneId','nodeId']);
-    const parentOf = tree.indices.parentOf;
     let zoneHeight=0;
     tree.visibleUnexpanded.forEach(n => {
       n.displayInfo.offset = zoneHeight;
       zoneHeight += n.displayInfo.height
     });
     return {
-      isFetching: state.genetrees.isFetching, ...zone, tree, parentOf, highlight, zoneHeight
+      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight
     }
   }
   return {
@@ -85,7 +84,7 @@ const TreeNode = (props) => {
   let marker,hline,vline,bbox,extension;
   let x=node.scaledDistanceToRoot * xScale;
   let y=(node.vindex-1) * height + height/2;
-  const parent = props.parentOf[node.nodeId];
+  const parent = props.tree.indices.nodeId[node.parentId];
   let parentX = parent ? parent.scaledDistanceToRoot * xScale : 0;
   bbox = <rect x={parentX} y={y - height/2} width={x - parentX + nodeRadius} height={height} className='bbox'/>;
   if (node.scaleFactor !== 1) {

@@ -54,9 +54,9 @@ function trees(
         })
       };
       walk(hoveredNode);
-      while(hoveredNode.parent) {
-        hoveredNode = hoveredNode.parent;
-        highlight[hoveredNode.nodeId] = true;
+      while(hoveredNode.parentId) {
+        highlight[hoveredNode.parentId] = true;
+        hoveredNode = tree.indices.nodeId[hoveredNode.parentId];
       }
       tree.highlight = highlight;
       return Object.assign({}, state);

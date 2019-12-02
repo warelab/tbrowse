@@ -4,11 +4,9 @@ let d3 = require('d3-scale');
 let d3chrom = require('d3-scale-chromatic');
 
 export function reIndexTree(tree, attrs) {
-  tree.indices = {parentOf:{}};
+  tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
   const indexNode = (node,parent) => {
-
-    tree.indices.parentOf[node.nodeId] = parent;
 
     attrs.forEach(a => {
       let key = node[a];
@@ -26,7 +24,7 @@ export function reIndexTree(tree, attrs) {
 function indexTree(tree, attrs, nodeHeight) {
   const MIN_DIST = 0.05;
   const MAX_DIST = 2;
-  tree.indices = {parentOf:{}};
+  tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
   const indexNode = (node,parent) => {
     node.displayInfo = { expanded : false, height : nodeHeight };
@@ -40,7 +38,9 @@ function indexTree(tree, attrs, nodeHeight) {
     }
     node.scaledDistanceToRoot = (parent ? parent.scaledDistanceToRoot : 0) + parentDist;
 
-    tree.indices.parentOf[node.nodeId] = parent;
+    if (parent) {
+      node.parentId = parent.nodeId;
+    }
 
     attrs.forEach(a => {
       let key = node[a];
@@ -108,8 +108,8 @@ export function prepTree(genetree,nodeHeight) {
 
 export function setGeneOfInterest(tree, geneId) {
   let node = tree.indices.geneId[geneId];
-  while (tree.indices.parentOf[node.nodeId]) {
-    const parent = tree.indices.parentOf[node.nodeId];
+  while (node.parentId) {
+    const parent = tree.indices.nodeId[node.parentId];
     const siblings = parent.children;
     const indexCallback = (n) => n === node;
     const nodeIdx = _.findIndex(siblings, indexCallback);
@@ -129,8 +129,8 @@ export function expandToGenes(tree, genesOfInterest, hideCousins) {
   genesOfInterest.forEach(geneId => {
     let node = tree.indices.geneId[geneId];
     if (node) {
-      while (tree.indices.parentOf[node.nodeId]) {
-        node = tree.indices.parentOf[node.nodeId];
+      while (node.parentId) {
+        node = tree.indices.nodeId[node.parentId];
         node.displayInfo.expanded = true;
       }
     }
@@ -138,7 +138,7 @@ export function expandToGenes(tree, genesOfInterest, hideCousins) {
   if (!tree.displayInfo.expanded) { // no genesOfInterest in the tree, show everything
     const traverse = node => {
       node.displayInfo.expanded = true;
-      node.children.forEach(child => {
+      node.children && node.children.forEach(child => {
         traverse(child);
       })
     };
