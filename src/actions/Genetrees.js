@@ -1,21 +1,32 @@
-import {prepTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
+import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
 import Swagger from "swagger-client";
+import {reIndexTree} from "../../es/utils/treeTools";
 
 export const REQUESTED_TREE = 'REQUESTED_TREE';
+export const REQUESTED_SPECIES_TREE = 'REQUESTED_SPECIES_TREE';
 export const RECEIVED_TREE = 'RECEIVED_TREE';
 export const USED_TREE = 'USED_TREE';
+export const RECEIVED_SPECIES_TREE = 'RECEIVED_SPECIES_TREE';
+export const USED_SPECIES_TREE = 'USED_SPECIES_TREE';
 export const HOVERED_NODE = 'HOVERED_NODE';
 export const UPDATED_TREE_LAYOUT = 'UPDATED_TREE_LAYOUT';
 export const CALCULATED_GAPS = 'CALCULATED_GAPS';
 
-function requestTree(url) {
+function requestTree(url, params) {
   return {
-    type: REQUESTED_TREE,
+    type: params.speciesTree ? REQUESTED_SPECIES_TREE : REQUESTED_TREE,
     url
   }
 }
 
-function receiveTree(tree, indexes, interpro) {
+function receiveTree(tree, params, indexes, interpro) {
+  if (params.speciesTree) {
+    return {
+      type: RECEIVED_SPECIES_TREE,
+      tree,
+      receivedAt: Date.now()
+    }
+  }
   return {
     type: RECEIVED_TREE,
     tree, ...indexes, interpro,
@@ -23,7 +34,13 @@ function receiveTree(tree, indexes, interpro) {
   }
 }
 
-const useTree = (url) => {
+const useTree = (url, params) => {
+  if (params.speciesTree) {
+    return {
+      type: USED_SPECIES_TREE,
+      url
+    }
+  }
   return {
     type: USED_TREE,
     url
@@ -67,7 +84,13 @@ export const collapseNode = node => {
   return updateLayout();
 };
 
-const treeURL = (p,s) => `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
+const treeURL = (p,s) => {
+  let url = `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
+  if (!p.speciesTree && (p.filter || s.filter)) {
+    url += `&filter=${p.filter || s.filter}`
+  }
+  return url;
+};
 
 export const getGapParams = (p) => [p.minDepth, p.minGapLength, p.gapPadding];
 
@@ -122,29 +145,47 @@ export const toggleGap = (idx, gapParams) => {
 };
 
 const shouldFetchTree = (state, url) => {
-  if (state.isFetching) return false;
+  // if (state.isFetching) return false;
   return !state.trees.hasOwnProperty(url);
 };
 
 const fetchTree = (url,params) => {
   return (dispatch, getState) => {
     const state = getState();
-    dispatch(requestTree(url));
+    dispatch(requestTree(url,params));
     return fetch(url)
       .then(response => response.json())
       .then(json => {
-        let tree = prepTree(json, state.genetrees.nodeHeight);
-        expandToGenes(tree, params.genesOfInterest || state.genetrees.genesOfInterest, false);
-        let indexes = indexVisibleNodes(tree);
+        if (params.speciesTree) {
+          let goiTaxon = 0;
+          if (state.genetrees.currentTree && state.genetrees.trees[state.genetrees.currentTree]) {
+            let gt = state.genetrees.trees[state.genetrees.currentTree];
+            reIndexTree(gt,['geneId','nodeId']);
+            let gene = gt.indices.geneId[state.genetrees.genesOfInterest[0]];
+            console.log('taxonId of goi',gene.taxonId);
+            goiTaxon = gene.taxonId;
+          }
+          let tree = prepSpeciesTree(json, goiTaxon);
+          dispatch(receiveTree(tree, params));
+        }
+        else {
+          let tree = prepTree(json, state.genetrees.nodeHeight);
+          expandToGenes(tree, params.genesOfInterest || state.genetrees.genesOfInterest, false);
+          let indexes = indexVisibleNodes(tree);
 
-        addConsensus(tree);
+          addConsensus(tree);
 
-        Swagger(`${state.genetrees.api}/swagger`)
-          .then(client => {
-            addDomainArchitecture(tree, client, function (interpro) {
-              dispatch(receiveTree(tree, indexes, interpro));
+          Swagger(`${state.genetrees.api}/swagger`)
+            .then(client => {
+              addDomainArchitecture(tree, client, function (interpro) {
+                dispatch(receiveTree(tree, params, indexes, interpro));
+                if (tree.hasOwnProperty('speciesTreeId')) {
+                  dispatch(fetchTreeIfNeeded({treeId: tree.speciesTreeId, speciesTree: true}));
+                  console.log('speciesTreeId', tree.speciesTreeId);
+                }
+              })
             })
-          })
+        }
       })
   }
 };
@@ -153,11 +194,12 @@ export const fetchTreeIfNeeded = params => {
   return (dispatch, getState) => {
     const state = getState();
     const url = treeURL(params, state.genetrees);
+    console.log('fetchTreeIfNeeded',url);
     if (shouldFetchTree(state.genetrees, url)) {
       return dispatch(fetchTree(url,params))
     }
     else {
-      return dispatch(useTree(url))
+      return dispatch(useTree(url, params))
     }
   }
 };

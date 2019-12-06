@@ -18,7 +18,7 @@ class Tree extends React.Component {
     super(props);
   }
   render() {
-    if (this.props.isFetching) {
+    if (!this.props.tree) {
       return (
         <div className='sweet-loading'>
           <BarLoader
@@ -49,8 +49,11 @@ class Tree extends React.Component {
 const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   const url = state.genetrees.currentTree;
-  if (state.genetrees.trees.hasOwnProperty(url)) {
+  const st = state.genetrees.currentSpeciesTree;
+  if (state.genetrees.trees.hasOwnProperty(url) && state.genetrees.trees.hasOwnProperty(st)) {
     const tree = state.genetrees.trees[url];
+    const speciesTree = state.genetrees.trees[st];
+    reIndexTree(speciesTree,['taxonId']);
     // need reference to parent node on each.
     const highlight = tree.highlight;
     reIndexTree(tree, ['geneId','nodeId']);
@@ -60,7 +63,7 @@ const mapState = (state, ownProps) => {
       zoneHeight += n.displayInfo.height
     });
     return {
-      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight
+      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight, speciesTree
     }
   }
   return {
@@ -81,6 +84,12 @@ const TreeNode = (props) => {
   const nodeRadius = props.nodeRadius;
   const highlight = props.highlight[node.nodeId];
 
+  const color = props.speciesTree.indices.taxonId[node.taxonId].color;
+  const style = {
+    fill: color,
+    stroke: color
+  };
+
   let marker,hline,vline,bbox,extension;
   let x=node.scaledDistanceToRoot * xScale;
   let y=(node.vindex-1) * height + height/2;
@@ -88,10 +97,10 @@ const TreeNode = (props) => {
   let parentX = parent ? parent.scaledDistanceToRoot * xScale : 0;
   bbox = <rect x={parentX} y={y - height/2} width={x - parentX + nodeRadius} height={height} className='bbox'/>;
   if (node.scaleFactor !== 1) {
-    hline = <line x1={parentX} y1={y} x2={x} y2={y} strokeDasharray="4, 4" className={`line${node.scaleFactor}`}/>;
+    hline = <line x1={parentX} y1={y} x2={x} y2={y} strokeDasharray="4, 4" className={`line${node.scaleFactor}`} style={style}/>;
   }
   else {
-    hline = <line x1={parentX} y1={y} x2={x} y2={y} className={`line`}/>;
+    hline = <line x1={parentX} y1={y} x2={x} y2={y} className={`line`} style={style}/>;
   }
   if (!node.children || node.children.length === 0) { // leaf
     marker = <circle cx={x} cy={y} r={nodeRadius} className={node.class}/>;
@@ -102,7 +111,7 @@ const TreeNode = (props) => {
       if (parentY < y) { parentY += nodeRadius }
       else { parentY -= nodeRadius }
       let vlineClass = highlight ? 'vline highlight' : 'vline';
-      vline = <line x1={parentX} x2={parentX} y1={y} y2={parentY} className={vlineClass}/>;
+      vline = <line x1={parentX} x2={parentX} y1={y} y2={parentY} className={vlineClass} style={style}/>;
     }
   }
   else {
@@ -112,7 +121,7 @@ const TreeNode = (props) => {
       if (parentY < y) { parentY += nodeRadius }
       else { parentY -= nodeRadius }
       let vlineClass = highlight ? 'vline highlight' : 'vline';
-      vline = <line x1={parentX} x2={parentX} y1={y} y2={parentY} className={vlineClass}/>;
+      vline = <line x1={parentX} x2={parentX} y1={y} y2={parentY} className={vlineClass} style={style}/>;
     }
     if (node.displayInfo.expanded) {
       let w = nodeRadius*1.5;
@@ -120,24 +129,24 @@ const TreeNode = (props) => {
         let child1Y = (node.children[0].vindex - 1) * height + height / 2;
         let child2Y = (node.children[1].vindex - 1) * height + height / 2;
         bbox = <rect x={parentX} y={child1Y} width={x - parentX + nodeRadius} height={child2Y - child1Y} className='bbox'/>;
-        marker = <rect x={x - w/2} y={y - w/2} width={w} height={w} className={node.class}/>;
+        marker = <rect x={x - w/2} y={y - w/2} width={w} height={w} className={node.class} style={style}/>;
         // vline = <line x1={x} x2={x} y1={child1Y} y2={child2Y} className='line'/>;
       }
       else { // pruned child
         w *= 0.3;
         if (parent && node.leftIndex - 1 === parent.leftIndex) {
           marker = <polygon points={`${x - w},${y} ${x},${y - 2 * w} ${x + 2 * w},${y - 2 * w} ${x + w},${y}`}
-                            className={node.class}/>;
+                            className={node.class} style={style}/>;
         }
         else {
           marker = <polygon points={`${x - w},${y} ${x},${y + 2 * w} ${x + 2 * w},${y + 2 * w} ${x + w},${y}`}
-                            className={node.class}/>;
+                            className={node.class} style={style}/>;
         }
       }
     }
     else { // collapsed
       marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${Math.max(parentX,x-4*nodeRadius)},${y}`}
-                        className={node.class}/>;
+                        className={node.class} style={style}/>;
       extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
       // hline = null;
     }

@@ -38,6 +38,14 @@ const nodeLabel = (node, props) => {
       words.push('--')
     }
   }
+  if (props.geneId) {
+    if (node.geneId) {
+      words.push(node.geneId)
+    }
+    else {
+      words.push('--')
+    }
+  }
   return words.join(';');
 };
 

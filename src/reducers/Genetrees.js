@@ -2,6 +2,9 @@ import {
   REQUESTED_TREE,
   RECEIVED_TREE,
   USED_TREE,
+  REQUESTED_SPECIES_TREE,
+  RECEIVED_SPECIES_TREE,
+  USED_SPECIES_TREE,
   HOVERED_NODE,
   UPDATED_TREE_LAYOUT,
   CALCULATED_GAPS
@@ -11,6 +14,7 @@ function trees(
   state = {
     isFetching: false,
     currentTree: '',
+    currentSpeciesTree: '',
     trees: {}
   },
   action
@@ -21,6 +25,11 @@ function trees(
       return Object.assign({}, state, {
         isFetching: true,
         currentTree: action.url
+      });
+    case REQUESTED_SPECIES_TREE:
+      return Object.assign({}, state, {
+        isFetching: true,
+        currentSpeciesTree: action.url
       });
     case RECEIVED_TREE:
       const newTree = { ...action.tree,
@@ -38,9 +47,19 @@ function trees(
         lastUpdated: action.receivedAt,
         interpro: action.interpro
       });
+    case RECEIVED_SPECIES_TREE:
+      state.trees[state.currentSpeciesTree] = action.tree;
+      return Object.assign({}, state, {
+        isFetching: false,
+        lastUpdated: action.receivedAt
+      });
     case USED_TREE:
       return Object.assign({}, state, {
         currentTree: action.url
+      });
+    case USED_SPECIES_TREE:
+      return Object.assign({}, state, {
+        currentSpeciesTree: action.url
       });
     case HOVERED_NODE:
       tree = state.trees[state.currentTree];

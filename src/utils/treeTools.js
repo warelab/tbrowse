@@ -2,7 +2,7 @@ import TreeModel from 'tree-model';
 import _ from 'lodash';
 let d3 = require('d3-scale');
 let d3chrom = require('d3-scale-chromatic');
-
+//d3.scaleLinear()
 export function reIndexTree(tree, attrs) {
   tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
@@ -56,6 +56,9 @@ function indexTree(tree, attrs, nodeHeight) {
 }
 
 function sumBranchLengths(node) {
+  if (node.distanceToParent === 0) {
+    node.distanceToParent = 1;
+  }
   let sum = node.distanceToParent;
   node.children && node.children.forEach(child => {
     sum += sumBranchLengths(child);
@@ -71,8 +74,19 @@ function flattenTree(node) {
     if (node.children.length === 1) { // pruned branch
       return _.concat(flattenTree(node.children[0], node));
     }
+    if (node.children.length > 2) {
+      let nodes = [];
+      node.children.forEach(child => {
+        let flatChildren = flattenTree(child);
+        flatChildren.forEach(fc => {
+          nodes.push(fc);
+        })
+      });
+      nodes.push(node);
+      return nodes;
+    }
   }
-  return node;
+  return [node];
 }
 
 function colorByDistance(tree) {
@@ -80,7 +94,7 @@ function colorByDistance(tree) {
   let flatDist = 0;
   nodeOrder.forEach(node => {
     let midpoint = flatDist + node.distanceToParent/2;
-    node.branchColor = d3chrom.interpolateRainbow(midpoint/tree.totalLength);
+    node.branchColor = d3chrom.interpolateTurbo(midpoint/tree.totalLength);
     flatDist += node.distanceToParent
   });
 }
@@ -103,11 +117,31 @@ export function prepTree(genetree,nodeHeight) {
 
   genetree.totalLength = sumBranchLengths(genetree);
 
-  return genetree;
+  return genetree
 }
 
-export function setGeneOfInterest(tree, geneId) {
-  let node = tree.indices.geneId[geneId];
+export function prepSpeciesTree(tree, taxonId) {
+  if (taxonId > 0) {
+    reIndexTree(tree, ['taxonId','nodeId']);
+    let node = tree.indices.taxonId[taxonId];
+    pivotBranches(tree,node);
+  }
+
+  tree.totalLength = sumBranchLengths(tree);
+  let colorScale = d3.scaleLinear()
+    .domain([0, tree.totalLength])
+    .range(['green', 'red']);
+  let nodeOrder = flattenTree(tree);
+  let flatDist = 0;
+  nodeOrder.forEach(node => {
+    let midpoint = flatDist + node.distanceToParent/2;
+    node.color = colorScale(midpoint); //d3chrom.interpolateRainbow(midpoint/tree.totalLength);
+    flatDist += node.distanceToParent;
+  });
+  return tree;
+}
+
+function pivotBranches(tree, node) {
   while (node.parentId) {
     const parent = tree.indices.nodeId[node.parentId];
     const siblings = parent.children;
@@ -118,6 +152,11 @@ export function setGeneOfInterest(tree, geneId) {
     }
     node = parent;
   }
+}
+
+export function setGeneOfInterest(tree, geneId) {
+  let node = tree.indices.geneId[geneId];
+  pivotBranches(tree,node);
   colorByDistance(tree);
 }
 
