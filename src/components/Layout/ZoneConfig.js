@@ -52,7 +52,7 @@ const ConfigurableParameter = ({param, value, onUpdate, extraArgs}) => {
       <tr>
         <td>{param.label}</td>
         <td style={{transform:'scale(0.6)'}}>
-          <Switch onClick={(e)=>onUpdate({...extraArgs, id: param.id, value:!value})} on={value}/>
+          <Switch onClick={(e)=>onUpdate({...extraArgs, id: param.id, value:!value})} on={value || false}/>
         </td>
       </tr>
     )

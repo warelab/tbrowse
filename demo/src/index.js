@@ -37,7 +37,8 @@ const propsPruned = {
   },{
     type: 'msa',
     colorScheme: 'clustal',
-    width: 800
+    width: 800,
+    minDepth: 1
   },{
     type: 'label',
     taxName: false,

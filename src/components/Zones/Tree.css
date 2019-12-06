@@ -3,7 +3,7 @@
     /*transition: stroke-width .1s*/
 }
 .tree-node.highlight {
-    stroke-width: 2px;
+    stroke-width: 3px;
 }
 .vline {
     stroke-linecap: round;

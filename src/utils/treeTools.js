@@ -157,7 +157,7 @@ function pivotBranches(tree, node) {
 export function setGeneOfInterest(tree, geneId) {
   let node = tree.indices.geneId[geneId];
   pivotBranches(tree,node);
-  colorByDistance(tree);
+  // colorByDistance(tree);
 }
 
 export function expandToGenes(tree, genesOfInterest, hideCousins) {

@@ -50,6 +50,7 @@ const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   const url = state.genetrees.currentTree;
   const st = state.genetrees.currentSpeciesTree;
+  const goi = state.genetrees.genesOfInterest[0];
   if (state.genetrees.trees.hasOwnProperty(url) && state.genetrees.trees.hasOwnProperty(st)) {
     const tree = state.genetrees.trees[url];
     const speciesTree = state.genetrees.trees[st];
@@ -63,7 +64,7 @@ const mapState = (state, ownProps) => {
       zoneHeight += n.displayInfo.height
     });
     return {
-      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight, speciesTree
+      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight, speciesTree, goi
     }
   }
   return {
@@ -90,7 +91,7 @@ const TreeNode = (props) => {
     stroke: color
   };
 
-  let marker,hline,vline,bbox,extension;
+  let marker,hline,vline,bbox,extension,popover;
   let x=node.scaledDistanceToRoot * xScale;
   let y=(node.vindex-1) * height + height/2;
   const parent = props.tree.indices.nodeId[node.parentId];
@@ -103,7 +104,7 @@ const TreeNode = (props) => {
     hline = <line x1={parentX} y1={y} x2={x} y2={y} className={`line`} style={style}/>;
   }
   if (!node.children || node.children.length === 0) { // leaf
-    marker = <circle cx={x} cy={y} r={nodeRadius} className={node.class}/>;
+    marker = <circle cx={x} cy={y} r={nodeRadius} className={node.geneId === props.goi ? 'geneOfInterest' : node.class}/>;
     extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
     if (parent && parent.children.length === 2) {
       const parentX = parent.scaledDistanceToRoot * xScale;
@@ -145,12 +146,13 @@ const TreeNode = (props) => {
       }
     }
     else { // collapsed
-      marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${Math.max(parentX,x-4*nodeRadius)},${y}`}
+      marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${Math.max(parentX+4,x-30)},${y}`}
                         className={node.class} style={style}/>;
       extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
       // hline = null;
     }
   }
+
   const nodeClass = highlight ? 'tree-node highlight' : 'tree-node';
 
   const expandOrCollapse = node => {

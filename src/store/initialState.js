@@ -18,7 +18,7 @@ const zoneDefaults = {
     label: 'Tree',
     width: 400,
     minWidth: 100,
-    nodeRadius: 4
+    nodeRadius: 3
   },
   msa: {
     label: 'Alignment',

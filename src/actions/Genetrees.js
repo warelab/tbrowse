@@ -162,7 +162,6 @@ const fetchTree = (url,params) => {
             let gt = state.genetrees.trees[state.genetrees.currentTree];
             reIndexTree(gt,['geneId','nodeId']);
             let gene = gt.indices.geneId[state.genetrees.genesOfInterest[0]];
-            console.log('taxonId of goi',gene.taxonId);
             goiTaxon = gene.taxonId;
           }
           let tree = prepSpeciesTree(json, goiTaxon);
@@ -181,7 +180,6 @@ const fetchTree = (url,params) => {
                 dispatch(receiveTree(tree, params, indexes, interpro));
                 if (tree.hasOwnProperty('speciesTreeId')) {
                   dispatch(fetchTreeIfNeeded({treeId: tree.speciesTreeId, speciesTree: true}));
-                  console.log('speciesTreeId', tree.speciesTreeId);
                 }
               })
             })
@@ -194,7 +192,6 @@ export const fetchTreeIfNeeded = params => {
   return (dispatch, getState) => {
     const state = getState();
     const url = treeURL(params, state.genetrees);
-    console.log('fetchTreeIfNeeded',url);
     if (shouldFetchTree(state.genetrees, url)) {
       return dispatch(fetchTree(url,params))
     }
