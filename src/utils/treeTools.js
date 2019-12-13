@@ -133,10 +133,15 @@ export function prepSpeciesTree(tree, taxonId) {
     .range(['green', 'red']);
   let nodeOrder = flattenTree(tree);
   let flatDist = 0;
+  tree.leafOrder={};
+  tree.leafCount=0;
   nodeOrder.forEach(node => {
     let midpoint = flatDist + node.distanceToParent/2;
     node.color = colorScale(midpoint); //d3chrom.interpolateRainbow(midpoint/tree.totalLength);
     flatDist += node.distanceToParent;
+    if (!node.children) {
+      tree.leafOrder[node.taxonId] = tree.leafCount++;
+    }
   });
   return tree;
 }

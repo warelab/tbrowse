@@ -2,28 +2,9 @@ import React from 'react'
 import { connect } from 'react-redux'
 import { hoverNode } from "../../actions/Genetrees";
 import { bindActionCreators } from "redux";
-import { BarLoader } from 'react-spinners';
-import { css } from "@emotion/core";
 import "react-toggle-switch/dist/css/switch.min.css";
 import './Text.css';
-
-const override = css`
-  display: block;
-  margin: 0 auto;
-  border-color: red;
-`;
-
-const Loading = props => (
-  <div className='sweet-loading'>
-    <BarLoader
-      css={override}
-      sizeUnit={"px"}
-      size={props.width}
-      color={'#123abc'}
-      loading={!props.nodes}
-    />
-  </div>
-);
+import { Loading } from './Loading';
 
 const nodeLabel = (node, props) => {
   let words = [];
@@ -71,8 +52,6 @@ const LabelsComponent = props => {
 
 const TaxonomyComponent = props => {
   if (props.nodes) {
-    function onHover() { props.hoverNode(node.nodeId) }
-
     return (
       <div className='text-zone' style={{width:props.width}}>
         {props.nodes.map((n,idx) => {
@@ -100,8 +79,6 @@ const getLocation = node => {
 
 const LocationComponent = props => {
   if (props.nodes) {
-    function onHover() { props.hoverNode(node.nodeId) }
-
     return (
       <div className='text-zone' style={{width:props.width}}>
         {props.nodes.map((n,idx) => {
@@ -123,7 +100,12 @@ const DistancesComponent = props => {
     return (
       <div className='text-zone' style={{width:props.width}}>
         {props.nodes.map((n,idx) => {
-          return <div key={idx}>{n.distanceToParent}</div>
+          let style = {};
+          if (props.highlight[n.nodeId]) style.fontWeight = 'bolder';
+          return <div style={style}
+                      key={idx}
+                      onMouseOver={() => props.hoverNode(n.nodeId)}
+          >{n.distanceToParent}</div>
         })}
       </div>
     )
@@ -137,9 +119,9 @@ const mapState = (state, ownProps) => {
     const tree = state.genetrees.trees[state.genetrees.currentTree];
     const nodes = tree.visibleUnexpanded;
     const highlight = tree.highlight;
-    return { nodes, highlight, ...zone }
+    return { nodes, highlight, ...zone, isLoading:false }
   }
-  return { ...zone }
+  return { ...zone, isLoading:true }
 };
 
 const mapDispatch = dispatch => bindActionCreators({ hoverNode }, dispatch);

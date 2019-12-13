@@ -77,6 +77,11 @@ const zoneDefaults = {
     width: 400,
     minWidth: 100
   },
+  blastologs: {
+    label: 'Orthologs',
+    width: 500,
+    minWidth: 200
+  },
   checkbox: {
     label: 'Checkbox',
     width: 50,
@@ -112,6 +117,9 @@ const initializeState = (props) => {
         }
       }),
       salt: Math.floor(Math.random() * 1000000).toString(16)
+    },
+    blastologs: {
+      api: 'https://data.gramene.org/v62'
     }
   };
   let offset=0;
