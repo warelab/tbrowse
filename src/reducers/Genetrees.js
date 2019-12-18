@@ -5,9 +5,15 @@ import {
   REQUESTED_SPECIES_TREE,
   RECEIVED_SPECIES_TREE,
   USED_SPECIES_TREE,
+  REQUESTED_NEIGHBORS,
+  RECEIVED_NEIGHBORS,
+  USED_NEIGHBORS,
   HOVERED_NODE,
   UPDATED_TREE_LAYOUT,
-  CALCULATED_GAPS
+  CALCULATED_GAPS,
+  USED_COLORS,
+  COLORING_NEIGHBORS,
+  COLORED_NEIGHBORS
 } from '../actions/Genetrees'
 
 function trees(
@@ -15,7 +21,10 @@ function trees(
     isFetching: false,
     currentTree: '',
     currentSpeciesTree: '',
-    trees: {}
+    currentNeighbors: '',
+    trees: {},
+    neighbors: {},
+    treeColors: {}
   },
   action
 ) {
@@ -23,13 +32,18 @@ function trees(
   switch(action.type) {
     case REQUESTED_TREE:
       return Object.assign({}, state, {
-        isFetching: true,
+        isFetchingTree: true,
         currentTree: action.url
       });
     case REQUESTED_SPECIES_TREE:
       return Object.assign({}, state, {
-        isFetching: true,
+        isFetchingSpeciesTree: true,
         currentSpeciesTree: action.url
+      });
+    case REQUESTED_NEIGHBORS:
+      return Object.assign({}, state, {
+        isFetchingNeighbors: true,
+        currentNeighbors: action.url
       });
     case RECEIVED_TREE:
       const newTree = { ...action.tree,
@@ -43,14 +57,20 @@ function trees(
       state.trees[state.currentTree] = newTree;
 
       return Object.assign({}, state, {
-        isFetching: false,
+        isFetchingTree: false,
         lastUpdated: action.receivedAt,
         interpro: action.interpro
       });
     case RECEIVED_SPECIES_TREE:
       state.trees[state.currentSpeciesTree] = action.tree;
       return Object.assign({}, state, {
-        isFetching: false,
+        isFetchingSpeciesTree: false,
+        lastUpdated: action.receivedAt
+      });
+    case RECEIVED_NEIGHBORS:
+      state.neighbors[state.currentNeighbors] = action.neighbors;
+      return Object.assign({}, state, {
+        isFetchingNeighbors: false,
         lastUpdated: action.receivedAt
       });
     case USED_TREE:
@@ -61,6 +81,22 @@ function trees(
       return Object.assign({}, state, {
         currentSpeciesTree: action.url
       });
+    case USED_NEIGHBORS:
+      return Object.assign({}, state, {
+        currentNeighbors: action.url
+      });
+    case USED_COLORS:
+      return Object.assign({}, state, {
+        currentColor: action.geneId
+      });
+    case COLORING_NEIGHBORS:
+      state.treeColors[action.geneId] = {};
+      return Object.assign({}, state, {
+        currentColor: action.geneId
+      });
+    case COLORED_NEIGHBORS:
+      state.treeColors[action.geneId] = {...action};
+      return Object.assign({}, state, {});
     case HOVERED_NODE:
       tree = state.trees[state.currentTree];
       let highlight = {};

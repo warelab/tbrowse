@@ -14,8 +14,7 @@ const props = {
   },{
     type: 'taxonomy'
   },{
-    type: 'blastologs',
-    colorScheme: 'clustal',
+    type: 'neighborhood',
     width: 800
   },{
     type: 'label',

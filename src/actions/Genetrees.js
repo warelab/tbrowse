@@ -1,16 +1,22 @@
-import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture} from '../utils/treeTools'
+import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture, initTreeColors} from '../utils/treeTools'
 import Swagger from "swagger-client";
 import {reIndexTree} from "../../es/utils/treeTools";
 
 export const REQUESTED_TREE = 'REQUESTED_TREE';
-export const REQUESTED_SPECIES_TREE = 'REQUESTED_SPECIES_TREE';
 export const RECEIVED_TREE = 'RECEIVED_TREE';
 export const USED_TREE = 'USED_TREE';
+export const REQUESTED_NEIGHBORS = '  REQUESTED_NEIGHBORS';
+export const RECEIVED_NEIGHBORS = 'RECEIVED_NEIGHBORS';
+export const USED_NEIGHBORS = 'USED_NEIGHBORS';
+export const REQUESTED_SPECIES_TREE = 'REQUESTED_SPECIES_TREE';
 export const RECEIVED_SPECIES_TREE = 'RECEIVED_SPECIES_TREE';
 export const USED_SPECIES_TREE = 'USED_SPECIES_TREE';
 export const HOVERED_NODE = 'HOVERED_NODE';
 export const UPDATED_TREE_LAYOUT = 'UPDATED_TREE_LAYOUT';
 export const CALCULATED_GAPS = 'CALCULATED_GAPS';
+export const COLORING_NEIGHBORS = 'COLORING_NEIGHBORS';
+export const USED_COLORS = 'USED_COLORS';
+export const COLORED_NEIGHBORS = 'COLORED_NEIGHBORS';
 
 function requestTree(url, params) {
   return {
@@ -46,6 +52,29 @@ const useTree = (url, params) => {
     url
   }
 };
+
+function requestNeighbors(url) {
+  return {
+    type: REQUESTED_NEIGHBORS,
+    url
+  }
+}
+
+function receiveNeighbors(neighbors) {
+  return {
+    type: RECEIVED_NEIGHBORS,
+    neighbors,
+    receivedAt: Date.now()
+  }
+}
+
+function useNeighbors(url) {
+  return {
+    type: USED_NEIGHBORS,
+    url
+  }
+}
+
 
 export const hoverNode = (nodeId) => {
   return dispatch => {
@@ -86,6 +115,14 @@ export const collapseNode = node => {
 
 const treeURL = (p,s) => {
   let url = `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
+  if (!p.speciesTree && (p.filter || s.filter)) {
+    url += `&filter=${p.filter || s.filter}`
+  }
+  return url;
+};
+
+const neighborsURL = (p,s) => {
+  let url = `${s.api}/neighbors?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
   if (!p.speciesTree && (p.filter || s.filter)) {
     url += `&filter=${p.filter || s.filter}`
   }
@@ -145,8 +182,75 @@ export const toggleGap = (idx, gapParams) => {
 };
 
 const shouldFetchTree = (state, url) => {
-  // if (state.isFetching) return false;
+  if (state.isFetchingTree) return false;
   return !state.trees.hasOwnProperty(url);
+};
+
+const shouldFetchNeighbors = (state, url) => {
+  if (state.isFetchingNeighbors) return false;
+  return !state.neighbors.hasOwnProperty(url);
+};
+
+const getGeneOfInterest = state => {
+  if (state.genetrees.currentTree && state.genetrees.trees[state.genetrees.currentTree]) {
+    let gt = state.genetrees.trees[state.genetrees.currentTree];
+    reIndexTree(gt, ['geneId', 'nodeId']);
+    return gt.indices.geneId[state.genetrees.genesOfInterest[0]];
+  }
+  return null;
+};
+
+const colorNeighbors = geneId => {
+  return (dispatch, getState) => {
+    const state = getState();
+    const goi = getGeneOfInterest(state);
+    if (goi) {
+      console.log('colorNeighbors',geneId);
+      const neighbors = state.genetrees.neighbors[state.genetrees.currentNeighbors];
+      const x = initTreeColors(neighbors, goi);
+      dispatch({
+        type: COLORED_NEIGHBORS,
+        geneId: geneId,
+        ...x
+      })
+    }
+  }
+};
+
+const useColors = geneId => {
+  return {
+    type: USED_COLORS,
+    geneId
+  }
+};
+
+export const colorNeighborsIfNeeded = params => {
+  return (dispatch, getState) => {
+    const state = getState();
+    const goi = getGeneOfInterest(state);
+    if (goi && !state.genetrees.treeColors[goi.geneId]) {
+      dispatch({
+        type: COLORING_NEIGHBORS,
+        geneId: goi.geneId
+      });
+      return dispatch(colorNeighbors(goi.geneId));
+    }
+    else {
+      return dispatch(useColors(goi.geneId))
+    }
+  }
+};
+
+const fetchNeighbors = url => {
+ return (dispatch, getState) => {
+   dispatch(requestNeighbors(url));
+   return fetch(url)
+     .then(response => response.json())
+     .then(json => {
+       let neighbors = json;
+       dispatch(receiveNeighbors(neighbors))
+     })
+ }
 };
 
 const fetchTree = (url,params) => {
@@ -157,14 +261,8 @@ const fetchTree = (url,params) => {
       .then(response => response.json())
       .then(json => {
         if (params.speciesTree) {
-          let goiTaxon = 0;
-          if (state.genetrees.currentTree && state.genetrees.trees[state.genetrees.currentTree]) {
-            let gt = state.genetrees.trees[state.genetrees.currentTree];
-            reIndexTree(gt,['geneId','nodeId']);
-            let gene = gt.indices.geneId[state.genetrees.genesOfInterest[0]];
-            goiTaxon = gene.taxonId;
-          }
-          let tree = prepSpeciesTree(json, goiTaxon);
+          const goi = getGeneOfInterest(getState());
+          let tree = prepSpeciesTree(json, goi ? goi.taxonId : 0);
           dispatch(receiveTree(tree, params));
         }
         else {
@@ -198,5 +296,27 @@ export const fetchTreeIfNeeded = params => {
     else {
       return dispatch(useTree(url, params))
     }
+  }
+};
+
+export const fetchNeighborsIfNeeded = params => {
+  return (dispatch, getState) => {
+    const state = getState();
+    const url = neighborsURL(params, state.genetrees);
+    if (shouldFetchNeighbors(state.genetrees, url)) {
+      return dispatch(fetchNeighbors(url))
+    }
+    else {
+      return dispatch(useNeighbors(url))
+    }
+  }
+};
+
+export const updateGenesOfInterest = geneIds => {
+  return (dispatch, getState) => {
+    const state = getState();
+    // reorganize the tree
+    // update the neighborhood colors
+    colorNeighbors()
   }
 };

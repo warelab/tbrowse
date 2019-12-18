@@ -9,6 +9,8 @@ const genetreesDefaults = {
   genomes: [],
   genesOfInterest: ['ENSG00000139618'],
   trees: {},
+  neighbors: {},
+  treeColors: {},
   nodeHeight: 24
 };
 const defaultZones = ['tree', 'label', 'msa'];

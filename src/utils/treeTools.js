@@ -2,7 +2,66 @@ import TreeModel from 'tree-model';
 import _ from 'lodash';
 let d3 = require('d3-scale');
 let d3chrom = require('d3-scale-chromatic');
-//d3.scaleLinear()
+
+export function initTreeColors(primary_neighborhood, goi) {
+  let range = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'darkviolet'];
+  if (goi.geneStrand === '-1') {
+    range = range.reverse();
+  }
+  let treeMap = {}; // key is treeId value is a number based on relative position in neighborhood
+
+  let center_idx = goi.geneRank[0]; // always green
+  let d = 0;
+  treeMap[goi.treeId] = d;
+  let i, nLeft=0, nRight=0;
+  // trees left of center
+  const firstNeighbor = goi.geneNeighbors[0];
+  const lastNeighbor = goi.geneNeighbors[goi.geneNeighbors.length - 1];
+  for(i=center_idx-1; i >= firstNeighbor; i--) {
+    let gene = primary_neighborhood[i];
+    if (gene && gene.treeId && !treeMap[gene.treeId]) {
+      treeMap[gene.treeId] = --d;
+      nLeft--;
+    }
+  }
+  // trees right of center
+  d=0;
+  for(i=center_idx+1;i<=lastNeighbor;i++) {
+    let gene = primary_neighborhood[i];
+    if (gene && gene.treeId && !treeMap[gene.treeId]) {
+      treeMap[gene.treeId] = ++d;
+      nRight++;
+    }
+  }
+
+  let domain = [
+    nLeft,
+    2*nLeft/3,
+    nLeft/3,
+    0,
+    nRight/3,
+    2*nRight/3,
+    nRight
+  ];
+  if (nLeft === 0) {
+    domain = domain.slice(3);
+    range = range.slice(3);
+  }
+  if (nRight === 0) {
+    domain = domain.reverse().slice(3).reverse();
+    range = range.reverse().slice(3).reverse();
+  }
+
+  let scale = d3.scaleLinear()
+    .domain(domain)
+    .range(range);
+
+  if (domain.length === 1) {
+    scale = function (value) { return "green" }
+  }
+  return {scale, treeMap};
+}
+
 export function reIndexTree(tree, attrs) {
   tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
