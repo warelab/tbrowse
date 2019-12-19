@@ -13,5 +13,11 @@ module.exports = {
         react: 'React'
       }
     }
+  },
+  webpack: {
+    rules: {
+      sass: {
+      }
+    }
   }
 }

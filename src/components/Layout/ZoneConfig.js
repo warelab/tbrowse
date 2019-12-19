@@ -81,7 +81,7 @@ class ZoneConfig extends React.Component {
 
     return (
       <div className='tbrowse-zone-config'>
-        <select style={{width: '100px'}} value={zone.type} onChange={(e) => {
+        <select style={{width: `${Math.min(zone.width,200) - 40}px`}} value={zone.type} onChange={(e) => {
           if (e.target.value === '__add') {
             addZone({idx: id})
           }
@@ -103,7 +103,7 @@ class ZoneConfig extends React.Component {
             {id > 0 && <option value="__delete">Delete</option>}
           </optgroup>
         </select>
-        {zone.configurable && <a onClick={() => this.toggleConfig()}><i style={{float:'right', fontSize:'20px'}} className="fa fa-cog"/></a>}
+        {zone.configurable && <a onClick={() => this.toggleConfig()}><i style={{float:'right', fontSize:'22px', fontWeight: this.state.showConfig ? 'bolder' : 'normal'}} className="fa fa-cog"/></a>}
         {this.state.showConfig &&
           <div className='tbrowse-param-table-wrapper'>
             <table className='tbrowse-param-table'>
