@@ -2,6 +2,8 @@ import TreeModel from 'tree-model';
 import _ from 'lodash';
 let d3 = require('d3-scale');
 let d3chrom = require('d3-scale-chromatic');
+const regionColors = d3chrom.schemeCategory10;
+const unanchoredColor = '#d3d3d3';
 
 export function initTreeColors(primary_neighborhood, goi) {
   let range = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'darkviolet'];
@@ -200,6 +202,12 @@ export function prepSpeciesTree(tree, taxonId) {
     flatDist += node.distanceToParent;
     if (!node.children) {
       tree.leafOrder[node.taxonId] = tree.leafCount++;
+      if (node.genomeAssembly) {
+        node.regionColor={};
+        node.genomeAssembly.regions.names.forEach((r,i) => {
+          node.regionColor[r] = r === 'UNANCHORED' ? unanchoredColor: regionColors[i % regionColors.length];
+        })
+      }
     }
   });
   return tree;

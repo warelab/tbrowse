@@ -12,9 +12,14 @@ const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   const url = state.genetrees.currentNeighbors;
   const treeUrl = state.genetrees.currentTree;
-  if (state.genetrees.trees.hasOwnProperty(treeUrl) && state.genetrees.neighbors.hasOwnProperty(url)) {
+  const st = state.genetrees.currentSpeciesTree;
+  if (state.genetrees.trees.hasOwnProperty(treeUrl)
+    && state.genetrees.neighbors.hasOwnProperty(url)
+    && state.genetrees.trees.hasOwnProperty(st)) {
     let tree = state.genetrees.trees[treeUrl];
     reIndexTree(tree, ['geneId', 'nodeId']);
+    const speciesTree = state.genetrees.trees[st];
+    reIndexTree(speciesTree,['taxonId']);
     const goi = tree.indices.geneId[state.genetrees.genesOfInterest[0]];
     const nodes = tree.visibleUnexpanded;
     const highlight = tree.highlight;
@@ -27,7 +32,7 @@ const mapState = (state, ownProps) => {
         zoneHeight += n.displayInfo.height
       });
       return {
-        ...zone, nodes, highlight, neighbors, treeColor, zoneHeight
+        ...zone, nodes, highlight, neighbors, treeColor, zoneHeight, speciesTree
       }
     }
     return {
@@ -43,18 +48,15 @@ const mapDispatch = dispatch => bindActionCreators({ fetchNeighborsIfNeeded, col
 
 const RegionArrow = props => {
   const midline = props.node.displayInfo.offset + props.node.displayInfo.height / 2;
-  const region = {
-    name: 'yes',
-    start: 1,
-    end: 10
-  };
+  const location = props.node.gene_structure.location;
+  const stNode = props.speciesTree.indices.taxonId[props.node.taxonId];
   let tooltipFields = [
-    ['region', region.name],
-    ['start', region.start],
-    ['end', region.end]
+    ['region', location.region],
+    ['start', location.start],
+    ['end', location.end]
   ];
   const tooltip = (
-    <Tooltip id={region.name + ':' + region.start}>
+    <Tooltip id={location.region + ':' + location.start}>
       <table>
         <tbody>
         {tooltipFields.map( (tip, i ) => {
@@ -69,16 +71,36 @@ const RegionArrow = props => {
       </table>
     </Tooltip>
   );
+  const arrowLength = 16;
+  const arrowHeight = 5;
+  const regionColor = stNode.regionColor[location.region] || 'lightgray';
+  let lineStart = 0;
+  let lineEnd = props.width - arrowLength;
+  let tipX = props.width;
+  let tailX = tipX - arrowLength;
+  if (location.strand === -1) {
+    lineStart = arrowLength;
+    lineEnd = props.width;
+    tipX = 0;
+    tailX = arrowLength;
+  }
+  const points = `${tipX},${midline} ${tailX},${midline + arrowHeight} ${tailX},${midline - arrowHeight}`;
   return (
-    <OverlayTrigger placement="left" overlay={tooltip} trigger='click' rootClose={true}>
-      <line
-        x1={0} y1={midline}
-        x2={props.width} y2={midline}
-        stroke='blue'
-        strokeWidth={props.highlight[props.node.nodeId] ? 5 : 3}
-        cursor='pointer'
+    <g>
+      <OverlayTrigger placement="left" overlay={tooltip} trigger='click' rootClose={true}>
+        <line
+          x1={lineStart} y1={midline}
+          x2={lineEnd} y2={midline}
+          stroke={regionColor}
+          strokeWidth={props.highlight[props.node.nodeId] ? 5 : 3}
+          cursor='pointer'
+        />
+      </OverlayTrigger>
+      <polygon points={points}
+               stroke={regionColor}
+               fill={regionColor}
       />
-    </OverlayTrigger>
+    </g>
   )
 };
 
@@ -96,7 +118,7 @@ const Neighborhoods = props => {
     return (
       <svg width={props.width}
            height={props.zoneHeight}
-           style={{position:'absolute',top:'90px',background:'palegreen'}}
+           style={{position:'absolute',top:'90px',background:'white'}}
       >
         { props.nodes.filter(n => n.hasOwnProperty('geneId')).map((n,idx) => <Neighbors key={idx} node={n} {...props} />) }
       </svg>

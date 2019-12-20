@@ -5,7 +5,7 @@ import parse from 'url-parse'
 
 const url = parse(document.location.href, true);
 const props = {
-  setId: url.query.setId || "compara_plants_98a",
+  setId: url.query.setId || "compara_plants_98",
   treeId: url.query.treeId || "EPlGT00940000167757",
   genesOfInterest: ['AT2G34710'],
   zones: [{
@@ -24,7 +24,7 @@ const props = {
   }]
 };
 const propsPruned = {
-  setId: url.query.setId || "compara_plants_98a",
+  setId: url.query.setId || "compara_plants_98",
   treeId: url.query.treeId || "EPlGT00940000167757",
   filter: 'taxonAncestors:3700',
   genesOfInterest: ['AT2G34710'],
