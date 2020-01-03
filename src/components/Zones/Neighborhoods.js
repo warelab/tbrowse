@@ -109,21 +109,22 @@ const Gene = props => {
   const x = props.xPos;
   const y = props.yPos;
   const d = strand * props.neighborhoodOrientation === -1
-    ? `M ${x - .37} ${y} l .25 ${9+2*v} v -${4+v} h .4 v -${10+2*v} h -.4 v -${4+v} Z`
-    : `M ${x + .37} ${y} l -.25 ${9+2*v} v -${4+v} h -.4 v -${10+2*v} h .4 v -${4+v} Z`;
+    ? `M ${x - .43} ${y} l .3 ${9+2*v} h .5 v -${18+2*v} h -.5 Z`
+    : `M ${x + .43} ${y} l -.3 ${9+2*v} h -.5 v -${18+2*v} h .5 Z`;
   return <path d={d} fill={props.color} stroke="none"/>;
 };
 
 const Neighbors = props => {
   const geneRank = props.node.geneRank[0];
+  const strand = props.node.gene_structure.location.strand;
   return (
     <g onMouseOver={() => props.hoverNode(props.node.nodeId)}>
       <RegionArrow {...props}/>
       {props.node.geneNeighbors.map(neighborRank => {
         const neighbor = props.neighbors[neighborRank];
         const color = props.treeColor.scale(props.treeColor.treeMap[neighbor.treeId]) || 'grey';
-        return <Gene key={neighborRank} neighborhoodOrientation={props.node.gene_structure.location.strand}
-                     xPos={neighborRank - geneRank}
+        return <Gene key={neighborRank} neighborhoodOrientation={strand}
+                     xPos={strand * (neighborRank - geneRank)}
                      yPos={props.node.displayInfo.offset + props.node.displayInfo.height / 2}
                      color={color} highlighted={!!props.highlight[props.node.nodeId]}
                      gene={neighbor} />
