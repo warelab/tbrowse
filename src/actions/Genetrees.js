@@ -17,6 +17,8 @@ export const CALCULATED_GAPS = 'CALCULATED_GAPS';
 export const COLORING_NEIGHBORS = 'COLORING_NEIGHBORS';
 export const USED_COLORS = 'USED_COLORS';
 export const COLORED_NEIGHBORS = 'COLORED_NEIGHBORS';
+export const CHANGED_GOI = 'CHANGED_GOI';
+export const CHANGED_TREE = 'CHANGED_TREE';
 
 function requestTree(url, params) {
   return {
@@ -314,8 +316,47 @@ export const fetchNeighborsIfNeeded = params => {
 export const updateGenesOfInterest = geneIds => {
   return (dispatch, getState) => {
     const state = getState();
+    dispatch({
+      type: CHANGED_GOI,
+      genesOfInterest: geneIds
+    });
     // reorganize the tree
+    let tree = state.genetrees.trees[state.genetrees.currentTree];
+    reIndexTree(tree, ['geneId','nodeId']);
+    const goi = tree.indices.geneId[geneIds[0]];
+    expandToGenes(tree, geneIds, true);
+    dispatch(updateLayout());
     // update the neighborhood colors
-    colorNeighbors()
+    dispatch(colorNeighbors());
+    // update species tree colors
+    let stree = state.genetrees.trees[state.genetrees.currentSpeciesTree];
+    stree = prepSpeciesTree(stree, goi ? goi.taxonId : 0);
+    dispatch(receiveTree(stree,{speciesTree:true}))
+  }
+};
+
+export const newTree = params => {
+  return (dispatch, getState) => {
+    const state = getState();
+    const url = treeURL(params, state.genetrees);
+    if (url === state.genetrees.currentTree) {
+      // same tree, just update GOI
+      dispatch(updateGenesOfInterest(params.genesOfInterest));
+    }
+    else {
+      if (state.genetrees.trees.hasOwnProperty(url)) {
+        dispatch(useTree(url,params));
+        dispatch(useNeighbors(neighborsURL(params,state.genetrees),params));
+        dispatch(updateGenesOfInterest(params.genesOfInterest))
+      }
+      else {
+        dispatch({
+          type: CHANGED_TREE,
+          genesOfInterest: params.genesOfInterest,
+          treeId: params.treeId
+        });
+        dispatch(fetchTree(url,params))
+      }
+    }
   }
 };

@@ -234,7 +234,13 @@ export function setGeneOfInterest(tree, geneId) {
 
 export function expandToGenes(tree, genesOfInterest, hideCousins) {
   if (hideCousins) {
-    tree.all().forEach(n => n.displayInfo.expanded = false);
+    const collapse = node => {
+      node.displayInfo.expanded = false;
+      node.children && node.children.forEach(child => {
+        collapse(child);
+      })
+    };
+    collapse(tree);
   }
 
   genesOfInterest.forEach(geneId => {

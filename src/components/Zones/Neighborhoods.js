@@ -1,10 +1,10 @@
 import React from 'react'
 import { connect } from 'react-redux'
 import { bindActionCreators } from "redux";
-import { fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode } from "../../actions/Genetrees";
+import { fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode, newTree } from "../../actions/Genetrees";
 import { Loading } from './Loading';
 import {reIndexTree} from "../../../es/utils/treeTools";
-import {Tooltip, OverlayTrigger} from 'react-bootstrap';
+import {Tooltip, Popover, OverlayTrigger} from 'react-bootstrap';
 import '../../scss/Custom.scss';
 
 
@@ -44,7 +44,9 @@ const mapState = (state, ownProps) => {
   }
 };
 
-const mapDispatch = dispatch => bindActionCreators({ fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode }, dispatch);
+const mapDispatch = dispatch => bindActionCreators({
+  fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode, newTree
+}, dispatch);
 
 const RegionArrow = props => {
   const midline = props.node.displayInfo.offset + props.node.displayInfo.height / 2;
@@ -104,6 +106,37 @@ const RegionArrow = props => {
   )
 };
 const Gene = props => {
+  const fields = ['geneName','geneDescription','location.region','location.start','location.end','treeId'];
+  const tooltip = (
+    <Popover id={props.gene.geneId}>
+      <Popover.Title as="h3">{props.gene.geneId}</Popover.Title>
+      <Popover.Content>
+        <table>
+          <tbody>
+          {fields.filter(f => {
+            const l = f.replace('location.','');
+            return props.gene.hasOwnProperty(f) || props.gene.location.hasOwnProperty(l)
+          }).map((f,idx) => {
+            const l = f.replace('location.','');
+            let fname = props.gene.hasOwnProperty(f) ? f.replace('gene','') : l;
+            const v = props.gene.hasOwnProperty(f) ? props.gene[f] : props.gene.location[l];
+            let v2 = f === 'geneDescription' ? v.replace(/\[Source:.*/,'') : v;
+            if (f === 'treeId') {
+              fname = <a style={{color:'blue'}} onClick={()=>props.newTree({treeId:v,genesOfInterest:[props.gene.geneId]})}>{fname}</a>;
+            }
+            return (
+              <tr key={idx} style={{verticalAlign : 'top'}}>
+                <th>{fname}</th>
+                <td style={{textAlign : 'left', paddingLeft : '15px'}}>{v2}</td>
+              </tr>
+            )
+          })
+          }
+          </tbody>
+        </table>
+      </Popover.Content>
+    </Popover>
+  );
   const strand = +props.gene.location.strand;
   const v = props.highlighted ? 1 : 0;
   const x = props.xPos;
@@ -111,7 +144,9 @@ const Gene = props => {
   const d = strand * props.neighborhoodOrientation === -1
     ? `M ${x - .43} ${y} l .3 ${9+2*v} h .5 v -${18+2*v} h -.5 Z`
     : `M ${x + .43} ${y} l -.3 ${9+2*v} h -.5 v -${18+2*v} h .5 Z`;
-  return <path d={d} fill={props.color} stroke="none"/>;
+  return <OverlayTrigger placement="bottom" overlay={tooltip} trigger='click' rootClose={true}>
+    <path d={d} fill={props.color} stroke="none" cursor="pointer"/>
+  </OverlayTrigger>;
 };
 
 const Neighbors = props => {
@@ -127,14 +162,13 @@ const Neighbors = props => {
                      xPos={strand * (neighborRank - geneRank)}
                      yPos={props.node.displayInfo.offset + props.node.displayInfo.height / 2}
                      color={color} highlighted={!!props.highlight[props.node.nodeId]}
-                     gene={neighbor} />
+                     gene={neighbor} newTree={props.newTree} />
       })}
     </g>
   )
 };
 
 const Neighborhoods = props => {
-  props.fetchNeighborsIfNeeded({});
   if (props.neighbors && props.treeColor) {
     return (
       <svg width={props.width}
@@ -150,6 +184,9 @@ const Neighborhoods = props => {
   else {
     if (props.neighbors) {
       props.colorNeighborsIfNeeded();
+    }
+    else {
+      props.fetchNeighborsIfNeeded({});
     }
     return (
       <Loading {...props} isLoading={true}/>

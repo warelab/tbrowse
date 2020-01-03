@@ -13,7 +13,9 @@ import {
   CALCULATED_GAPS,
   USED_COLORS,
   COLORING_NEIGHBORS,
-  COLORED_NEIGHBORS
+  COLORED_NEIGHBORS,
+  CHANGED_GOI,
+  CHANGED_TREE
 } from '../actions/Genetrees'
 
 function trees(
@@ -126,6 +128,10 @@ function trees(
       tree = state.trees[state.currentTree];
       tree.gaps[action.gapKey] = action.gaps;
       return Object.assign({}, state);
+    case CHANGED_GOI:
+      return Object.assign({}, state, {genesOfInterest:action.genesOfInterest});
+    case CHANGED_TREE:
+      return Object.assign({}, state, {genesOfInterest:action.genesOfInterest, treeId:action.treeId, currentTree:'',currentNeighbors:''});
     default:
       return state
   }
