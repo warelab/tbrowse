@@ -205,7 +205,6 @@ const colorNeighbors = geneId => {
     const state = getState();
     const goi = getGeneOfInterest(state);
     if (goi) {
-      console.log('colorNeighbors',geneId);
       const neighbors = state.genetrees.neighbors[state.genetrees.currentNeighbors];
       const x = initTreeColors(neighbors, goi);
       dispatch({

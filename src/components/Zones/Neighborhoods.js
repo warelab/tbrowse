@@ -71,23 +71,23 @@ const RegionArrow = props => {
       </table>
     </Tooltip>
   );
-  const arrowLength = 16;
-  const arrowHeight = 5;
+  const arrowLength = 0.5;//16;
+  const arrowHeight = props.highlight[props.node.nodeId] ? 7 : 5;
   const regionColor = stNode.regionColor[location.region] || 'lightgray';
-  let lineStart = 0;
-  let lineEnd = props.width - arrowLength;
-  let tipX = props.width;
+  let lineStart = -11;
+  let lineEnd = 11 - arrowLength;
+  let tipX = 11;//props.width;
   let tailX = tipX - arrowLength;
   if (location.strand === -1) {
-    lineStart = arrowLength;
-    lineEnd = props.width;
-    tipX = 0;
-    tailX = arrowLength;
+    lineStart = -11 + arrowLength;
+    lineEnd = 11;//props.width;
+    tipX = -11;//0;
+    tailX = tipX + arrowLength;
   }
   const points = `${tipX},${midline} ${tailX},${midline + arrowHeight} ${tailX},${midline - arrowHeight}`;
   return (
     <g>
-      <OverlayTrigger placement="left" overlay={tooltip} trigger='click' rootClose={true}>
+      <OverlayTrigger placement="left" overlay={tooltip} trigger='hover' rootClose={true}>
         <line
           x1={lineStart} y1={midline}
           x2={lineEnd} y2={midline}
@@ -97,17 +97,37 @@ const RegionArrow = props => {
         />
       </OverlayTrigger>
       <polygon points={points}
-               stroke={regionColor}
+               stroke='none'
                fill={regionColor}
       />
     </g>
   )
 };
+const Gene = props => {
+  const strand = +props.gene.location.strand;
+  const v = props.highlighted ? 1 : 0;
+  const x = props.xPos;
+  const y = props.yPos;
+  const d = strand * props.neighborhoodOrientation === -1
+    ? `M ${x - .37} ${y} l .25 ${9+2*v} v -${4+v} h .4 v -${10+2*v} h -.4 v -${4+v} Z`
+    : `M ${x + .37} ${y} l -.25 ${9+2*v} v -${4+v} h -.4 v -${10+2*v} h .4 v -${4+v} Z`;
+  return <path d={d} fill={props.color} stroke="none"/>;
+};
 
 const Neighbors = props => {
+  const geneRank = props.node.geneRank[0];
   return (
     <g onMouseOver={() => props.hoverNode(props.node.nodeId)}>
       <RegionArrow {...props}/>
+      {props.node.geneNeighbors.map(neighborRank => {
+        const neighbor = props.neighbors[neighborRank];
+        const color = props.treeColor.scale(props.treeColor.treeMap[neighbor.treeId]) || 'grey';
+        return <Gene key={neighborRank} neighborhoodOrientation={props.node.gene_structure.location.strand}
+                     xPos={neighborRank - geneRank}
+                     yPos={props.node.displayInfo.offset + props.node.displayInfo.height / 2}
+                     color={color} highlighted={!!props.highlight[props.node.nodeId]}
+                     gene={neighbor} />
+      })}
     </g>
   )
 };
@@ -118,6 +138,8 @@ const Neighborhoods = props => {
     return (
       <svg width={props.width}
            height={props.zoneHeight}
+           viewBox={[-11,0,22,props.zoneHeight]}
+           preserveAspectRatio='none'
            style={{position:'absolute',top:'90px',background:'white'}}
       >
         { props.nodes.filter(n => n.hasOwnProperty('geneId')).map((n,idx) => <Neighbors key={idx} node={n} {...props} />) }
