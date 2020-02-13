@@ -5,8 +5,8 @@ import { fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode, newTree } fr
 import { Loading } from './Loading';
 import {reIndexTree} from "../../../es/utils/treeTools";
 import {Tooltip, Popover, OverlayTrigger} from 'react-bootstrap';
-import 'bootstrap/dist/css/bootstrap.css';
-
+// import 'bootstrap/dist/css/bootstrap.css';
+import './Neighborhoods.css'
 
 const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
