@@ -5,7 +5,7 @@ import { fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode, newTree } fr
 import { Loading } from './Loading';
 import {reIndexTree} from "../../../es/utils/treeTools";
 import {Tooltip, Popover, OverlayTrigger} from 'react-bootstrap';
-import 'bootstrap/scss/bootstrap.scss';
+import 'bootstrap/dist/css/bootstrap.css';
 
 
 const mapState = (state, ownProps) => {
