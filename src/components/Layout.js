@@ -2,6 +2,7 @@ import React from 'react'
 import { connect } from 'react-redux'
 import './Layout/style.css'
 import Zone from './Layout/Zone'
+import myContext from '../store/context'
 
 const Layout = (props) => (
   <div className='tbrowse' style={{height: props.height}}>
@@ -19,4 +20,4 @@ export default connect(state => {
     });
   }
   return {...state.layout, height}
-})(Layout);
+},null,null,{context:myContext})(Layout);

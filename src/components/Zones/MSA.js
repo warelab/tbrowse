@@ -1,5 +1,6 @@
 import React from 'react'
 import { connect } from 'react-redux'
+import myContext from '../../store/context'
 let d3 = require('d3-scale');
 import { getGapParams, calculateGaps, toggleGap, hoverNode } from "../../actions/Genetrees";
 import { getGapMask, lowerBound } from "../../utils/treeTools";
@@ -116,7 +117,7 @@ const mapState = (state, ownProps) => {
 
 const mapDispatch = dispatch => bindActionCreators({ calculateGaps, toggleGap, hoverNode }, dispatch);
 
-export default connect(mapState, mapDispatch)(MSAComponent);
+export default connect(mapState, mapDispatch, null, {context:myContext})(MSAComponent);
 
 
 class MSAHeader extends React.Component {

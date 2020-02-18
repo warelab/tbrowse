@@ -8,6 +8,7 @@ import 'rc-tooltip/assets/bootstrap.css';
 import Slider from 'rc-slider'
 import Switch from 'react-toggle-switch';
 import Tooltip from 'rc-tooltip';
+import myContext from '../../store/context'
 const Handle = Slider.Handle;
 
 const handle = (props) => {
@@ -141,4 +142,4 @@ const mapState = (state, ownProps) => {
 
 const mapDispatch = dispatch => bindActionCreators({ addZone, deleteZone, replaceZone, updateZoneParam }, dispatch);
 
-export default connect(mapState, mapDispatch)(ZoneConfig);
+export default connect(mapState, mapDispatch, null, {context:myContext})(ZoneConfig);

@@ -1,5 +1,6 @@
 import React from 'react'
 import { connect } from 'react-redux'
+import myContext from '../../store/context'
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import {bindActionCreators} from "redux";
@@ -75,7 +76,7 @@ const mapState = (state, ownProps) => {
 
 const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode, hoverNode }, dispatch);
 
-export default connect(mapState, mapDispatch)(Tree);
+export default connect(mapState, mapDispatch, null, {context:myContext})(Tree);
 
 const TreeNode = (props) => {
   const node = props.node;

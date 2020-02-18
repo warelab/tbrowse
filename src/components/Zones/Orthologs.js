@@ -4,6 +4,7 @@ import { bindActionCreators } from "redux";
 import { fetchOrthologsIfNeeded } from "../../actions/Blastologs";
 import { hoverNode } from "../../actions/Genetrees";
 import { Loading } from './Loading';
+import myContext from "../../store/context";
 
 const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
@@ -74,4 +75,4 @@ const Orthologs = props => {
   }
 };
 
-export default connect(mapState, mapDispatch)(Orthologs);
+export default connect(mapState, mapDispatch, null, {context:myContext})(Orthologs);

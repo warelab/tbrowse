@@ -6,12 +6,12 @@ import 'font-awesome/css/font-awesome.min.css'
 import configureStore from './store/configureStore';
 import initializeState from './store/initialState.js'
 import { fetchTreeIfNeeded } from "./actions/Genetrees";
-
+import myContext from './store/context';
 const TBrowse = (props) => {
   const store = configureStore(initializeState(props));
   store.dispatch(fetchTreeIfNeeded({}));
   return (
-    <Provider store={store}>
+    <Provider context={myContext} store={store}>
       <Layout/>
     </Provider>
   )

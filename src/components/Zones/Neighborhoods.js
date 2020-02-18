@@ -1,11 +1,11 @@
 import React from 'react'
 import { connect } from 'react-redux'
+import myContext from '../../store/context'
 import { bindActionCreators } from "redux";
 import { fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode, newTree } from "../../actions/Genetrees";
 import { Loading } from './Loading';
 import {reIndexTree} from "../../../es/utils/treeTools";
 import {Tooltip, Popover, OverlayTrigger} from 'react-bootstrap';
-// import 'bootstrap/dist/css/bootstrap.css';
 import './Neighborhoods.css'
 
 const mapState = (state, ownProps) => {
@@ -194,4 +194,4 @@ const Neighborhoods = props => {
   }
 };
 
-export default connect(mapState, mapDispatch)(Neighborhoods);
+export default connect(mapState, mapDispatch, null, {context:myContext})(Neighborhoods);

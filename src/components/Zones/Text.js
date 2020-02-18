@@ -1,5 +1,6 @@
 import React from 'react'
 import { connect } from 'react-redux'
+import myContext from '../../store/context'
 import { hoverNode } from "../../actions/Genetrees";
 import { bindActionCreators } from "redux";
 import "react-toggle-switch/dist/css/switch.min.css";
@@ -126,9 +127,9 @@ const mapState = (state, ownProps) => {
 
 const mapDispatch = dispatch => bindActionCreators({ hoverNode }, dispatch);
 
-const Labels = connect(mapState, mapDispatch)(LabelsComponent);
-const Distances = connect(mapState, mapDispatch)(DistancesComponent);
-const Taxonomy = connect(mapState, mapDispatch)(TaxonomyComponent);
-const Location = connect(mapState, mapDispatch)(LocationComponent);
+const Labels = connect(mapState, mapDispatch, null, {context:myContext})(LabelsComponent);
+const Distances = connect(mapState, mapDispatch, null, {context:myContext})(DistancesComponent);
+const Taxonomy = connect(mapState, mapDispatch, null, {context:myContext})(TaxonomyComponent);
+const Location = connect(mapState, mapDispatch, null, {context:myContext})(LocationComponent);
 
 export { Labels, Distances, Taxonomy, Location };

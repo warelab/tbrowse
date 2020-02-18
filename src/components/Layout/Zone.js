@@ -6,6 +6,7 @@ import {connect} from "react-redux"
 import ZoneConfig from './ZoneConfig'
 import {components} from '../inventory'
 import './style.css'
+import myContext from '../../store/context'
 
 const Child = props => (
   <div id={props.zoneId}
@@ -79,4 +80,4 @@ const mapState = (state, ownProps) => {
 
 const mapDispatch = dispatch => bindActionCreators({ updateZonePosition }, dispatch);
 
-export default connect(mapState, mapDispatch)(Zone);
+export default connect(mapState, mapDispatch, null, {context:myContext})(Zone);
