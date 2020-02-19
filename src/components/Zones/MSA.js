@@ -616,7 +616,7 @@ const MSAHistogram = ({node, gaps, interpro, isHeader}) => {
           const mySlice = new Uint16Array(buffer, offset * 2, region.end - offset);
           alignHist += String.fromCharCode.apply(null, mySlice);
         }
-        return region.id ? (
+        return region.id && interpro && interpro.hasOwnProperty(region.id) ? (
           <div key={i} data-for='domain' data-tip={JSON.stringify(interpro[region.id])} style={{cursor: 'pointer'}}>
             {chunkSubstr(alignHist, chunkSize).map((s,j) => {
               let chunkCmp = (
