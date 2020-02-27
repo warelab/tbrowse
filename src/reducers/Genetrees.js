@@ -91,14 +91,11 @@ function trees(
       return Object.assign({}, state, {
         currentColor: action.geneId
       });
-    case COLORING_NEIGHBORS:
-      state.treeColors[action.geneId] = {};
+    case COLORED_NEIGHBORS:
+      state.treeColors[action.geneId] = {...action.colors};
       return Object.assign({}, state, {
         currentColor: action.geneId
       });
-    case COLORED_NEIGHBORS:
-      state.treeColors[action.geneId] = {...action};
-      return Object.assign({}, state, {});
     case HOVERED_NODE:
       tree = state.trees[state.currentTree];
       let highlight = {};

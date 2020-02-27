@@ -168,30 +168,41 @@ const Neighbors = props => {
   )
 };
 
-const Neighborhoods = props => {
-  if (props.neighbors && props.treeColor) {
+class Neighborhoods extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state={};
+  }
+  componentDidUpdate() {
+    if (!this.props.neighbors) {
+      this.props.fetchNeighborsIfNeeded({});
+    } else if (!this.props.treeColor) {
+      this.props.colorNeighborsIfNeeded();
+    }
+  }
+  componentDidMount() {
+    if (!this.props.neighbors) {
+      this.props.fetchNeighborsIfNeeded({});
+    } else if (!this.props.treeColor) {
+      this.props.colorNeighborsIfNeeded();
+    }
+  }
+  render() {
+    if (this.props.neighbors && this.props.treeColor) {
+      return (
+        <svg width={this.props.width}
+             height={this.props.zoneHeight}
+             viewBox={[-11,0,22,this.props.zoneHeight]}
+             preserveAspectRatio='none'
+             style={{position:'absolute',top:'90px',background:'white'}}
+        >
+          { this.props.nodes.filter(n => n.hasOwnProperty('geneId')).map((n,idx) => <Neighbors key={idx} node={n} {...this.props} />) }
+        </svg>
+      );
+    }
     return (
-      <svg width={props.width}
-           height={props.zoneHeight}
-           viewBox={[-11,0,22,props.zoneHeight]}
-           preserveAspectRatio='none'
-           style={{position:'absolute',top:'90px',background:'white'}}
-      >
-        { props.nodes.filter(n => n.hasOwnProperty('geneId')).map((n,idx) => <Neighbors key={idx} node={n} {...props} />) }
-      </svg>
+      <Loading {...this.props} isLoading={true}/>
     )
   }
-  else {
-    if (props.neighbors) {
-      props.colorNeighborsIfNeeded();
-    }
-    else {
-      props.fetchNeighborsIfNeeded({});
-    }
-    return (
-      <Loading {...props} isLoading={true}/>
-    )
-  }
-};
-
+}
 export default connect(mapState, mapDispatch, null, {context:myContext})(Neighborhoods);

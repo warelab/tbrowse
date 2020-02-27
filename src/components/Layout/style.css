@@ -8,6 +8,10 @@
     padding: 4px;
     min-width: 50px;
 }
+.zone-header {
+    height:2rem;
+}
+
 
 .rc-tootip { z-index: 1500; }
 .rc-slider-tooltip { z-index: 1500; }
@@ -21,7 +25,6 @@
     padding: 4px;
 }
 .tbrowse-zone-config {
-    height: 2rem;
     width: 100%;
     padding: 4px;
     border: 1px solid rgba(1,1,1,0);
@@ -42,3 +45,4 @@ a { cursor: pointer }
     top: 1.6rem;
     box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
 }
+

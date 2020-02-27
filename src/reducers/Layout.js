@@ -1,5 +1,6 @@
-import { createAction, createReducer } from 'redux-starter-kit'
+import { createAction, createReducer } from '@reduxjs/toolkit'
 import { zoneDefaults } from "../store/initialState";
+import _ from 'lodash';
 
 const updateZonePosition = createAction('layout/updateZonePosition');
 const addZone = createAction('layout/addZone');
@@ -38,7 +39,7 @@ const layoutReducer = createReducer({}, {
     if (state.zones[idx].type !== action.payload.type) { // change zone type, but keep width the same
       const width = state.zones[idx].width;
       const offset = state.zones[idx].offset;
-      state.zones[idx] = zoneDefaults[action.payload.type];
+      state.zones[idx] = _.cloneDeep(zoneDefaults[action.payload.type]);
       state.zones[idx].width = width;
       state.zones[idx].offset = offset;
       state.zones[idx].type = action.payload.type;

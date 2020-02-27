@@ -212,7 +212,7 @@ const colorNeighbors = geneId => {
       dispatch({
         type: COLORED_NEIGHBORS,
         geneId: geneId,
-        ...x
+        colors: x
       })
     }
   }
@@ -230,10 +230,6 @@ export const colorNeighborsIfNeeded = params => {
     const state = getState();
     const goi = getGeneOfInterest(state);
     if (goi && !state.genetrees.treeColors[goi.geneId]) {
-      dispatch({
-        type: COLORING_NEIGHBORS,
-        geneId: goi.geneId
-      });
       return dispatch(colorNeighbors(goi.geneId));
     }
     else {
