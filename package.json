@@ -1,6 +1,6 @@
 {
   "name": "tbrowse",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "tbrowse React component",
   "main": "lib/index.js",
   "module": "es/index.js",
