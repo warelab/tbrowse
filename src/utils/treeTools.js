@@ -67,12 +67,16 @@ export function initTreeColors(primary_neighborhood, goi) {
 export function reIndexTree(tree, attrs) {
   tree.indices = {};
   attrs.forEach(a => {tree.indices[a] = {}});
+  const override = {};
   const indexNode = (node,parent) => {
 
     attrs.forEach(a => {
       let key = node[a];
       if (!_.isUndefined(key)) {
         tree.indices[a][key] = node;
+        if (a === 'taxonId' && !node.children) {
+          override[key] = node;
+        }
       }
     });
     node.children && node.children.forEach(child => {
@@ -80,6 +84,9 @@ export function reIndexTree(tree, attrs) {
     });
   };
   indexNode(tree, undefined);
+  Object.keys(override).forEach(key => {
+    tree.indices['taxonId'][key] = override[key];
+  });
 }
 
 function indexTree(tree, attrs, nodeHeight) {
@@ -485,8 +492,8 @@ export function getGapMask(node, minDepth, minGapLength, gapPadding) {
           coverage: maxCoverage,
           collapsed: true
         });
-        maxCoverage = 0;
       }
+      maxCoverage = 0;
       pos = i + 1;
       len = 0;
     }

@@ -47,9 +47,9 @@ const propsPruned = {
 };
 
 const props2 = {
-  setId: url.query.setId || "compara_95",
-  treeId: url.query.treeId || "ENSGT00950000183153",
-  genesOfInterest: ['ENSG00000141510'],
+  setId: url.query.setId || "sorghum1",
+  treeId: url.query.treeId || "SORGHUM1GT_196655",
+  genesOfInterest: ['Zm00001d003817'],
   zones: [{
     type: 'tree'
   },{
@@ -63,10 +63,10 @@ const props2 = {
 class Demo extends Component {
   render() {
     return <div>
-      <h1>PHA</h1>
-      <TBrowse {...props}/>
-      <h1>PHA pruned to Brassicaceae</h1>
-      <TBrowse {...propsPruned}/>
+      {/*<h1>PHA</h1>*/}
+      <TBrowse {...props2}/>
+      {/*<h1>PHA pruned to Brassicaceae</h1>*/}
+      {/*<TBrowse {...propsPruned}/>*/}
     </div>
   }
 }

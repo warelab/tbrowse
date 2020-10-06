@@ -4,7 +4,7 @@ import myContext from '../../store/context'
 import { bindActionCreators } from "redux";
 import { fetchNeighborsIfNeeded, colorNeighborsIfNeeded, hoverNode, newTree } from "../../actions/Genetrees";
 import { Loading } from './Loading';
-import {reIndexTree} from "../../../es/utils/treeTools";
+import {reIndexTree} from "../../utils/treeTools";
 import {Tooltip, Popover, OverlayTrigger} from 'react-bootstrap';
 import './Neighborhoods.css'
 
@@ -18,7 +18,7 @@ const mapState = (state, ownProps) => {
     && state.genetrees.trees.hasOwnProperty(st)) {
     let tree = state.genetrees.trees[treeUrl];
     reIndexTree(tree, ['geneId', 'nodeId']);
-    const speciesTree = state.genetrees.trees[st];
+    let speciesTree = state.genetrees.trees[st];
     reIndexTree(speciesTree,['taxonId']);
     const goi = tree.indices.geneId[state.genetrees.genesOfInterest[0]];
     const nodes = tree.visibleUnexpanded;
