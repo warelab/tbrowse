@@ -4,15 +4,29 @@ import myContext from '../../store/context'
 import { css } from '@emotion/core';
 import { BarLoader } from 'react-spinners';
 import {bindActionCreators} from "redux";
-import {expandNode,collapseNode,hoverNode} from "../../actions/Genetrees";
+import {expandNode,collapseNode,swapChildren,updateGenesOfInterest,hoverNode} from "../../actions/Genetrees";
 import {reIndexTree} from "../../utils/treeTools";
 import './Tree.css';
+import {OverlayTrigger, Popover} from "react-bootstrap";
 
 const override = css`
   display: block;
   margin: 0 auto;
   border-color: red;
 `;
+
+const NodeInfo = ({node}) => {
+  return <div className='nodeinfo'>
+    <table>
+      <tr><th>Taxonomy Node</th><td>{node.taxonName}</td></tr>
+      { node.nodeType === 'protein_coding'
+        ? <tr><th>Gene Id</th><td>{node.geneId}</td></tr>
+        : <tr><th>Node Type</th><td>{node.nodeType}</td></tr>
+      }
+      { node.nodeType === 'protein_coding' && node.geneName && <tr><th>Gene Name</th><td>{node.geneName}</td></tr> }
+    </table>
+  </div>
+};
 
 class Tree extends React.Component {
   constructor(props) {
@@ -34,14 +48,19 @@ class Tree extends React.Component {
     }
     const xScale = (this.props.width - (this.props.nodeRadius + 1)) / this.props.tree.maxExpandedDist;
     return (
-      <svg width={this.props.width}
-           height={this.props.zoneHeight + 'px'}
-           style={{position:'absolute',top:'90px'}}
-      >
-        {this.props.tree.visibleNodes.map((node,idx) => (
-          <TreeNode key={idx} xScale={xScale} node={node} {...this.props}/>
-        ))}
-      </svg>
+      <div>
+        <div className='zone-header'>
+          {this.props.tree.hoveredNodeId && <NodeInfo node={this.props.tree.indices.nodeId[this.props.tree.hoveredNodeId]}/>}
+        </div>
+        <svg width={this.props.width}
+             height={this.props.zoneHeight + 'px'}
+             style={{position:'absolute',top:'90px'}}
+        >
+          {this.props.tree.visibleNodes.map((node,idx) => (
+            <TreeNode key={idx} xScale={xScale} node={node} {...this.props}/>
+          ))}
+        </svg>
+      </div>
     )
   }
 }
@@ -74,7 +93,7 @@ const mapState = (state, ownProps) => {
   }
 };
 
-const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode, hoverNode }, dispatch);
+const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode, swapChildren, updateGenesOfInterest, hoverNode }, dispatch);
 
 export default connect(mapState, mapDispatch, null, {context:myContext})(Tree);
 
@@ -165,13 +184,61 @@ const TreeNode = (props) => {
     }
   };
 
+  const tooltip = (
+    <Popover id={node.nodeId}>
+      <Popover.Title as="h3">{node.taxonName} - {node.nodeType}</Popover.Title>
+      <Popover.Content>
+        <table>
+          {
+            node.nodeType === 'protein_coding' ?
+              <tbody>
+                <tr>
+                  <th></th>
+                  <td>
+                    {node.vindex === 1 ?
+                      <button onClick={() => expandOrCollapse(node)}>Show Paralogs</button> :
+                      <button onClick={() => props.updateGenesOfInterest([node.geneId])}>Focus on this gene</button>
+                    }
+                  </td>
+                </tr>
+                {node.geneName &&<tr><th>Gene Name</th><td>{node.geneName}</td></tr> }
+                <tr><th>Gene Id</th><td>{node.geneId}</td></tr>
+                <tr><th>Protein Id</th><td>{node.proteinId}</td></tr>
+              </tbody>
+            :
+              <tbody>
+              <tr>
+                <td>
+                  <button
+                    onClick={() => expandOrCollapse(node)}>{node.displayInfo.expanded ? 'Collapse' : 'Expand'}
+                  </button>
+                </td>
+                {node.displayInfo.expanded && <td>
+                  <button
+                    onClick={() => props.swapChildren(node)}>Swap Children
+                  </button>
+                </td>
+                }
+              </tr>
+              </tbody>
+          }
+        </table>
+      </Popover.Content>
+    </Popover>
+  );
+
   return (
-    <g className={nodeClass} onClick={()=>expandOrCollapse(node)} onMouseOver={()=>props.hoverNode(node.nodeId)}>
+    <g className={nodeClass} onMouseOver={()=>props.hoverNode(node.nodeId)}>
       {vline}
       {extension}
       {hline}
       {marker}
-      {bbox}
+      <OverlayTrigger placement="auto"
+                      overlay={tooltip}
+                      trigger='click'
+                      rootClose={true}>
+        {bbox}
+      </OverlayTrigger>
     </g>
-  )
+  );
 };

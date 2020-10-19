@@ -101,6 +101,7 @@ function trees(
       let highlight = {};
       highlight[action.nodeId] = true;
       let hoveredNode = tree.indices.nodeId[action.nodeId];
+      tree.hoveredNodeId = action.nodeId;
       const walk = node => {
         highlight[node.nodeId] = true;
         node.children && node.children.forEach(child => {

@@ -504,7 +504,12 @@ export function getGapMask(node, minDepth, minGapLength, gapPadding) {
       len: len - 2 * gapPadding,
       coverage: maxCoverage,
       collapsed: true
-    })
+    });
+    if (len === coverage.length && maxCoverage < minDepth) {
+      // avoid edge case where everything gets collapsed into a single gap
+      // default to 10% of maxCoverage
+      return getGapMask(node, Math.floor(0.1*maxCoverage), minGapLength, gapPadding);
+    }
   }
   return makeMask(gaps, coverage.length);
 }
@@ -533,23 +538,69 @@ function maxOverlaps(regions) {
           merged.push(b);
         }
         else {
-          // a and b overlap
-          if (a.start < b.start) {
-            if (a.end > b.end) {
-              let c = _.clone(a);
-              c.start = b.end;
-              regions.push(c);
+          // a and b overlap. give priority to the one with higher coverage
+          if (a.start < b.start) { // ab
+            if (a.end > b.end) {   // aba
+              if (a.coverage < b.coverage) {
+                let c = _.clone(a);
+                c.start = b.end;
+                regions.push(c);
+                merged.push(a,b);
+                pushA = false;
+                while (results.length > 0) {
+                  merged.push(results.shift());
+                }
+              }
+              else {
+                // ignore b, just push a
+              }
             }
-            a.end = b.start;
-            merged.push(a,b);
-            pushA = false;
-            while (results.length > 0) {
-              merged.push(results.shift());
+            else { // ab
+              if (a.coverage < b.coverage) {
+                a.end = b.start;
+              }
+              else {
+                b.start = a.end;
+              }
+              merged.push(a,b);
+              pushA = false;
+              while (results.length > 0) {
+                merged.push(results.shift());
+              }
             }
           }
-          else if (a.end > b.end) {
-            a.start = b.end;
-            merged.push(b);
+          else {                   // ba
+            if (a.end < b.end) {   // bab
+              if (a.coverage > b.coverage) {
+                let c = _.clone(b);
+                c.start = a.end;
+                regions.push(c);
+                b.end = a.start;
+                merged.push(b,a);
+                pushA = false;
+                while (results.length > 0) {
+                  merged.push(results.shift());
+                }
+              }
+              else {
+                // ignore a, just push b
+                merged.push(b);
+                pushA = false;
+              }
+            }
+            else { // ba
+              if (a.coverage > b.coverage) {
+                b.end = a.start;
+              }
+              else {
+                a.start = b.end;
+              }
+              merged.push(b,a);
+              pushA = false;
+              while (results.length > 0) {
+                merged.push(results.shift());
+              }
+            }
           }
         }
       }
@@ -832,6 +883,7 @@ export function addDomainArchitecture(tree, api, callback) {
         Object.keys(domains.Domain).forEach(rootId => {
           Array.prototype.push.apply(domainHits,domains.Domain[rootId].hits);
         });
+        // the consensus heatmap should display the most conserved domains
         domainHits = mergeOverlaps(domainHits,0,'maxm');
         node.domainHits = domainHits;
         domainHits.forEach(dh => {

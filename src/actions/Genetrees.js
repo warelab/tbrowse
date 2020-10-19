@@ -115,6 +115,13 @@ export const collapseNode = node => {
   return updateLayout();
 };
 
+export const swapChildren = node => {
+  if (node.children) {
+    node.children.push(node.children.shift())
+    return updateLayout();
+  }
+}
+
 const treeURL = (p,s) => {
   let url = `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
   if (!p.speciesTree && (p.filter || s.filter)) {

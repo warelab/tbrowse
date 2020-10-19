@@ -49,14 +49,18 @@ const propsPruned = {
 const props2 = {
   setId: url.query.setId || "sorghum1",
   treeId: url.query.treeId || "SORGHUM1GT_196655",
-  genesOfInterest: ['Zm00001d003817'],
+  // filter: 'taxonAncestors:1000655996',
+  genesOfInterest: ['3381.casb129g372160.635'],
   zones: [{
     type: 'tree'
   },{
-    type: 'label'
+    type: 'taxonomy'
   },{
     type: 'msa',
-    colorScheme: 'clustal'
+    colorScheme: 'zappo',
+    minDepth: 10
+  },{
+    type: 'neighborhood'
   }]
 };
 

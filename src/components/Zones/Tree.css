@@ -74,3 +74,9 @@
     stroke: #008000;
     fill: #ffffff
 }
+.nodeinfo {
+    padding-left: 20px;
+    font-size: small;
+    color: #ffe8a1;
+    background-color: #7a8181;
+}
