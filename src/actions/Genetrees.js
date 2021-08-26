@@ -1,6 +1,5 @@
-import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture, initTreeColors} from '../utils/treeTools'
+import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture, initTreeColors, reIndexTree} from '../utils/treeTools'
 import Swagger from "swagger-client";
-import {reIndexTree} from "../../es/utils/treeTools";
 
 export const REQUESTED_TREE = 'REQUESTED_TREE';
 export const RECEIVED_TREE = 'RECEIVED_TREE';
