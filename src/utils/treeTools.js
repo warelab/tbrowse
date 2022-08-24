@@ -65,7 +65,13 @@ export function initTreeColors(primary_neighborhood, goi) {
 }
 
 export function reIndexTree(tree, attrs) {
-  tree.indices = {};
+  if (tree.indices) {
+    attrs = attrs.filter(a => !tree.indices.hasOwnProperty(a));
+    if (attrs.length === 0) return;
+  }
+  else {
+    tree.indices = {};
+  }
   attrs.forEach(a => {tree.indices[a] = {}});
   const override = {};
   const indexNode = (node,parent) => {
@@ -73,10 +79,15 @@ export function reIndexTree(tree, attrs) {
     attrs.forEach(a => {
       let key = node[a];
       if (!_.isUndefined(key)) {
-        tree.indices[a][key] = node;
-        if (a === 'taxonId' && !node.children) {
-          override[key] = node;
+        if (a === 'taxonId') {
+          tree.indices[a][key] = [];
         }
+        else {
+          tree.indices[a][key] = node;
+        }
+      }
+      if (a === 'taxonId' && !node.children) {
+        tree.indices[a][key].push(node);
       }
     });
     node.children && node.children.forEach(child => {
@@ -113,7 +124,15 @@ function indexTree(tree, attrs, nodeHeight) {
     attrs.forEach(a => {
       let key = node[a];
       if (!_.isUndefined(key)) {
-        tree.indices[a][key] = node;
+        if (a === 'taxonId') {
+          tree.indices[a][key] = [];
+        }
+        else {
+          tree.indices[a][key] = node;
+        }
+      }
+      if (a === 'taxonId') {
+        tree.indices[a][key].push(node);
       }
     });
     node.children && node.children.forEach(child => {
@@ -180,7 +199,7 @@ export function prepTree(genetree,nodeHeight) {
 
   genetree = tree.model; // we don't want the other decorations, just sorted children.
 
-  indexTree(genetree, ['geneId','nodeId'],nodeHeight);
+  indexTree(genetree, ['geneId','nodeId','taxonId'],nodeHeight);
 
 
   genetree.totalLength = sumBranchLengths(genetree);
@@ -191,7 +210,7 @@ export function prepTree(genetree,nodeHeight) {
 export function prepSpeciesTree(tree, taxonId) {
   if (taxonId > 0) {
     reIndexTree(tree, ['taxonId','nodeId']);
-    let node = tree.indices.taxonId[taxonId];
+    let node = tree.indices.taxonId[taxonId][0];
     pivotBranches(tree,node);
   }
 
@@ -544,6 +563,7 @@ function maxOverlaps(regions) {
               if (a.coverage < b.coverage) {
                 let c = _.clone(a);
                 c.start = b.end;
+                a.end = b.start;
                 regions.push(c);
                 merged.push(a,b);
                 pushA = false;
@@ -613,62 +633,17 @@ function maxOverlaps(regions) {
 
 function flattenRegions(regions) {
   regions.sort((a,b) => a.start - b.start);
-  let results = [];
+  let a = regions.shift();
+  let results = [a];
   while (regions.length > 0) {
-    let a = regions.shift();
-    let merged = [];
-    while (results.length > 0) {
-      let b = results.shift();
-      if (b.end <= a.start) {
-        merged.push(b);
-      }
-      else if (b.start >= a.end) {
-        merged.push(a,b);
-        while(results.length > 0) {
-          merged.push(results.shift());
-        }
-      }
-      else {
-        if (a.start < b.start) {
-          let c = _.clone(a);
-          c.end = b.start;
-          merged.push(c);
-        }
-        if (a.start > b.start) {
-          let c = _.clone(b);
-          c.end = a.start;
-          merged.push(c);
-        }
-        if (a.end < b.end) {
-          if (a.id === b.id) {
-            a.coverage += b.coverage;
-          }
-          merged.push(a);
-          b.start = a.end;
-          merged.push(b);
-          while(results.length > 0) {
-            merged.push(results.shift());
-          }
-        }
-        else if (a.end > b.end) {
-          if (a.id === b.id) {
-            b.coverage += a.coverage;
-          }
-          merged.push(b);
-          a.start = b.end;
-        }
-        else {
-          if (a.id === b.id) {
-            a.coverage += b.coverage;
-          }
-          merged.push(a);
-          while(results.length > 0) {
-            merged.push(results.shift());
-          }
-        }
-      }
+    a = results[results.length - 1];
+    let b = regions.shift();
+    if (b.start > a.end) {
+      results.push(b);
     }
-    results = merged;
+    else if (b.end > a.end) {
+      a.end = b.end;
+    }
   }
   return results;
 }
@@ -785,7 +760,7 @@ export function addDomainArchitecture(tree, api, callback) {
   setupInterpro(tree);
   let idList = Object.keys(idSet);
   let params = {
-    setId: 'interpro_71',
+    setId: 'interpro',
     q: 'id:(' + idList.join(' ') + ')',
     rows: idList.length
   };

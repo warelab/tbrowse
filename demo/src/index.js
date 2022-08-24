@@ -47,18 +47,19 @@ const propsPruned = {
 };
 
 const props2 = {
-  setId: url.query.setId || "sorghum1",
-  treeId: url.query.treeId || "SORGHUM1GT_196655",
-  // filter: 'taxonAncestors:1000655996',
-  genesOfInterest: ['3381.casb129g372160.635'],
+  setId: url.query.setId || "sorghum4",
+  treeId: url.query.treeId || "SORGHUM4GT_203438",
+  filter: url.query.filter || "*:*", //'taxonAncestors:1000655996',
+  genesOfInterest: url.query.goi ? [url.query.goi] : ['SORBI_3001G125900'],
   zones: [{
     type: 'tree'
   },{
     type: 'taxonomy'
   },{
     type: 'msa',
-    colorScheme: 'zappo',
-    minDepth: 10
+    colorScheme: 'clustal',
+    minDepth: 10,
+    width: 800
   },{
     type: 'neighborhood'
   }]

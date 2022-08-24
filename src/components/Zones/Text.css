@@ -1,6 +1,6 @@
 .text-zone {
     position: absolute;
-    top: 90px;
+    /*top: 90px;*/
     line-height: 24px;
     white-space: nowrap;
     overflow-x: scroll;

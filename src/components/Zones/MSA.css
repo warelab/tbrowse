@@ -130,7 +130,7 @@
 }
 
 .msa {
-    position: relative;
+    /*position: relative;*/
     overflow-x: scroll;
     line-height:24px;
     font-size: 16px;
@@ -193,6 +193,7 @@
     transform: translate(-0.5px);
     background: blue;
     position: absolute;
+    top: 0px;
 }
 .closed-gap {
     position: absolute;
@@ -220,7 +221,7 @@
     background: lightblue;
     border-top: 1px solid blue;
     border-bottom: 1px solid blue;
-    height:1ch;
+    height:calc(1ch - 2px);
 }
 .open-gap-center:hover {
   cursor: pointer;

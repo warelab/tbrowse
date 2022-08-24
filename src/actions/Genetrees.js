@@ -204,7 +204,7 @@ const shouldFetchNeighbors = (state, url) => {
 const getGeneOfInterest = state => {
   if (state.genetrees.currentTree && state.genetrees.trees[state.genetrees.currentTree]) {
     let gt = state.genetrees.trees[state.genetrees.currentTree];
-    reIndexTree(gt, ['geneId', 'nodeId']);
+    reIndexTree(gt, ['geneId', 'nodeId', 'taxonId']);
     return gt.indices.geneId[state.genetrees.genesOfInterest[0]];
   }
   return null;
@@ -326,7 +326,7 @@ export const updateGenesOfInterest = geneIds => {
     });
     // reorganize the tree
     let tree = state.genetrees.trees[state.genetrees.currentTree];
-    reIndexTree(tree, ['geneId','nodeId']);
+    reIndexTree(tree, ['geneId','nodeId','taxonId']);
     const goi = tree.indices.geneId[geneIds[0]];
     expandToGenes(tree, geneIds, true);
     dispatch(updateLayout());

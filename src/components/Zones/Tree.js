@@ -17,14 +17,14 @@ const override = css`
 
 const NodeInfo = ({node}) => {
   return <div className='nodeinfo'>
-    <table>
+    <table><tbody>
       <tr><th>Taxonomy Node</th><td>{node.taxonName}</td></tr>
       { node.nodeType === 'protein_coding'
         ? <tr><th>Gene Id</th><td>{node.geneId}</td></tr>
         : <tr><th>Node Type</th><td>{node.nodeType}</td></tr>
       }
       { node.nodeType === 'protein_coding' && node.geneName && <tr><th>Gene Name</th><td>{node.geneName}</td></tr> }
-    </table>
+    </tbody></table>
   </div>
 };
 
@@ -47,14 +47,19 @@ class Tree extends React.Component {
       )
     }
     const xScale = (this.props.width - (this.props.nodeRadius + 1)) / this.props.tree.maxExpandedDist;
+    if (this.props.header) {
+      return (
+        <div className='zone-header'>
+          {this.props.tree.hoveredNodeId &&
+            <NodeInfo node={this.props.tree.indices.nodeId[this.props.tree.hoveredNodeId]}/>}
+        </div>
+      )
+    }
     return (
       <div>
-        <div className='zone-header'>
-          {this.props.tree.hoveredNodeId && <NodeInfo node={this.props.tree.indices.nodeId[this.props.tree.hoveredNodeId]}/>}
-        </div>
         <svg width={this.props.width}
              height={this.props.zoneHeight + 'px'}
-             style={{position:'absolute',top:'90px'}}
+             style={{position:'absolute'}}
         >
           {this.props.tree.visibleNodes.map((node,idx) => (
             <TreeNode key={idx} xScale={xScale} node={node} {...this.props}/>
@@ -77,7 +82,7 @@ const mapState = (state, ownProps) => {
     reIndexTree(speciesTree,['taxonId']);
     // need reference to parent node on each.
     const highlight = tree.highlight;
-    reIndexTree(tree, ['geneId','nodeId']);
+    reIndexTree(tree, ['geneId','nodeId','taxonId']);
     let zoneHeight=0;
     tree.visibleUnexpanded.forEach(n => {
       n.displayInfo.offset = zoneHeight;
@@ -210,7 +215,13 @@ const TreeNode = (props) => {
               <tr>
                 <td>
                   <button
-                    onClick={() => expandOrCollapse(node)}>{node.displayInfo.expanded ? 'Collapse' : 'Expand'}
+                    // onClick={() => expandOrCollapse(node)}>{node.displayInfo.expanded ? 'Collapse' : 'Expand'}
+                    onClick={() => props.collapseNode(node)}>Collapse
+                  </button>
+                </td>
+                <td>
+                  <button
+                    onClick={() => props.expandNode(node, true)}>Expand
                   </button>
                 </td>
                 {node.displayInfo.expanded && <td>

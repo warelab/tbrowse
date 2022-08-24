@@ -3,10 +3,16 @@ import { connect } from 'react-redux'
 import './Layout/style.css'
 import Zone from './Layout/Zone'
 import myContext from '../store/context'
+import {components} from "./inventory";
 
 const Layout = (props) => (
-  <div className='tbrowse' style={{height: props.height}}>
-    { props.zones.map((zone, idx) => <Zone key={zone.type+idx} id={idx}/> ) }
+  <div className='tbrowse' style={{height:props.height}}>
+    <div className='tbrowse-zone-headers'>
+      { props.zones.map((zone, idx) => <Zone key={zone.type+idx} id={idx} showHeaders={true}/> ) }
+    </div>
+    <div className='tbrowse-zone-bodies'>
+      { props.zones.map((zone, idx) => <Zone key={zone.type+idx} id={idx}/> ) }
+    </div>
   </div>
 );
 
