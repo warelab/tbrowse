@@ -76,6 +76,7 @@ const mapState = (state, ownProps) => {
   const url = state.genetrees.currentTree;
   const st = state.genetrees.currentSpeciesTree;
   const goi = state.genetrees.genesOfInterest[0];
+  const header = !!ownProps.header;
   if (state.genetrees.trees.hasOwnProperty(url) && state.genetrees.trees.hasOwnProperty(st)) {
     const tree = state.genetrees.trees[url];
     const speciesTree = state.genetrees.trees[st];
@@ -89,11 +90,11 @@ const mapState = (state, ownProps) => {
       zoneHeight += n.displayInfo.height
     });
     return {
-      isFetching: state.genetrees.isFetching, ...zone, tree, highlight, zoneHeight, speciesTree, goi
+      isFetching: state.genetrees.isFetching, header, ...zone, tree, highlight, zoneHeight, speciesTree, goi
     }
   }
   return {
-    isFetching: state.genetrees.isFetching,
+    isFetching: state.genetrees.isFetching, header,
     ...zone
   }
 };
@@ -201,8 +202,8 @@ const TreeNode = (props) => {
                   <th></th>
                   <td>
                     {node.vindex === 1 ?
-                      <button onClick={() => expandOrCollapse(node)}>Show Paralogs</button> :
-                      <button onClick={() => props.updateGenesOfInterest([node.geneId])}>Focus on this gene</button>
+                      <button onClick={() => {document.body.click();expandOrCollapse(node)}}>Show Paralogs</button> :
+                      <button onClick={() => {document.body.click();props.updateGenesOfInterest([node.geneId])}}>Focus on this gene</button>
                     }
                   </td>
                 </tr>
@@ -216,17 +217,17 @@ const TreeNode = (props) => {
                 <td>
                   <button
                     // onClick={() => expandOrCollapse(node)}>{node.displayInfo.expanded ? 'Collapse' : 'Expand'}
-                    onClick={() => props.collapseNode(node)}>Collapse
+                    onClick={() => {document.body.click();props.collapseNode(node)}}>Collapse
                   </button>
                 </td>
                 <td>
                   <button
-                    onClick={() => props.expandNode(node, true)}>Expand
+                    onClick={() => {document.body.click();props.expandNode(node, true)}}>Expand
                   </button>
                 </td>
                 {node.displayInfo.expanded && <td>
                   <button
-                    onClick={() => props.swapChildren(node)}>Swap Children
+                    onClick={() => {document.body.click();props.swapChildren(node)}}>Swap Children
                   </button>
                 </td>
                 }

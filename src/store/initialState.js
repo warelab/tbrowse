@@ -18,6 +18,7 @@ const zoneDefaults = {
   tree: {
     genesOfInterest: ['ENSG00000139618'],
     label: 'Tree',
+    hasHeader: true,
     width: 400,
     minWidth: 100,
     nodeRadius: 3

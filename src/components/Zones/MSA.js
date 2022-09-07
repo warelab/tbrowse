@@ -173,8 +173,10 @@ class MSAHeader extends React.Component {
     if (span !== this.state.span) {
       this.setState({span});
     }
-    this.sliderRef.current.state.value = this.props.gaps.maskLen - span;
-    this.draw();
+    if (this.sliderRef.current && this.props.gaps) {
+      this.sliderRef.current.state.value = this.props.gaps.maskLen - span;
+      this.draw();
+    }
   }
   changeRange(delta) {
     let from = this.props.range.from - delta;
@@ -235,29 +237,31 @@ class MSAHeader extends React.Component {
 
   render() {
     const props = this.props;
-    const span = toPx(`${props.range.to - props.range.from}ch`);
-    const maskLenPx = toPx(props.gaps.maskLen+'ch');
-    return (
-      <div className='zone-header' style={{width: `${props.width}px`}}>
-        {this.renderSlider()}
-        <div className='msa' style={{
-          width: `${maskLenPx}px`,
-          height: '23px',
-          transformOrigin: '0 0',
-          transform: `scaleX(${props.width / maskLenPx})`
-        }}>
-          <MSAHistogram node={props.root} isHeader={true} {...props}/>
+    if (props.gaps) {
+      const maskLenPx = toPx(props.gaps.maskLen+'ch');
+      return (
+        <div className='zone-header' style={{width: `${props.width}px`}}>
+          {this.renderSlider()}
+          <div className='msa' style={{
+            width: `${maskLenPx}px`,
+            height: '23px',
+            transformOrigin: '0 0',
+            transform: `scaleX(${props.width / maskLenPx})`
+          }}>
+            <MSAHistogram node={props.root} isHeader={true} {...props}/>
+          </div>
+          <div style={{
+            transformOrigin: '0 0',
+            transform: `scaleX(${props.width / props.gaps.maskLen})`,
+            width: `${props.gaps.maskLen}px`
+          }}>
+            <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef} />
+          </div>
+          <MSABody {...props}/>
         </div>
-        <div style={{
-          transformOrigin: '0 0',
-          transform: `scaleX(${props.width / props.gaps.maskLen})`,
-          width: `${props.gaps.maskLen}px`
-        }}>
-          <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef} />
-        </div>
-        <MSABody {...props}/>
-      </div>
-    )
+      )
+    }
+    return null;
   }
 }
 
