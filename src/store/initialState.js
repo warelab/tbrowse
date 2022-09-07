@@ -3,11 +3,11 @@ import Swagger from 'swagger-client';
 
 const genetreesDefaults = {
   api: 'https://www.genetrees.org/api/v1',
-  setId: 'compara_95',
-  treeId: 'ENSGT00390000003602',
+  setId: 'sorghum4',
+  treeId: 'SORGHUM4GT_5631322',
   filter: '',
   genomes: [],
-  genesOfInterest: ['ENSG00000139618'],
+  genesOfInterest: ['SORBI_3009G049500'],
   trees: {},
   neighbors: {},
   treeColors: {},
@@ -18,14 +18,16 @@ const zoneDefaults = {
   tree: {
     genesOfInterest: ['ENSG00000139618'],
     label: 'Tree',
+    hasHeader: true,
     width: 400,
     minWidth: 100,
     nodeRadius: 3
   },
   msa: {
     label: 'Alignment',
+    hasHeader: true,
     width: 400,
-    minWidth: 100,
+    minWidth: 400,
     minDepth: 10,
     minGapLength: 1,
     gapPadding: 0,
@@ -50,7 +52,7 @@ const zoneDefaults = {
   label: {
     label: 'Label',
     width: 150,
-    minWidth: 10,
+    minWidth: 60,
     taxName: true,
     geneName: true,
     configurable: [
@@ -97,6 +99,21 @@ const zoneDefaults = {
     minWidth: 10,
     fields: [],
     key: 'tbrowse_test_data'
+  },
+  genome: {
+    label: 'Genomic Region',
+    width: 400,
+    minWidth: 100,
+    upstream: {
+      level: 'protein', // for use in gramene-gene-positions remap()
+      position: 1,
+      distance: 1000
+    },
+    downstream: {
+      level: 'protein',
+      position: 1,
+      distance: 500
+    }
   }
 };
 
@@ -122,6 +139,9 @@ const initializeState = (props) => {
     },
     blastologs: {
       api: 'https://data.gramene.org/v62'
+    },
+    genome: {
+      ensemblAPI: 'https://data.gramene.org/pansite-ensembl'
     }
   };
   let offset=0;

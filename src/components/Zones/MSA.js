@@ -13,6 +13,7 @@ import ReactTooltip from 'react-tooltip';
 import Slider from 'rc-slider'
 import './MSA.css';
 import ggp from "gramene-gene-positions";
+import {updateZoneParam} from "../../reducers/Layout";
 
 const chWidth = toPx('1ch');
 
@@ -30,43 +31,54 @@ class MSAComponent extends React.Component {
   }
   handleRangeChange(from,to) {
     let range = {from,to};
-    this.setState({range});
+    this.props.updateZoneParam({idx:this.props.zoneId, id:'range', value:range})
+    // this.setState({range});
   }
   componentDidUpdate() {
     if (this.props.nodes && !this.props.gaps) {
       this.props.calculateGaps(this.props)
     }
-    if (this.props.gaps && !this.state.range) {
+    if (this.props.gaps && !this.props.range) {
       let range = {
         from: 0,
         to: this.props.gaps.maskLen
       };
-      this.setState({range});
+      this.props.updateZoneParam({idx:this.props.zoneId, id:'range', value:range});
+      // this.setState({range});
     }
   }
   componentDidMount() {
     if (this.props.nodes && !this.props.gaps) {
       this.props.calculateGaps(this.props)
     }
-    if (this.props.gaps && !this.state.range) {
+    if (this.props.gaps && !this.props.range) {
       let range = {
         from: 0,
         to: this.props.gaps.maskLen
       };
-      this.setState({range});
+      this.props.updateZoneParam({idx:this.props.zoneId, id:'range', value:range});
+      // this.setState({range});
     }
   }
   render() {
-    if (this.state.range && this.props.gaps) {
+    if (this.props.header) {
+      if (this.props.range) {
+        return (
+          <MSAHeader {...this.props} onRangeChange={(f, t) => this.handleRangeChange(f, t)} updateRange={(f, t) => this.handleRangeChange(f, t)}/>
+        )
+      }
+      return null;
+    }
+    if (this.props.range && this.props.gaps) {
       return (
         <div>
-          <MSAHeader {...this.props} range={this.state.range} updateRange={(f,t)=>this.handleRangeChange(f,t)}/>
-          <MSABody onRangeChange={(f,t)=>this.handleRangeChange(f,t)} {...this.props} range={this.state.range} />
+          <MSABody onRangeChange={(f, t) => this.handleRangeChange(f, t)} {...this.props}/>
           <ReactTooltip id='domain'
                         getContent={(dataTip) => {
                           const domain = JSON.parse(dataTip);
                           return domain && (
-                            <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}</h3><p>{domain.nodeDescription || ''}</p></div>
+                            <div style={{maxWidth: '400px'}}><h3><code>{domain.id}:&nbsp;</code>{domain.nodeName}
+                            </h3><p>{domain.nodeDescription || ''}</p></div>
                           )
                         }}
                         effect='float'
@@ -115,7 +127,7 @@ const mapState = (state, ownProps) => {
   return { ...zone }
 };
 
-const mapDispatch = dispatch => bindActionCreators({ calculateGaps, toggleGap, hoverNode }, dispatch);
+const mapDispatch = dispatch => bindActionCreators({ calculateGaps, toggleGap, hoverNode, updateZoneParam }, dispatch);
 
 export default connect(mapState, mapDispatch, null, {context:myContext})(MSAComponent);
 
@@ -124,7 +136,8 @@ class MSAHeader extends React.Component {
   constructor(props) {
     super(props);
     this.canvasRef = React.createRef();
-    this.grayScale = d3.scaleLinear().domain([0, 1]).range(["#000000", "#eeeeee"]);
+    this.grayScale = d3.scaleLinear().domain([0, 1]).range(["#7c0000", "#fef2f2"]);
+
     this.sliderRef = React.createRef();
     this.state = {
       span: props.range.to - props.range.from
@@ -145,7 +158,7 @@ class MSAHeader extends React.Component {
     ctx.lineTo(this.props.range.to,3);
     ctx.lineTo(this.props.gaps.maskLen, canvas.height - 3);
     ctx.lineTo(this.props.gaps.maskLen, canvas.height);
-    ctx.lineTo(0, canvas.height);
+    ctx.lineTo(0, canvas.height );
     ctx.lineTo(0, canvas.height - 3);
     ctx.lineTo(this.props.range.from,3);
     ctx.closePath();
@@ -160,8 +173,10 @@ class MSAHeader extends React.Component {
     if (span !== this.state.span) {
       this.setState({span});
     }
-    this.sliderRef.current.state.value = this.props.gaps.maskLen - span;
-    this.draw();
+    if (this.sliderRef.current && this.props.gaps) {
+      this.sliderRef.current.state.value = this.props.gaps.maskLen - span;
+      this.draw();
+    }
   }
   changeRange(delta) {
     let from = this.props.range.from - delta;
@@ -184,7 +199,7 @@ class MSAHeader extends React.Component {
       this.changeRange((span - this.state.span)/2);
     }
   }
-  zoomOut() {
+  zoomOut() {[]
     this.changeRange(Math.floor(0.1*this.state.span));
   }
   zoomIn() {
@@ -192,7 +207,7 @@ class MSAHeader extends React.Component {
   }
   renderSlider() {
     return (
-      <div style={{position:'absolute', top:'11px', left:'calc(100% - 230px', zIndex:1200}}>
+      <div style={{position:'absolute', top:'-20px', left:'calc(100% - 230px', zIndex:1200}}>
           <a style={{position:'absolute', top:'-0.5rem', lineHeight:2}} onClick={()=>this.zoomOut()}><i className="fa fa-minus-square" /></a>
           <Slider min={0}
                   max={this.props.gaps.maskLen - Math.floor(this.props.width/chWidth)}
@@ -222,27 +237,31 @@ class MSAHeader extends React.Component {
 
   render() {
     const props = this.props;
-    const maskLenPx = toPx(props.gaps.maskLen+'ch');
-    return (
-      <div className='zone-header'>
-        {this.renderSlider()}
-        <div className='msa' style={{
-          width: `${maskLenPx}px`,
-          height: '23px',
-          transformOrigin: '0 0',
-          transform: `scaleX(${props.width / maskLenPx})`
-        }}>
-          <MSAHistogram node={props.root} isHeader={true} {...props}/>
+    if (props.gaps) {
+      const maskLenPx = toPx(props.gaps.maskLen+'ch');
+      return (
+        <div className='zone-header' style={{width: `${props.width}px`}}>
+          {this.renderSlider()}
+          <div className='msa' style={{
+            width: `${maskLenPx}px`,
+            height: '23px',
+            transformOrigin: '0 0',
+            transform: `scaleX(${props.width / maskLenPx})`
+          }}>
+            <MSAHistogram node={props.root} isHeader={true} {...props}/>
+          </div>
+          <div style={{
+            transformOrigin: '0 0',
+            transform: `scaleX(${props.width / props.gaps.maskLen})`,
+            width: `${props.gaps.maskLen}px`
+          }}>
+            <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef} />
+          </div>
+          <MSABody {...props}/>
         </div>
-        <div style={{
-          transformOrigin: '0 0',
-          transform: `scaleX(${props.width / props.gaps.maskLen})`,
-          width: `${props.gaps.maskLen}px`
-        }}>
-          <canvas width={`${props.gaps.maskLen}px`} height='32px' ref={this.canvasRef} />
-        </div>
-      </div>
-    )
+      )
+    }
+    return null;
   }
 }
 
@@ -383,21 +402,37 @@ class MSABody extends React.Component {
   render() {
     const props = this.props;
     const span = toPx(`${props.range.to - props.range.from}ch`);
-    return (
-      <div ref={this.myRef} className='msa' style={{
-        height: props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
-        width: `${span}px`,
-        transformOrigin: '0 0',
-        transform: `scaleX(${props.width / span})`,
-      }}>
-        {/*{this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}*/}
-        {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAHistogram key={idx} node={node} {...this.state} {...props}/>)}
-        {/*{this.state.zoomLevel === 5 && <MSAHistogram node={props.root} {...this.state} {...props}/>}*/}
-        {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
-        {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
-        {this.state.zoomLevel < 9 && props.nodes.map((node, idx) => <SpliceJunctions key={idx} node={node} {...this.state} {...props}/>)}
-      </div>
-    )
+    if (props.header) {
+      return (
+        <div ref={this.myRef} className='msa' style={{
+          height: 0 + props.nodes[0].displayInfo.height + 'px',
+          width: `${span}px`,
+          transformOrigin: '0 0',
+          transform: `scaleX(${props.width / span})`,
+          position: 'absolute',
+          top: '36px'
+        }}>
+          {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
+        </div>
+      )
+    }
+    else {
+      return (
+        <div ref={this.myRef} className='msa' style={{
+          height: props.zoneHeight + props.nodes[0].displayInfo.height + 'px',
+          width: `${span}px`,
+          transformOrigin: '0 0',
+          transform: `scaleX(${props.width / span})`,
+        }}>
+          {/*{this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAOverview key={idx} node={node} {...props}/>)}*/}
+          {this.state.zoomLevel === 3 && props.nodes.map((node, idx) => <MSAHistogram key={idx} node={node} {...this.state} {...props}/>)}
+          {/*{this.state.zoomLevel === 5 && <MSAHistogram node={props.root} {...this.state} {...props}/>}*/}
+          {this.state.zoomLevel < 3 && props.nodes.map((node, idx) => <MSASequence key={idx} node={node} {...this.state} {...props}/>)}
+          {this.state.zoomLevel < 3 && <MSAGaps {...props}/>}
+          {this.state.zoomLevel < 9 && props.nodes.map((node, idx) => <SpliceJunctions key={idx} node={node} {...this.state} {...props}/>)}
+        </div>
+      )
+    }
   }
 }
 
@@ -430,7 +465,7 @@ const projectMSAToDisplay = (pos, gaps) => {
 
 const SpliceJunctions = (props) => (
   <div
-    style={{position:'absolute', top:`${props.node.displayInfo.offset + 24}px`}}
+    style={{position:'absolute', top:`${props.node.displayInfo.offset}px`}}
   >
     {props.node.gene_structure && props.node.gene_structure.exons.map((exon,idx) => {
       if (idx > 0) {
@@ -464,44 +499,72 @@ const MSAGaps = (props) => {
     targetOffset: [0,0],
     overflow: { adjustX: true, adjustY: true }
   };
-  return (
-    <div style={{
-      zIndex:10,
-    }}>&nbsp;
-      {gaps.gaps.map((block,idx) => {
-        const text = <div><div>length: {block.len}</div><div>coverage: {block.coverage}</div></div>;
-        const marker = block.collapsed ? (
-          <div key={block.offset}>
-            <Tooltip placement="top"
-                     overlay={text}
-                     align={alignParams}
-            >
-              <div className='closed-gap' style={{left: `${block.offset - compression - 1}ch`}} onClick={() => props.toggleGap(idx,gapParams)}/>
-            </Tooltip>
-            <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
-          </div>
-        ) : (
-          <div key={block.offset}>
-            <div onClick={() => props.toggleGap(idx,gapParams)}>
-              <div className='open-gap-left' style={{left: `${block.offset - compression - 1}ch`}}/>
+  if (props.header) {
+    return (
+      <div style={{
+        zIndex: 10,
+      }}>
+        {gaps.gaps.map((block, idx) => {
+          const text = <div>
+            <div>length: {block.len}</div>
+            <div>coverage: {block.coverage}</div>
+          </div>;
+          const marker = block.collapsed ? (
+            <div key={block.offset}>
               <Tooltip placement="top"
-                       overlay={text} align={alignParams}
+                       overlay={text}
+                       align={alignParams}
               >
-                <div className='open-gap-center' style={{left: `${block.offset - compression}ch`, width: `${block.len}ch`}}/>
+                <div className='closed-gap' style={{left: `${block.offset - compression - 1}ch`}}
+                     onClick={() => props.toggleGap(idx, gapParams)}/>
               </Tooltip>
-              <div className='open-gap-right' style={{left: `${block.offset - compression + block.len}ch`}}/>
             </div>
-            <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
-            <div className='gap-vline' style={{left: `${block.offset - compression + block.len}ch`, height: `${zoneHeight}px`}}/>
-          </div>
-        );
-        if (block.collapsed) {
-          compression += block.len;
-        }
-        return marker;
-      })}
-    </div>
-  )
+          ) : (
+            <div key={block.offset}>
+              <div onClick={() => props.toggleGap(idx, gapParams)}>
+                <div className='open-gap-left' style={{left: `${block.offset - compression - 1}ch`}}/>
+                <Tooltip placement="top"
+                         overlay={text} align={alignParams}
+                >
+                  <div className='open-gap-center'
+                       style={{left: `${block.offset - compression}ch`, width: `${block.len}ch`}}/>
+                </Tooltip>
+                <div className='open-gap-right' style={{left: `${block.offset - compression + block.len}ch`}}/>
+              </div>
+            </div>
+          );
+          if (block.collapsed) {
+            compression += block.len;
+          }
+          return marker;
+        })}
+      </div>
+    )
+  }
+  else {
+    return (
+      <div style={{
+        zIndex: 10,
+      }}>
+        {gaps.gaps.map((block, idx) => {
+          const marker = block.collapsed ? (
+            <div key={block.offset} className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
+          ) : (
+            <div key={block.offset}>
+              <div className='gap-vline' style={{left: `${block.offset - compression}ch`, height: `${zoneHeight}px`}}/>
+              <div className='gap-vline'
+                   style={{left: `${block.offset - compression + block.len}ch`, height: `${zoneHeight}px`}}/>
+            </div>
+          );
+          if (block.collapsed) {
+            compression += block.len;
+          }
+          return marker;
+        })}
+        <div className='closed-gap' style={{visibility:'hidden', left: `${gaps.maskLen - 1}ch`}}/>
+      </div>
+    )
+  }
 };
 
 function chunkSubstr(str, size) {
@@ -539,7 +602,7 @@ const MSASequence = ({node, gaps, highlight, hoverNode, colorScheme, zoomLevel})
   return <div
     onMouseOver={_.debounce(onHover,10)}
     className={colorScheme + classes}
-    style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset + 24}px`}}
+    style={{position:'absolute', lineHeight: `${node.displayInfo.height}px`, top:`${node.displayInfo.offset}px`}}
   >
     {node.consensus.alignSeq.map((s, i) => {
       return <span key={i} style={{
@@ -585,7 +648,7 @@ const MSAHistogram = ({node, gaps, interpro, isHeader}) => {
   const buffer = node.consensus.heatmap.buffer;
   let blockIdx = 0;
   let chunkOffset=0;
-  const top = isHeader ? '0px' : `${node.displayInfo.offset + 24}px`;
+  const top = isHeader ? '0px' : `${node.displayInfo.offset}px`;
   const cmp = (
     <div
       className='heatmap'

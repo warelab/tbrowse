@@ -32,6 +32,7 @@ const nodeLabel = (node, props) => {
 };
 
 const LabelsComponent = props => {
+  if (props.header) { return null; }
   if (props.nodes) {
     function onHover() { props.hoverNode(node.nodeId) }
 
@@ -52,6 +53,7 @@ const LabelsComponent = props => {
 };
 
 const TaxonomyComponent = props => {
+  if (props.header) { return null; }
   if (props.nodes) {
     return (
       <div className='text-zone' style={{width:props.width}}>
@@ -79,6 +81,7 @@ const getLocation = node => {
 };
 
 const LocationComponent = props => {
+  if (props.header) { return null; }
   if (props.nodes) {
     return (
       <div className='text-zone' style={{width:props.width}}>
@@ -97,6 +100,7 @@ const LocationComponent = props => {
 };
 
 const DistancesComponent = props => {
+  if (props.header) { return null; }
   if (props.nodes) {
     return (
       <div className='text-zone' style={{width:props.width}}>

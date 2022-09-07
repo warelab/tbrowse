@@ -1,6 +1,5 @@
-import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture, initTreeColors} from '../utils/treeTools'
+import {prepTree, prepSpeciesTree, addConsensus, getGapMask, makeMask, expandToGenes, indexVisibleNodes, addDomainArchitecture, initTreeColors, reIndexTree} from '../utils/treeTools'
 import Swagger from "swagger-client";
-import {reIndexTree} from "../../es/utils/treeTools";
 
 export const REQUESTED_TREE = 'REQUESTED_TREE';
 export const RECEIVED_TREE = 'RECEIVED_TREE';
@@ -205,7 +204,7 @@ const shouldFetchNeighbors = (state, url) => {
 const getGeneOfInterest = state => {
   if (state.genetrees.currentTree && state.genetrees.trees[state.genetrees.currentTree]) {
     let gt = state.genetrees.trees[state.genetrees.currentTree];
-    reIndexTree(gt, ['geneId', 'nodeId']);
+    reIndexTree(gt, ['geneId', 'nodeId', 'taxonId']);
     return gt.indices.geneId[state.genetrees.genesOfInterest[0]];
   }
   return null;
@@ -327,7 +326,7 @@ export const updateGenesOfInterest = geneIds => {
     });
     // reorganize the tree
     let tree = state.genetrees.trees[state.genetrees.currentTree];
-    reIndexTree(tree, ['geneId','nodeId']);
+    reIndexTree(tree, ['geneId','nodeId','taxonId']);
     const goi = tree.indices.geneId[geneIds[0]];
     expandToGenes(tree, geneIds, true);
     dispatch(updateLayout());

@@ -17,7 +17,7 @@ const mapState = (state, ownProps) => {
     && state.genetrees.neighbors.hasOwnProperty(url)
     && state.genetrees.trees.hasOwnProperty(st)) {
     let tree = state.genetrees.trees[treeUrl];
-    reIndexTree(tree, ['geneId', 'nodeId']);
+    reIndexTree(tree, ['geneId', 'nodeId', 'taxonId']);
     let speciesTree = state.genetrees.trees[st];
     reIndexTree(speciesTree,['taxonId']);
     const goi = tree.indices.geneId[state.genetrees.genesOfInterest[0]];
@@ -51,7 +51,7 @@ const mapDispatch = dispatch => bindActionCreators({
 const RegionArrow = props => {
   const midline = props.node.displayInfo.offset + props.node.displayInfo.height / 2;
   const location = props.node.gene_structure.location;
-  const stNode = props.speciesTree.indices.taxonId[props.node.taxonId];
+  const stNode = props.speciesTree.indices.taxonId[props.node.taxonId][0];
   let tooltipFields = [
     ['region', location.region],
     ['start', location.start],
@@ -75,7 +75,7 @@ const RegionArrow = props => {
   );
   const arrowLength = 0.5;//16;
   const arrowHeight = props.highlight[props.node.nodeId] ? 7 : 5;
-  const regionColor = stNode.regionColor[location.region] || 'lightgray';
+  const regionColor = stNode ? stNode.regionColor[location.region] : 'lightgray';
   let lineStart = -11;
   let lineEnd = 11 - arrowLength;
   let tipX = 11;//props.width;
@@ -93,7 +93,7 @@ const RegionArrow = props => {
         <line
           x1={lineStart} y1={midline}
           x2={lineEnd} y2={midline}
-          stroke={regionColor}
+          stroke={regionColor || 'lightgray'}
           strokeWidth={props.highlight[props.node.nodeId] ? 5 : 3}
           cursor='pointer'
         />
@@ -188,15 +188,22 @@ class Neighborhoods extends React.Component {
     }
   }
   render() {
+    if (this.props.header) { return null; }
     if (this.props.neighbors && this.props.treeColor) {
       return (
         <svg width={this.props.width}
              height={this.props.zoneHeight}
              viewBox={[-11,0,22,this.props.zoneHeight]}
              preserveAspectRatio='none'
-             style={{position:'absolute',top:'90px',background:'white'}}
+             style={{position:'absolute',background:'white'}}
         >
           { this.props.nodes.filter(n => n.hasOwnProperty('geneId')).map((n,idx) => <Neighbors key={idx} node={n} {...this.props} />) }
+          <line
+            x1={-0.05} y1={0}
+            x2={-0.05} y2={this.props.zoneHeight}
+            stroke={"red"}
+            strokeWidth={0.1}
+          />
         </svg>
       );
     }
