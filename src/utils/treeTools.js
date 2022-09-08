@@ -73,30 +73,23 @@ export function reIndexTree(tree, attrs) {
     tree.indices = {};
   }
   attrs.forEach(a => {tree.indices[a] = {}});
-  const override = {};
-  const indexNode = (node,parent) => {
-
+  Object.values(tree.nodes).forEach(node => {
     attrs.forEach(a => {
       let key = node[a];
       if (!_.isUndefined(key)) {
         if (a === 'taxonId') {
-          tree.indices[a][key] = [];
+          if (!tree.indices[a].hasOwnProperty(key)) {
+            tree.indices[a][key] = [];
+          }
         }
         else {
-          tree.indices[a][key] = node;
+          tree.indices[a][key] = node.nodeId;
         }
       }
-      if (a === 'taxonId' && !node.children) {
-        tree.indices[a][key].push(node);
+      if (a === 'taxonId') {
+        tree.indices[a][key].push(node.nodeId);
       }
     });
-    node.children && node.children.forEach(child => {
-      indexNode(child,node);
-    });
-  };
-  indexNode(tree, undefined);
-  Object.keys(override).forEach(key => {
-    tree.indices['taxonId'][key] = override[key];
   });
 }
 
@@ -125,7 +118,9 @@ function indexTree(tree, attrs, nodeHeight) {
       let key = node[a];
       if (!_.isUndefined(key)) {
         if (a === 'taxonId') {
-          tree.indices[a][key] = [];
+          if (!tree.indices[a].hasOwnProperty(key)) {
+            tree.indices[a][key] = [];
+          }
         }
         else {
           tree.indices[a][key] = node;
@@ -141,6 +136,39 @@ function indexTree(tree, attrs, nodeHeight) {
   };
   indexNode(tree, undefined);
 }
+function indexTreeNodes(tree, nodeHeight) {
+  const MIN_DIST = 0.05;
+  const MAX_DIST = 2;
+  let nodes = {};
+  const indexNode = (node,parent) => {
+    node.displayInfo = { expanded : false, height : nodeHeight };
+    node.class = node.nodeType; // todo: geneOfInterest/orthologs/paralogs
+    node.distanceToRoot = (parent ? parent.distanceToRoot : 0) + node.distanceToParent;
+    let parentDist = Math.max(node.distanceToParent, MIN_DIST);
+    node.scaleFactor = 1;
+    while (parentDist > MAX_DIST) {
+      parentDist /= 10;
+      node.scaleFactor *= 10;
+    }
+    node.scaledDistanceToRoot = (parent ? parent.scaledDistanceToRoot : 0) + parentDist;
+
+    if (parent) {
+      node.parentId = parent.nodeId;
+    }
+    if (node.children) {
+      let childNodeIds = [];
+      node.children.forEach(child => {
+        childNodeIds.push(child.nodeId);
+        indexNode(child,node);
+      });
+      delete node.children;
+      node.children = childNodeIds;
+    }
+    nodes[node.nodeId] = structuredClone(node);
+  };
+  indexNode(tree, undefined);
+  return nodes;
+}
 
 function sumBranchLengths(node) {
   if (node.distanceToParent === 0) {
@@ -153,18 +181,22 @@ function sumBranchLengths(node) {
   return sum;
 }
 
-function flattenTree(node) {
+function flattenTree(tree,nodeId) {
+  let node = tree.nodes[nodeId];
   if (node.children) {
     if (node.children.length === 2) {
-      return _.concat(flattenTree(node.children[0]), node, flattenTree(node.children[1]));
+      const c1 = node.children[0];
+      const c2 = node.children[1];
+      return _.concat(flattenTree(tree,c1), node, flattenTree(tree,c2))
     }
-    if (node.children.length === 1) { // pruned branch
-      return _.concat(flattenTree(node.children[0], node));
+    if (node.children.length === 1) {
+      const child = node.children[0];
+      return _.concat(flattenTree(tree,child),node);
     }
     if (node.children.length > 2) {
       let nodes = [];
       node.children.forEach(child => {
-        let flatChildren = flattenTree(child);
+        let flatChildren = flattenTree(tree,child);
         flatChildren.forEach(fc => {
           nodes.push(fc);
         })
@@ -175,9 +207,37 @@ function flattenTree(node) {
   }
   return [node];
 }
+function flattenTree1(node) {
+  if (node.children) {
+    if (node.children.length === 2) {
+      const c1 = node.children[0];
+      const c2 = node.children[1];
+      node.children = [c1.nodeId,c2.nodeId];
+      return _.concat(flattenTree1(c1), node, flattenTree1(c2));
+    }
+    if (node.children.length === 1) { // pruned branch
+      const child = node.children[0];
+      node.children = [child.nodeId]
+      return _.concat(flattenTree1(child), node);
+    }
+    if (node.children.length > 2) {
+      let nodes = [];
+      node.children.forEach(child => {
+        let flatChildren = flattenTree1(child);
+        flatChildren.forEach(fc => {
+          nodes.push(fc);
+        })
+      });
+      node.children = node.children.map(child => child.nodeId);
+      nodes.push(node);
+      return nodes;
+    }
+  }
+  return [node];
+}
 
 function colorByDistance(tree) {
-  let nodeOrder = flattenTree(tree);
+  let nodeOrder = flattenTree1(tree);
   let flatDist = 0;
   nodeOrder.forEach(node => {
     let midpoint = flatDist + node.distanceToParent/2;
@@ -199,26 +259,34 @@ export function prepTree(genetree,nodeHeight) {
 
   genetree = tree.model; // we don't want the other decorations, just sorted children.
 
-  indexTree(genetree, ['geneId','nodeId','taxonId'],nodeHeight);
-
+  // indexTree(genetree, ['geneId','nodeId','taxonId'],nodeHeight);
+  genetree.nodes = indexTreeNodes(genetree,nodeHeight);
 
   genetree.totalLength = sumBranchLengths(genetree);
-
+  reIndexTree(genetree, ['geneId','taxonId']);
   return genetree
 }
 
 export function prepSpeciesTree(tree, taxonId) {
+  let nodeOrder;
+  if (!tree.totalLength) {
+    tree.totalLength = sumBranchLengths(tree);
+    nodeOrder = flattenTree1(tree);
+    let nodes = {};
+    nodeOrder.forEach(node => {
+      nodes[node.nodeId] = node;
+    });
+    tree.nodes = nodes;
+    reIndexTree(tree, ['taxonId']);
+  }
   if (taxonId > 0) {
-    reIndexTree(tree, ['taxonId','nodeId']);
     let node = tree.indices.taxonId[taxonId][0];
     pivotBranches(tree,node);
+    nodeOrder = flattenTree(tree,tree.rootId);
   }
-
-  tree.totalLength = sumBranchLengths(tree);
   let colorScale = d3.scaleLinear()
     .domain([0, tree.totalLength])
     .range(['green', 'red']);
-  let nodeOrder = flattenTree(tree);
   let flatDist = 0;
   tree.leafOrder={};
   tree.leafCount=0;
@@ -236,56 +304,55 @@ export function prepSpeciesTree(tree, taxonId) {
       }
     }
   });
+
   return tree;
 }
 
-function pivotBranches(tree, node) {
+function pivotBranches(tree, nodeId) {
+  let node = tree.nodes[nodeId];
   while (node.parentId) {
-    const parent = tree.indices.nodeId[node.parentId];
-    const siblings = parent.children;
-    const indexCallback = (n) => n === node;
-    const nodeIdx = _.findIndex(siblings, indexCallback);
-    if (nodeIdx) {
-      siblings.splice(0, 0, siblings.splice(nodeIdx, 1)[0]);
+    const parent = tree.nodes[node.parentId];
+    if (node.nodeId !== parent.children[0]) {
+      let t = parent.children[0];
+      parent.children[0] = node.nodeId;
+      parent.children[1] = t;
     }
+    // const indexCallback = (n) => n === node.nodeId;
+    // const nodeIdx = _.findIndex(siblings, indexCallback);
+    // if (nodeIdx) {
+    //   siblings.splice(0, 0, siblings.splice(nodeIdx, 1)[0]);
+    // }
     node = parent;
   }
 }
 
 export function setGeneOfInterest(tree, geneId) {
-  let node = tree.indices.geneId[geneId];
-  pivotBranches(tree,node);
+  let nodeId = tree.indices.geneId[geneId];
+  pivotBranches(tree,nodeId);
   // colorByDistance(tree);
 }
 
 export function expandToGenes(tree, genesOfInterest, hideCousins) {
   if (hideCousins) {
-    const collapse = node => {
+    Object.values(tree.nodes).forEach(node => {
       node.displayInfo.expanded = false;
-      node.children && node.children.forEach(child => {
-        collapse(child);
-      })
-    };
-    collapse(tree);
+    })
   }
 
   genesOfInterest.forEach(geneId => {
-    let node = tree.indices.geneId[geneId];
-    if (node) {
+    let nodeId = tree.indices.geneId[geneId];
+    if (nodeId) {
+      let node = tree.nodes[nodeId];
       while (node.parentId) {
-        node = tree.indices.nodeId[node.parentId];
+        node = tree.nodes[node.parentId];
         node.displayInfo.expanded = true;
       }
     }
   });
-  if (!tree.displayInfo.expanded) { // no genesOfInterest in the tree, show everything
-    const traverse = node => {
+  if (!tree.nodes[tree.rootId].displayInfo.expanded) { // no genesOfInterest in the tree, show everything
+    Object.values(tree.nodes).forEach(node => {
       node.displayInfo.expanded = true;
-      node.children && node.children.forEach(child => {
-        traverse(child);
-      })
-    };
-    traverse(tree);
+    })
   }
   setGeneOfInterest(tree, genesOfInterest[0]);
 }
@@ -294,8 +361,9 @@ export function indexVisibleNodes(tree) {
   let visibleUnexpanded = []; // array of unexpanded nodes that are visible
   let visibleNodes = [];
   let maxExpandedDist = 0;
-  function calcVIndexFor(node) {
-    visibleNodes.push(node);
+  function calcVIndexFor(nodeId) {
+    let node = tree.nodes[nodeId];
+    visibleNodes.push(nodeId);
     if (node.scaledDistanceToRoot > maxExpandedDist) {
       maxExpandedDist = node.scaledDistanceToRoot
     }
@@ -311,7 +379,7 @@ export function indexVisibleNodes(tree) {
       }
       else {
         let childExtrema = calcVIndexFor(node.children[0]);
-        node.vindex = node.children[0].vindex;
+        node.vindex = tree.nodes[node.children[0]].vindex;
         return {
           min: childExtrema.min,
           max: childExtrema.max
@@ -319,7 +387,7 @@ export function indexVisibleNodes(tree) {
       }
     }
     else {
-      visibleUnexpanded.push(node);
+      visibleUnexpanded.push(nodeId);
       node.vindex = visibleUnexpanded.length;
       return {
         min: node.vindex,
@@ -328,7 +396,7 @@ export function indexVisibleNodes(tree) {
     }
   }
 
-  let maxVIndex = calcVIndexFor(tree).max;
+  let maxVIndex = calcVIndexFor(tree.rootId).max;
   return {maxExpandedDist, visibleNodes, visibleUnexpanded, maxVIndex}
 }
 
@@ -336,7 +404,7 @@ export function addConsensus(tree) {
   // generate a consensus sequence and coverage for each node in the tree
   // for leaf nodes use the sequence and cigar attributes to define the node's consensus
   // for internal nodes (2 children) select the consensus based on the frequency in the child nodes
-  if (tree.consensus) return;
+  if (tree.nodes[tree.rootId].consensus) return;
 
   let clength = 0;
 
@@ -413,18 +481,22 @@ export function addConsensus(tree) {
     return res;
   }
 
-  function addConsensusToNode(node) {
+  function addConsensusToNode(nodeId) {
+    let node = tree.nodes[nodeId];
     if (node.sequence && node.cigar) {
       node.consensus = cigarToConsensus(node.cigar, node.sequence);
     }
     else if (node.children.length === 1) {
       addConsensusToNode(node.children[0]);
-      node.consensus = node.children[0].consensus;
+      const child = tree.nodes[node.children[0]];
+      node.consensus = child.consensus;
     }
     else if (node.children.length === 2) {
       addConsensusToNode(node.children[0]);
       addConsensusToNode(node.children[1]);
-      node.consensus = mergeConsensi(node.children[0].consensus, node.children[1].consensus);
+      const c1 = tree.nodes[node.children[0]];
+      const c2 = tree.nodes[node.children[1]];
+      node.consensus = mergeConsensi(c1.consensus, c2.consensus);
     }
     else {
       // tree doesn't have MSA
@@ -432,7 +504,8 @@ export function addConsensus(tree) {
     }
   }
 
-  function addHeatmap(node) {
+  function addHeatmap(nodeId) {
+    let node = tree.nodes[nodeId];
     let heatmap = new Uint16Array(clength);
     const nSeqs = node.consensus.nSeqs;
     node.consensus.coverage.forEach((c,i) => {
@@ -444,8 +517,8 @@ export function addConsensus(tree) {
     });
   }
 
-  addConsensusToNode(tree);
-  addHeatmap(tree);
+  addConsensusToNode(tree.rootId);
+  addHeatmap(tree.rootId);
 }
 
 export function makeMask(gaps, totalLength) {
@@ -743,10 +816,11 @@ export function lowerBound(a,b,arr,x) {
 // 2. fetch the records from the API
 // 3. walk the tree again and set the domains field
 export function addDomainArchitecture(tree, api, callback) {
-  if (tree.domainArchitecture) return;
+  if (tree.nodes[tree.rootId].domainArchitecture) return;
   // 1. walk the tree and gather all of the interpro ids as keys in an object
   let idSet = {};
-  const setupInterpro = node => {
+  const setupInterpro = nodeId => {
+    const node = tree.nodes[nodeId];
     if (node.interpro) {
       node.interpro.forEach(ipr => {
         idSet[ipr.id] = 'x';
@@ -757,7 +831,7 @@ export function addDomainArchitecture(tree, api, callback) {
       setupInterpro(child);
     });
   };
-  setupInterpro(tree);
+  setupInterpro(tree.rootId);
   let idList = Object.keys(idSet);
   let params = {
     setId: 'interpro',
@@ -841,7 +915,8 @@ export function addDomainArchitecture(tree, api, callback) {
       });
       return groups;
     }
-    function mergeDomains(node) {
+    function mergeDomains(nodeId) {
+      let node = tree.nodes[nodeId];
       let domains = [];
       if (!node.children || node.children.length === 0) {
         domains = leafDomains(node);
@@ -882,7 +957,7 @@ export function addDomainArchitecture(tree, api, callback) {
       ipr.colorOffset = (ipr.rootId % nColors + 1) * 10;
     });
 
-    let rootDomains = mergeDomains(tree);
+    let rootDomains = mergeDomains(tree.nodeId);
 
     callback(domainIdx, rootDomains);
   }).catch((error) => {

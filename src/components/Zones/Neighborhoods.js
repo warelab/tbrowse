@@ -17,11 +17,11 @@ const mapState = (state, ownProps) => {
     && state.genetrees.neighbors.hasOwnProperty(url)
     && state.genetrees.trees.hasOwnProperty(st)) {
     let tree = state.genetrees.trees[treeUrl];
-    reIndexTree(tree, ['geneId', 'nodeId', 'taxonId']);
+    // reIndexTree(tree, ['geneId', 'nodeId', 'taxonId']);
     let speciesTree = state.genetrees.trees[st];
-    reIndexTree(speciesTree,['taxonId']);
-    const goi = tree.indices.geneId[state.genetrees.genesOfInterest[0]];
-    const nodes = tree.visibleUnexpanded;
+    // reIndexTree(speciesTree,['taxonId']);
+    const goi = tree.nodes[tree.indices.geneId[state.genetrees.genesOfInterest[0]]];
+    const nodes = tree.visibleUnexpanded.map(nodeId => tree.nodes[nodeId]);
     const highlight = tree.highlight;
     const neighbors = state.genetrees.neighbors[url];
     if (state.genetrees.treeColors[goi.geneId]) {
@@ -51,7 +51,7 @@ const mapDispatch = dispatch => bindActionCreators({
 const RegionArrow = props => {
   const midline = props.node.displayInfo.offset + props.node.displayInfo.height / 2;
   const location = props.node.gene_structure.location;
-  const stNode = props.speciesTree.indices.taxonId[props.node.taxonId][0];
+  const stNode = props.speciesTree.nodes[props.speciesTree.indices.taxonId[props.node.taxonId][0]];
   let tooltipFields = [
     ['region', location.region],
     ['start', location.start],

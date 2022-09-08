@@ -20,9 +20,9 @@ export default connect(state => {
   let height = 94;
   if (state.genetrees.trees.hasOwnProperty(state.genetrees.currentTree)) {
     const tree = state.genetrees.trees[state.genetrees.currentTree];
-    const nodes = tree.visibleUnexpanded;
-    nodes.forEach(n => {
-      height += n.displayInfo.height
+    const nodes = tree.nodes;
+    tree.visibleUnexpanded.forEach(n => {
+      height += nodes[n].displayInfo.height
     });
   }
   return {...state.layout, height}
