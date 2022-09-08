@@ -51,7 +51,7 @@ class Tree extends React.Component {
       return (
         <div className='zone-header'>
           {this.props.tree.hoveredNodeId &&
-            <NodeInfo node={this.props.tree.indices.nodeId[this.props.tree.hoveredNodeId]}/>}
+            <NodeInfo node={this.props.tree.nodes[this.props.tree.hoveredNodeId]}/>}
         </div>
       )
     }
@@ -61,8 +61,8 @@ class Tree extends React.Component {
              height={this.props.zoneHeight + 'px'}
              style={{position:'absolute'}}
         >
-          {this.props.tree.visibleNodes.map((node,idx) => (
-            <TreeNode key={idx} xScale={xScale} node={node} {...this.props}/>
+          {this.props.tree.visibleNodes.map((nodeId,idx) => (
+            <TreeNode key={idx} xScale={xScale} node={this.props.tree.nodes[nodeId]} {...this.props}/>
           ))}
         </svg>
       </div>
@@ -85,7 +85,8 @@ const mapState = (state, ownProps) => {
     const highlight = tree.highlight;
     reIndexTree(tree, ['geneId','nodeId','taxonId']);
     let zoneHeight=0;
-    tree.visibleUnexpanded.forEach(n => {
+    tree.visibleUnexpanded.forEach(n_id => {
+      let n = tree.nodes[n_id];
       n.displayInfo.offset = zoneHeight;
       zoneHeight += n.displayInfo.height
     });
@@ -120,7 +121,7 @@ const TreeNode = (props) => {
   let marker,hline,vline,bbox,extension,popover;
   let x=node.scaledDistanceToRoot * xScale;
   let y=(node.vindex-1) * height + height/2;
-  const parent = props.tree.indices.nodeId[node.parentId];
+  const parent = props.tree.nodes[node.parentId];
   let parentX = parent ? parent.scaledDistanceToRoot * xScale : 0;
   bbox = <rect x={parentX} y={y - height/2} width={x - parentX + nodeRadius} height={height} className='bbox'/>;
   if (node.scaleFactor !== 1) {
@@ -153,8 +154,10 @@ const TreeNode = (props) => {
     if (node.displayInfo.expanded) {
       let w = nodeRadius*1.5;
       if (node.children.length === 2) { // internal
-        let child1Y = (node.children[0].vindex - 1) * height + height / 2;
-        let child2Y = (node.children[1].vindex - 1) * height + height / 2;
+        const c1 = props.tree.nodes[node.children[0]];
+        const c2 = props.tree.nodes[node.children[1]];
+        let child1Y = (c1.vindex - 1) * height + height / 2;
+        let child2Y = (c2.vindex - 1) * height + height / 2;
         bbox = <rect x={parentX} y={child1Y} width={x - parentX + nodeRadius} height={child2Y - child1Y} className='bbox'/>;
         marker = <rect x={x - w/2} y={y - w/2} width={w} height={w} className={node.class} style={style}/>;
         // vline = <line x1={x} x2={x} y1={child1Y} y2={child2Y} className='line'/>;
@@ -186,7 +189,7 @@ const TreeNode = (props) => {
       props.collapseNode(node);
     }
     else {
-      props.expandNode(node, true);
+      props.expandNode(props.tree.nodes, node.nodeId, true);
     }
   };
 
@@ -222,7 +225,7 @@ const TreeNode = (props) => {
                 </td>
                 <td>
                   <button
-                    onClick={() => {document.body.click();props.expandNode(node, true)}}>Expand
+                    onClick={() => {document.body.click();props.expandNode(props.tree.nodes, node, true)}}>Expand
                   </button>
                 </td>
                 {node.displayInfo.expanded && <td>

@@ -98,11 +98,11 @@ function updateLayout() {
   }
 }
 
-export const expandNode = (node, recursive) => {
+export const expandNode = (nodes, node, recursive) => {
   function makeNodeVisible(n, recursive) {
     n.displayInfo.expanded = true;
     if (recursive) {
-      n.children && n.children.forEach(child => makeNodeVisible(child, recursive));
+      n.children && n.children.forEach(childId => makeNodeVisible(nodes[childId], recursive));
     }
   }
   makeNodeVisible(node, recursive);
@@ -149,7 +149,7 @@ function saveGaps(gapKey, gaps) {
 }
 
 function deleteAlignSeq(tree) {
-  Object.values(tree.indices.nodeId).forEach(node => {
+  Object.values(tree.nodes).forEach(node => {
     if (node.consensus.hasOwnProperty('alignSeq')) {
       delete node.consensus.alignSeq;
     }
@@ -166,7 +166,7 @@ export const calculateGaps = (params) => {
     const tree = state.genetrees.trees[state.genetrees.currentTree];
     deleteAlignSeq(tree);
     if (!tree.gaps.hasOwnProperty(gapKey)) {
-      dispatch(saveGaps(gapKey, getGapMask(tree, ...gapParams)))
+      dispatch(saveGaps(gapKey, getGapMask(tree.nodes[tree.rootId], ...gapParams)))
     }
     else {
       Promise.resolve();
@@ -204,8 +204,8 @@ const shouldFetchNeighbors = (state, url) => {
 const getGeneOfInterest = state => {
   if (state.genetrees.currentTree && state.genetrees.trees[state.genetrees.currentTree]) {
     let gt = state.genetrees.trees[state.genetrees.currentTree];
-    reIndexTree(gt, ['geneId', 'nodeId', 'taxonId']);
-    return gt.indices.geneId[state.genetrees.genesOfInterest[0]];
+    // reIndexTree(gt, ['geneId', 'nodeId', 'taxonId']);
+    return gt.nodes[gt.indices.geneId[state.genetrees.genesOfInterest[0]]];
   }
   return null;
 };
@@ -326,8 +326,8 @@ export const updateGenesOfInterest = geneIds => {
     });
     // reorganize the tree
     let tree = state.genetrees.trees[state.genetrees.currentTree];
-    reIndexTree(tree, ['geneId','nodeId','taxonId']);
-    const goi = tree.indices.geneId[geneIds[0]];
+    // reIndexTree(tree, ['geneId','nodeId','taxonId']);
+    const goi = tree.nodes[tree.indices.geneId[geneIds[0]]];
     expandToGenes(tree, geneIds, true);
     dispatch(updateLayout());
     // update the neighborhood colors

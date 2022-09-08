@@ -122,7 +122,7 @@ const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   if (state.genetrees.trees.hasOwnProperty(state.genetrees.currentTree)) {
     const tree = state.genetrees.trees[state.genetrees.currentTree];
-    const nodes = tree.visibleUnexpanded;
+    const nodes = tree.visibleUnexpanded.map(nodeId => tree.nodes[nodeId]);
     const highlight = tree.highlight;
     return { nodes, highlight, ...zone, isLoading:false }
   }

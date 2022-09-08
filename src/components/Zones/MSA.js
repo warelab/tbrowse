@@ -107,7 +107,7 @@ const mapState = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   if (state.genetrees.trees.hasOwnProperty(state.genetrees.currentTree)) {
     const tree = state.genetrees.trees[state.genetrees.currentTree];
-    const nodes = tree.visibleUnexpanded;
+    const nodes = tree.visibleUnexpanded.map(n => tree.nodes[n]);
     const highlight = tree.highlight;
     const gapParams = JSON.stringify(getGapParams(zone));
     if (tree.gaps.hasOwnProperty(gapParams)) {
@@ -118,7 +118,7 @@ const mapState = (state, ownProps) => {
         zoneHeight += n.displayInfo.height
       });
       const interpro = state.genetrees.interpro;
-      const root = tree;
+      const root = tree.nodes[tree.rootId];
       return { gaps, nodes, highlight, interpro, zoneHeight, root, ...zone }
     }
 
