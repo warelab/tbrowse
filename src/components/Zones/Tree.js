@@ -175,13 +175,13 @@ const TreeNode = (props) => {
       }
     }
     else { // collapsed
-      marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${Math.max(parentX+4,x-30)},${y}`}
-                        className={node.class} style={style}/>;
       const subtree_size = 0.7*width*node.descendants/props.tree.nodes[node.rootId].descendants;
+      const text_width = 5+8*Math.ceil(Math.log10(node.descendants));
       marker = <polygon points={`${x+subtree_size},${y-0.4*height} ${x+subtree_size},${y+0.4*height} ${Math.max(parentX+4,x-30)},${y}`}
                         className={node.class} style={style}/>;
-      extension = <line x1={x+subtree_size+5+8*Math.ceil(Math.log10(node.descendants))} x2={width} y1={y} y2={y} className='extension'/>;
+      extension = <line x1={x+subtree_size+text_width} x2={width} y1={y} y2={y} className='extension'/>;
       tally = <text x={x+subtree_size+5} y={y+5} class="small">{node.descendants}</text>
+      bbox = <rect x={parentX} y={y - height/2} width={x - parentX + subtree_size + text_width} height={height} className='bbox'/>;
       // hline = null;
     }
   }
