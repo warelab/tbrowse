@@ -98,14 +98,14 @@ function updateLayout() {
   }
 }
 
-export const expandNode = (nodes, node, recursive) => {
+export const expandNode = (nodes, nodeId, recursive) => {
   function makeNodeVisible(n, recursive) {
     n.displayInfo.expanded = true;
     if (recursive) {
       n.children && n.children.forEach(childId => makeNodeVisible(nodes[childId], recursive));
     }
   }
-  makeNodeVisible(node, recursive);
+  makeNodeVisible(nodes[nodeId], recursive);
   return updateLayout();
 };
 
@@ -120,8 +120,6 @@ export const swapChildren = node => {
     return updateLayout();
   }
 };
-
-
 
 const treeURL = (p,s) => {
   let url = `${s.api}/tree?setId=${p.setId || s.setId}&treeId=${p.treeId || s.treeId}`;
