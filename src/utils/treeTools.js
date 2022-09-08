@@ -155,14 +155,19 @@ function indexTreeNodes(tree, nodeHeight) {
     if (parent) {
       node.parentId = parent.nodeId;
     }
+    node.descendants=0;
     if (node.children) {
       let childNodeIds = [];
       node.children.forEach(child => {
         childNodeIds.push(child.nodeId);
         indexNode(child,node);
+        node.descendants += child.descendants;
       });
       delete node.children;
       node.children = childNodeIds;
+    }
+    else {
+      node.descendants++;
     }
     nodes[node.nodeId] = structuredClone(node);
   };

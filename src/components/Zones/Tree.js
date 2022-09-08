@@ -118,7 +118,7 @@ const TreeNode = (props) => {
     stroke: color
   };
 
-  let marker,hline,vline,bbox,extension,popover;
+  let marker,hline,vline,bbox,extension,tally,popover;
   let x=node.scaledDistanceToRoot * xScale;
   let y=(node.vindex-1) * height + height/2;
   const parent = props.tree.nodes[node.parentId];
@@ -177,7 +177,11 @@ const TreeNode = (props) => {
     else { // collapsed
       marker = <polygon points={`${x},${y-0.4*height} ${x},${y+0.4*height} ${Math.max(parentX+4,x-30)},${y}`}
                         className={node.class} style={style}/>;
-      extension = <line x1={x} x2={width} y1={y} y2={y} className='extension'/>;
+      const subtree_size = 0.7*width*node.descendants/props.tree.nodes[node.rootId].descendants;
+      marker = <polygon points={`${x+subtree_size},${y-0.4*height} ${x+subtree_size},${y+0.4*height} ${Math.max(parentX+4,x-30)},${y}`}
+                        className={node.class} style={style}/>;
+      extension = <line x1={x+subtree_size+5+8*Math.ceil(Math.log10(node.descendants))} x2={width} y1={y} y2={y} className='extension'/>;
+      tally = <text x={x+subtree_size+5} y={y+5} class="small">{node.descendants}</text>
       // hline = null;
     }
   }
@@ -205,7 +209,11 @@ const TreeNode = (props) => {
                   <th></th>
                   <td>
                     {node.vindex === 1 ?
-                      <button onClick={() => {document.body.click();expandOrCollapse(node)}}>Show Paralogs</button> :
+                      <button onClick={() => {
+                        document.body.click();
+                        const paralogs = props.tree.indices.taxonId[node.taxonId].map(nodeId => props.tree.nodes[nodeId].geneId);
+                        props.updateGenesOfInterest(paralogs);
+                      }}>Show Paralogs</button> :
                       <button onClick={() => {document.body.click();props.updateGenesOfInterest([node.geneId])}}>Focus on this gene</button>
                     }
                   </td>
@@ -225,7 +233,7 @@ const TreeNode = (props) => {
                 </td>
                 <td>
                   <button
-                    onClick={() => {document.body.click();props.expandNode(props.tree.nodes, node, true)}}>Expand
+                    onClick={() => {document.body.click();props.expandNode(props.tree.nodes, node.nodeId, true)}}>Expand
                   </button>
                 </td>
                 {node.displayInfo.expanded && <td>
@@ -246,6 +254,7 @@ const TreeNode = (props) => {
     <g className={nodeClass} onMouseOver={()=>props.hoverNode(node.nodeId)}>
       {vline}
       {extension}
+      {tally}
       {hline}
       {marker}
       <OverlayTrigger placement="auto"
