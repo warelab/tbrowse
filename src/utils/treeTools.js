@@ -137,7 +137,7 @@ function indexTree(tree, attrs, nodeHeight) {
   indexNode(tree, undefined);
 }
 function indexTreeNodes(tree, nodeHeight) {
-  const MIN_DIST = 0.05;
+  const MIN_DIST = 0.02;
   const MAX_DIST = 2;
   let nodes = {};
   const indexNode = (node,parent) => {
@@ -175,13 +175,13 @@ function indexTreeNodes(tree, nodeHeight) {
   return nodes;
 }
 
-function sumBranchLengths(node) {
+function sumBranchLengths(node,mindtp) {
   if (node.distanceToParent === 0) {
-    node.distanceToParent = 1;
+    node.distanceToParent = mindtp;
   }
   let sum = node.distanceToParent;
   node.children && node.children.forEach(child => {
-    sum += sumBranchLengths(child);
+    sum += sumBranchLengths(child,mindtp);
   });
   return sum;
 }
@@ -242,7 +242,7 @@ function flattenTree1(node) {
 }
 
 function colorByDistance(tree) {
-  let nodeOrder = flattenTree1(tree);
+  let nodeOrder = flattenTree(tree,tree.rootId);
   let flatDist = 0;
   nodeOrder.forEach(node => {
     let midpoint = flatDist + node.distanceToParent/2;
@@ -263,11 +263,11 @@ export function prepTree(genetree,nodeHeight) {
   let tree = new TreeModel({modelComparatorFn: leftIndexComparator}).parse(genetree);
 
   genetree = tree.model; // we don't want the other decorations, just sorted children.
+  genetree.totalLength = sumBranchLengths(genetree,0.001);
 
   // indexTree(genetree, ['geneId','nodeId','taxonId'],nodeHeight);
   genetree.nodes = indexTreeNodes(genetree,nodeHeight);
 
-  genetree.totalLength = sumBranchLengths(genetree);
   reIndexTree(genetree, ['geneId','taxonId']);
   return genetree
 }
@@ -275,7 +275,7 @@ export function prepTree(genetree,nodeHeight) {
 export function prepSpeciesTree(tree, taxonId) {
   let nodeOrder;
   if (!tree.totalLength) {
-    tree.totalLength = sumBranchLengths(tree);
+    tree.totalLength = sumBranchLengths(tree,1);
     nodeOrder = flattenTree1(tree);
     let nodes = {};
     nodeOrder.forEach(node => {
@@ -289,6 +289,7 @@ export function prepSpeciesTree(tree, taxonId) {
     pivotBranches(tree,node);
     nodeOrder = flattenTree(tree,tree.rootId);
   }
+  colorByDistance(tree);
   let colorScale = d3.scaleLinear()
     .domain([0, tree.totalLength])
     .range(['green', 'red']);
@@ -297,7 +298,8 @@ export function prepSpeciesTree(tree, taxonId) {
   tree.leafCount=0;
   nodeOrder.forEach(node => {
     let midpoint = flatDist + node.distanceToParent/2;
-    node.color = colorScale(midpoint); //d3chrom.interpolateRainbow(midpoint/tree.totalLength);
+    node.color = colorScale(midpoint);
+    // node.color = d3chrom.interpolateRainbow(midpoint/tree.totalLength);
     flatDist += node.distanceToParent;
     if (!node.children) {
       tree.leafOrder[node.taxonId] = tree.leafCount++;
@@ -317,16 +319,14 @@ function pivotBranches(tree, nodeId) {
   let node = tree.nodes[nodeId];
   while (node.parentId) {
     const parent = tree.nodes[node.parentId];
-    if (node.nodeId !== parent.children[0]) {
-      let t = parent.children[0];
-      parent.children[0] = node.nodeId;
-      parent.children[1] = t;
+    let siblings = parent.children;
+    const indexCallback = (n) => n === node.nodeId;
+    const nodeIdx = _.findIndex(siblings, indexCallback);
+    if (nodeIdx) {
+      siblings.splice(nodeIdx, 1);
+      siblings.unshift(node.nodeId);
+      parent.children = siblings;
     }
-    // const indexCallback = (n) => n === node.nodeId;
-    // const nodeIdx = _.findIndex(siblings, indexCallback);
-    // if (nodeIdx) {
-    //   siblings.splice(0, 0, siblings.splice(nodeIdx, 1)[0]);
-    // }
     node = parent;
   }
 }
@@ -334,7 +334,7 @@ function pivotBranches(tree, nodeId) {
 export function setGeneOfInterest(tree, geneId) {
   let nodeId = tree.indices.geneId[geneId];
   pivotBranches(tree,nodeId);
-  // colorByDistance(tree);
+  colorByDistance(tree);
 }
 
 export function expandToGenes(tree, genesOfInterest, hideCousins) {
@@ -402,7 +402,14 @@ export function indexVisibleNodes(tree) {
   }
 
   let maxVIndex = calcVIndexFor(tree.rootId).max;
-  return {maxExpandedDist, visibleNodes, visibleUnexpanded, maxVIndex}
+  let zoneHeight=0;
+  visibleUnexpanded.forEach(nid => {
+    let n = tree.nodes[nid];
+    n.displayInfo.offset = zoneHeight;
+    zoneHeight += n.displayInfo.height
+  });
+
+  return {maxExpandedDist, visibleNodes, visibleUnexpanded, maxVIndex, zoneHeight}
 }
 
 export function addConsensus(tree) {

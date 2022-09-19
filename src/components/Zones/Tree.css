@@ -77,6 +77,7 @@
 .nodeinfo {
     padding-left: 20px;
     font-size: small;
-    color: #ffe8a1;
+    color: #fff429;
     background-color: #7a8181;
+    box-shadow: 0 0 1px 2px #4e4e4e;
 }

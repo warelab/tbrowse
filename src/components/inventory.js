@@ -5,11 +5,12 @@ import Neighborhoods from './Zones/Neighborhoods'
 import Orthologs from './Zones/Orthologs'
 import Genome from './Zones/Genome'
 import { Labels, Distances, Taxonomy, Location } from './Zones/Text'
-import Tree from './Zones/Tree'
+import { TreeHeader, TreeBody } from './Zones/Tree'
 
 export const components = {
   checkbox: Checkboxes,
-  tree: Tree,
+  tree: TreeBody,
+  treeHeader: TreeHeader,
   msa: MSA,
   neighborhood: Neighborhoods,
   local: LocalData,

@@ -21,98 +21,100 @@ const NodeInfo = ({node}) => {
       <tr><th>Taxonomy Node</th><td>{node.taxonName}</td></tr>
       { node.nodeType === 'protein_coding'
         ? <tr><th>Gene Id</th><td>{node.geneId}</td></tr>
-        : <tr><th>Node Type</th><td>{node.nodeType}</td></tr>
+        : <tr><th>Node Type</th><td>{node.nodeType} ({node.descendants} genes)</td></tr>
       }
       { node.nodeType === 'protein_coding' && node.geneName && <tr><th>Gene Name</th><td>{node.geneName}</td></tr> }
     </tbody></table>
   </div>
 };
 
-class Tree extends React.Component {
-  constructor(props) {
-    super(props);
+const TreeHeaderComponent = ({node}) => {
+  return <div className='zone-header'>
+    {node && <NodeInfo node={node}/>}
+  </div>
+};
+const TreeBodyComponent = (props) => {
+  if (props.tree) {
+    const xScale = (props.width - props.nodeRadius + 20) / props.tree.maxExpandedDist;
+    return <div>
+      <svg width={props.width}
+           height={props.zoneHeight + 'px'}
+           style={{position:'absolute'}}
+      >{props.tree.visibleNodes.map((nodeId,idx) => (
+        <TreeNode key={idx} xScale={xScale} nodeId={nodeId} zoneId={props.zoneId}/>
+      ))}
+      </svg>
+    </div>
   }
-  render() {
-    if (!this.props.tree) {
-      return (
-        <div className='sweet-loading'>
-          <BarLoader
-            css={override}
-            sizeUnit={"px"}
-            size={this.props.width}
-            color={'#123abc'}
-            loading={this.props.isFetching}
-          />
-        </div>
-      )
-    }
-    const xScale = (this.props.width - (this.props.nodeRadius + 1)) / this.props.tree.maxExpandedDist;
-    if (this.props.header) {
-      return (
-        <div className='zone-header'>
-          {this.props.tree.hoveredNodeId &&
-            <NodeInfo node={this.props.tree.nodes[this.props.tree.hoveredNodeId]}/>}
-        </div>
-      )
-    }
-    return (
-      <div>
-        <svg width={this.props.width}
-             height={this.props.zoneHeight + 'px'}
-             style={{position:'absolute'}}
-        >
-          {this.props.tree.visibleNodes.map((nodeId,idx) => (
-            <TreeNode key={idx} xScale={xScale} node={this.props.tree.nodes[nodeId]} {...this.props}/>
-          ))}
-        </svg>
-      </div>
-    )
+  return <div className='sweet-loading'>
+    <BarLoader
+      css={override}
+      sizeUnit={"px"}
+      size={props.width}
+      color={'#123abc'}
+      loading={true}
+    />
+  </div>
+};
+
+const mapStateBody = (state, ownProps) => {
+  const zone = state.layout.zones[ownProps.zoneId];
+  const url = state.genetrees.currentTree;
+  if (state.genetrees.trees.hasOwnProperty(url)) {
+    const tree = state.genetrees.trees[url];
+    const zoneHeight = tree.displayHeight;
+    return { ...zone, tree, zoneHeight }
   }
-}
+  return { ...zone }
+};
 
+const mapStateHeader = (state, ownProps) => {
+  const url = state.genetrees.currentTree;
+  if (state.genetrees.trees.hasOwnProperty(url)) {
+    const tree = state.genetrees.trees[url];
+    if (tree.hoveredNodeId) {
+      const node = tree.nodes[tree.hoveredNodeId]
+      return {node}
+    }
+  }
+  return null;
+};
 
-const mapState = (state, ownProps) => {
+const mapStateNode = (state, ownProps) => {
   const zone = state.layout.zones[ownProps.zoneId];
   const url = state.genetrees.currentTree;
   const st = state.genetrees.currentSpeciesTree;
   const goi = state.genetrees.genesOfInterest[0];
-  const header = !!ownProps.header;
   if (state.genetrees.trees.hasOwnProperty(url) && state.genetrees.trees.hasOwnProperty(st)) {
     const tree = state.genetrees.trees[url];
     const speciesTree = state.genetrees.trees[st];
-    reIndexTree(speciesTree,['taxonId']);
-    // need reference to parent node on each.
-    const highlight = tree.highlight;
-    reIndexTree(tree, ['geneId','nodeId','taxonId']);
-    let zoneHeight=0;
-    tree.visibleUnexpanded.forEach(n_id => {
-      let n = tree.nodes[n_id];
-      n.displayInfo.offset = zoneHeight;
-      zoneHeight += n.displayInfo.height
-    });
+    const node = tree.nodes[ownProps.nodeId];
+    const highlight = tree.highlight[ownProps.nodeId];
+    const visible = tree.visibleNodes;
     return {
-      isFetching: state.genetrees.isFetching, header, ...zone, tree, highlight, zoneHeight, speciesTree, goi
+      ...zone, highlight, tree, node, speciesTree, goi, visible
     }
   }
-  return {
-    isFetching: state.genetrees.isFetching, header,
-    ...zone
-  }
+  return { ...zone }
 };
 
 const mapDispatch = dispatch => bindActionCreators({ expandNode, collapseNode, swapChildren, updateGenesOfInterest, hoverNode }, dispatch);
 
-export default connect(mapState, mapDispatch, null, {context:myContext})(Tree);
+const TreeHeader = connect(mapStateHeader, null, null, {context:myContext})(TreeHeaderComponent);
+const TreeBody = connect(mapStateBody, null, null, {context:myContext})(TreeBodyComponent);
 
-const TreeNode = (props) => {
+export { TreeBody, TreeHeader };
+
+const TreeNodeComponent = (props) => {
   const node = props.node;
+  if (!node) return null;
   const xScale = props.xScale;
   const width = props.width;
   const height = node.displayInfo.height;
   const nodeRadius = props.nodeRadius;
-  const highlight = props.highlight[node.nodeId];
+  const highlight = props.highlight;//[node.nodeId];
 
-  const color = props.speciesTree.indices.taxonId[node.taxonId].color;
+  const color = props.speciesTree.nodes[props.speciesTree.indices.taxonId[node.taxonId][0]].color;
   const style = {
     fill: color,
     stroke: color
@@ -180,7 +182,7 @@ const TreeNode = (props) => {
       marker = <polygon points={`${x+subtree_size},${y-0.4*height} ${x+subtree_size},${y+0.4*height} ${Math.max(parentX+4,x-30)},${y}`}
                         className={node.class} style={style}/>;
       extension = <line x1={x+subtree_size+text_width} x2={width} y1={y} y2={y} className='extension'/>;
-      tally = <text x={x+subtree_size+5} y={y+5} class="small">{node.descendants}</text>
+      tally = <text x={x+subtree_size+5} y={y+5} className="small">{node.descendants}</text>
       bbox = <rect x={parentX} y={y - height/2} width={x - parentX + subtree_size + text_width} height={height} className='bbox'/>;
       // hline = null;
     }
@@ -224,25 +226,18 @@ const TreeNode = (props) => {
               </tbody>
             :
               <tbody>
-              <tr>
-                <td>
-                  <button
-                    // onClick={() => expandOrCollapse(node)}>{node.displayInfo.expanded ? 'Collapse' : 'Expand'}
-                    onClick={() => {document.body.click();props.collapseNode(node)}}>Collapse
-                  </button>
-                </td>
-                <td>
-                  <button
-                    onClick={() => {document.body.click();props.expandNode(props.tree.nodes, node.nodeId, true)}}>Expand
-                  </button>
-                </td>
-                {node.displayInfo.expanded && <td>
-                  <button
-                    onClick={() => {document.body.click();props.swapChildren(node)}}>Swap Children
-                  </button>
-                </td>
-                }
-              </tr>
+              {node.displayInfo.expanded
+                ?
+                <tr>
+                  <td><button onClick={() => {document.body.click();props.collapseNode(node)}}>Collapse Node</button></td>
+                  <td><button onClick={() => {document.body.click();props.swapChildren(node)}}>Swap Children</button></td>
+                </tr>
+                :
+                <tr>
+                  <td><button onClick={() => {document.body.click();props.expandNode(props.tree.nodes, node.nodeId, false)}}>Expand Node</button></td>
+                  <td><button onClick={() => {document.body.click();props.expandNode(props.tree.nodes, node.nodeId, true)}}>Expand Subtree</button></td>
+                </tr>
+              }
               </tbody>
           }
         </table>
@@ -266,3 +261,5 @@ const TreeNode = (props) => {
     </g>
   );
 };
+
+const TreeNode = connect(mapStateNode, mapDispatch, null, {context:myContext})(TreeNodeComponent);

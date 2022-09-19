@@ -15,7 +15,7 @@ const Child = props => (
        ref={props.getRef}
   >
     <ZoneConfig id={props.zoneId}/>
-    { props.header && components[props.zoneType] && React.createElement(components[props.zoneType], props) }
+    { props.header && components[props.zoneType+'Header'] && React.createElement(components[props.zoneType+'Header'], props) }
   </div>
 );
 

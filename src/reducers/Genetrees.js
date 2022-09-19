@@ -53,6 +53,7 @@ function trees(
         visibleUnexpanded: action.visibleUnexpanded,
         maxExpandedDist: action.maxExpandedDist,
         maxVIndex: action.maxVIndex,
+        displayHeight: action.zoneHeight,
         gaps: {},
         highlight: {}
       };
@@ -121,6 +122,7 @@ function trees(
       tree.visibleUnexpanded = action.visibleUnexpanded;
       tree.maxExpandedDist = action.maxExpandedDist;
       tree.maxVIndex = action.maxVIndex;
+      tree.displayHeight = action.zoneHeight;
       return Object.assign({}, state);
     case CALCULATED_GAPS:
       tree = state.trees[state.currentTree];

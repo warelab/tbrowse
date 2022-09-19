@@ -112,11 +112,11 @@ const mapState = (state, ownProps) => {
     const gapParams = JSON.stringify(getGapParams(zone));
     if (tree.gaps.hasOwnProperty(gapParams)) {
       const gaps = tree.gaps[gapParams];
-      let zoneHeight=0;
-      nodes.forEach(n => {
-        n.displayInfo.offset = zoneHeight;
-        zoneHeight += n.displayInfo.height
-      });
+      let zoneHeight=tree.displayHeight;
+      // nodes.forEach(n => {
+      //   n.displayInfo.offset = zoneHeight;
+      //   zoneHeight += n.displayInfo.height
+      // });
       const interpro = state.genetrees.interpro;
       const root = tree.nodes[tree.rootId];
       return { gaps, nodes, highlight, interpro, zoneHeight, root, ...zone }
