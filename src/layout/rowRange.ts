@@ -12,18 +12,24 @@ export function computeRowRange(
     return { startIndex: 0, endIndex: rows.length };
   }
 
+  // First row whose bottom edge is strictly inside the viewport (excluding
+  // the case where the bottom touches scrollTop, which is zero-pixel
+  // intersection).
   let firstVisible = rows.length;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (r.y + r.height >= scrollTop) {
+    if (r.y + r.height > scrollTop) {
       firstVisible = i;
       break;
     }
   }
 
-  let lastVisible = firstVisible;
+  // Last row whose top edge is strictly inside the viewport. A row whose
+  // top touches the viewport's bottom edge is zero-pixel and excluded.
+  let lastVisible = firstVisible - 1;
+  const viewportBottom = scrollTop + viewportHeight;
   for (let i = firstVisible; i < rows.length; i++) {
-    if (rows[i].y > scrollTop + viewportHeight) break;
+    if (rows[i].y >= viewportBottom) break;
     lastVisible = i;
   }
 
