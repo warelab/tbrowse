@@ -1,4 +1,4 @@
-import type { Taxonomy, Tree } from 'tbrowse';
+import type { Taxonomy, Tree, TreeNode } from 'tbrowse';
 
 export const sampleTree: Tree = {
   rootId: 'n0',
@@ -24,3 +24,23 @@ export const sampleTaxonomy: Taxonomy = {
   10090: { scientificName: 'Mus musculus', commonName: 'Mouse' },
   10116: { scientificName: 'Rattus norvegicus', commonName: 'Rat' },
 };
+
+// Synthetic balanced binary tree with `leafCount` leaves, for exercising virtualization.
+export const largeSampleTree: Tree = (() => {
+  const leafCount = 1024;
+  const nodes: Record<string, TreeNode> = {};
+  let nextId = 0;
+  const make = (depth: number, parentId: string | null): string => {
+    const id = `m${nextId++}`;
+    if (depth === 0) {
+      nodes[id] = { id, parentId, distance: 0.05, isLeaf: true, geneId: `GENE${id}` };
+      return id;
+    }
+    nodes[id] = { id, parentId, distance: 0.05, isLeaf: false, eventType: 'speciation' };
+    make(depth - 1, id);
+    make(depth - 1, id);
+    return id;
+  };
+  const rootId = make(Math.log2(leafCount), null);
+  return { rootId, nodes };
+})();

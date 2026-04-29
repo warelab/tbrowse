@@ -16,18 +16,31 @@ const baseDefaults: ViewState = {
   collapsedNodeIds: [],
   prunedNodeIds: [],
   zones: [],
-  labels: { visibleFields: [] },
+  zoneStates: {},
   search: null,
 };
 
 export function buildInitialViewState(props: TBrowseProps): ViewState {
+  const data = {
+    tree: props.tree,
+    taxonomy: props.taxonomy,
+    msa: props.msa,
+    geneMetadata: props.geneMetadata,
+    nodeAnnotations: props.nodeAnnotations,
+    labelProviders: props.labelProviders,
+  };
+  const zoneStates: Record<string, unknown> = {};
+  for (const z of props.zones) {
+    zoneStates[z.id] = z.defaultZoneState;
+  }
   return {
     ...baseDefaults,
     zones: props.zones.map((z) => ({
       id: z.id,
       width: z.defaultWidth,
-      visible: z.isAvailable({ tree: props.tree, taxonomy: props.taxonomy, msa: props.msa, geneMetadata: props.geneMetadata, nodeAnnotations: props.nodeAnnotations, labelProviders: props.labelProviders }),
+      visible: z.isAvailable(data),
     })),
+    zoneStates,
     ...props.initialViewState,
   };
 }

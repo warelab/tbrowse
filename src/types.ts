@@ -74,8 +74,12 @@ export interface ViewState {
   collapsedNodeIds: NodeId[];
   prunedNodeIds: NodeId[];
   zones: ZoneViewState[];
-  labels: LabelsViewState;
-  msa?: MSAViewState;
+  /**
+   * Per-zone state, keyed by zone id. Built-in zones use well-known keys
+   * (e.g. `labels`, `msa`) whose value type is the corresponding state interface
+   * exported from this module. Pluggable zones own their own slots.
+   */
+  zoneStates: Record<string, unknown>;
   search: SearchState | null;
 }
 

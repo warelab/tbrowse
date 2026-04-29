@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { createTBrowseStore, TBrowseStoreProvider, useTBrowseStore } from './store';
-import { computeVisibleRows } from './visibleRows';
-import type { TBrowseProps } from './types';
+import { createTBrowseStore, TBrowseStoreProvider } from './store';
+import { Layout } from './layout/Layout';
+import type { HostData, TBrowseProps } from './types';
 
 export function TBrowse(props: TBrowseProps) {
   const store = useMemo(() => createTBrowseStore(props), []);
@@ -35,26 +35,21 @@ export function TBrowse(props: TBrowseProps) {
 }
 
 function TBrowseShell(props: TBrowseProps) {
-  const collapsed = useTBrowseStore((s) => s.viewState.collapsedNodeIds);
-  const pruned = useTBrowseStore((s) => s.viewState.prunedNodeIds);
-
-  const rows = useMemo(
-    () =>
-      computeVisibleRows({
-        tree: props.tree,
-        collapsedNodeIds: new Set(collapsed),
-        prunedNodeIds: new Set(pruned),
-      }),
-    [props.tree, collapsed, pruned],
-  );
+  const data: HostData = {
+    tree: props.tree,
+    taxonomy: props.taxonomy,
+    msa: props.msa,
+    geneMetadata: props.geneMetadata,
+    nodeAnnotations: props.nodeAnnotations,
+    labelProviders: props.labelProviders,
+  };
 
   return (
-    <div className={`tbrowse-root tbrowse-theme-${props.theme ?? 'light'} ${props.className ?? ''}`}>
-      <div data-rows={rows.length}>
-        {/* Layout, zones, virtualization — not yet implemented. */}
-        {/* For the first milestone the visible-rows derivation is exposed for inspection. */}
-        <pre style={{ margin: 0, fontSize: 12 }}>{JSON.stringify(rows, null, 2)}</pre>
-      </div>
+    <div
+      className={`tbrowse-root tbrowse-theme-${props.theme ?? 'light'} ${props.className ?? ''}`}
+      style={{ width: '100%', height: '100%' }}
+    >
+      <Layout data={data} zones={props.zones} />
     </div>
   );
 }

@@ -1,44 +1,64 @@
-import { StrictMode, useState } from 'react';
+import { StrictMode, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TBrowse, type ViewState } from 'tbrowse';
-import { sampleTree, sampleTaxonomy } from './sampleTree';
+import { TBrowse, createStubZone, type ViewState } from 'tbrowse';
+import { largeSampleTree, sampleTaxonomy, sampleTree } from './sampleTree';
 
-const initialViewState: ViewState = {
-  selectedNodeId: null,
-  collapsedNodeIds: [],
-  prunedNodeIds: [],
-  zones: [],
-  labels: { visibleFields: [] },
-  search: null,
-};
+function buildInitialViewState(zoneIds: string[]): ViewState {
+  return {
+    selectedNodeId: null,
+    collapsedNodeIds: [],
+    prunedNodeIds: [],
+    zones: zoneIds.map((id, i) => ({
+      id,
+      width: [240, 200, 320][i] ?? 200,
+      visible: true,
+    })),
+    zoneStates: {},
+    search: null,
+  };
+}
 
 function App() {
-  const [viewState, setViewState] = useState<ViewState>(initialViewState);
+  const zones = useMemo(
+    () => [
+      createStubZone({ id: 'tree-stub', displayName: 'Tree (stub)', defaultWidth: 240 }),
+      createStubZone({ id: 'labels-stub', displayName: 'Labels (stub)', defaultWidth: 200 }),
+      createStubZone({ id: 'msa-stub', displayName: 'MSA (stub)', defaultWidth: 320 }),
+    ],
+    [],
+  );
+  const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
+
+  const [tree, setTree] = useState(sampleTree);
+  const [viewState, setViewState] = useState<ViewState>(() => buildInitialViewState(zoneIds));
 
   const setCollapsed = (ids: string[]) =>
     setViewState((vs) => ({ ...vs, collapsedNodeIds: ids }));
   const setPruned = (ids: string[]) =>
     setViewState((vs) => ({ ...vs, prunedNodeIds: ids }));
+  const reset = () => setViewState(buildInitialViewState(zoneIds));
 
   return (
-    <div className="layout">
-      <div className="panel">
-        <h1>Controls</h1>
-        <p>Sample tree: 8 nodes, 5 leaves.</p>
-        <button onClick={() => setViewState(initialViewState)}>reset</button>
-        <button onClick={() => setCollapsed(['n1'])}>collapse n1 (mammals)</button>
-        <button onClick={() => setCollapsed(['n3'])}>collapse n3 (primates)</button>
-        <button onClick={() => setPruned(['n1'])}>prune n1 (mammals)</button>
-        <button onClick={() => setPruned(['n4'])}>prune n4 (human leaf)</button>
-        <h1 style={{ marginTop: 16 }}>viewState</h1>
-        <pre style={{ fontSize: 12 }}>{JSON.stringify(viewState, null, 2)}</pre>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div className="panel" style={{ padding: 12, borderBottom: '1px solid #ddd' }}>
+        <strong style={{ marginRight: 12 }}>tbrowse layout milestone</strong>
+        <button onClick={reset}>reset</button>
+        <button onClick={() => setCollapsed(['n1'])}>collapse n1</button>
+        <button onClick={() => setCollapsed(['n3'])}>collapse n3</button>
+        <button onClick={() => setPruned(['n1'])}>prune n1</button>
+        <button onClick={() => setPruned(['n4'])}>prune n4</button>
+        <button onClick={() => setTree((t) => (t === sampleTree ? largeSampleTree : sampleTree))}>
+          toggle tree size
+        </button>
+        <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
+          selected: {viewState.selectedNodeId ?? '—'}
+        </span>
       </div>
-      <div className="panel">
-        <h1>computeVisibleRows output</h1>
+      <div style={{ flex: 1, minHeight: 0 }}>
         <TBrowse
-          tree={sampleTree}
+          tree={tree}
           taxonomy={sampleTaxonomy}
-          zones={[]}
+          zones={zones}
           viewState={viewState}
           onViewStateChange={setViewState}
         />
