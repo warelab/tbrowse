@@ -197,63 +197,6 @@ const TreeBody = ({
             );
           })}
         </g>
-        {/* Pruned-node stub glyphs. One per anchor (closest visible ancestor
-            of any pruned id). Clicking regrows everything in that anchor's
-            pruned closure. */}
-        <g>
-          {[...stubsByAnchor.entries()].map(([anchorId, prunedIds]) => {
-            const anchor = byId.get(anchorId);
-            if (!anchor) return null;
-            const cx = anchor.x + 6;
-            const cy = anchor.y;
-            return (
-              <g
-                key={`pstub-${anchorId}`}
-                style={{ cursor: 'pointer' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  for (const id of prunedIds) onTogglePruned(id);
-                }}
-              >
-                <line
-                  x1={anchor.x}
-                  y1={anchor.y}
-                  x2={cx}
-                  y2={cy}
-                  stroke="#999"
-                  strokeWidth={1}
-                  strokeDasharray="2 2"
-                />
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={3.5}
-                  fill="white"
-                  stroke="#888"
-                  strokeWidth={1}
-                />
-                {prunedIds.length > 1 && (
-                  <text
-                    x={cx}
-                    y={cy + 0.5}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontSize={7}
-                    fill="#666"
-                    style={{ pointerEvents: 'none', userSelect: 'none' }}
-                  >
-                    {prunedIds.length}
-                  </text>
-                )}
-                <title>
-                  {prunedIds.length === 1
-                    ? `Click to regrow pruned subtree (${prunedIds[0]})`
-                    : `Click to regrow ${prunedIds.length} pruned subtrees`}
-                </title>
-              </g>
-            );
-          })}
-        </g>
         {/* Selection marker. */}
         {selectedLayoutNode && (
           <circle
@@ -285,6 +228,71 @@ const TreeBody = ({
                 onClick={() => onSelectNode(child.nodeId)}
                 style={{ cursor: 'pointer' }}
               />
+            );
+          })}
+        </g>
+        {/* Pruned-node stub glyphs. Rendered LAST so they sit on top of
+            the branch hit paths and reliably capture clicks. One glyph per
+            anchor (closest visible ancestor of any pruned id); clicking it
+            regrows everything in that anchor's pruned closure. */}
+        <g>
+          {[...stubsByAnchor.entries()].map(([anchorId, prunedIds]) => {
+            const anchor = byId.get(anchorId);
+            if (!anchor) return null;
+            const cx = anchor.x + 8;
+            const cy = anchor.y;
+            return (
+              <g
+                key={`pstub-${anchorId}`}
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  for (const id of prunedIds) onTogglePruned(id);
+                }}
+              >
+                <line
+                  x1={anchor.x}
+                  y1={anchor.y}
+                  x2={cx}
+                  y2={cy}
+                  stroke="#999"
+                  strokeWidth={1}
+                  strokeDasharray="2 2"
+                  pointerEvents="none"
+                />
+                {/* Outer transparent disc for a forgiving click target. */}
+                <circle cx={cx} cy={cy} r={8} fill="transparent" />
+                {/* Visible glyph. */}
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill="white"
+                  stroke="#888"
+                  strokeWidth={1}
+                  pointerEvents="none"
+                />
+                {prunedIds.length > 1 && (
+                  <text
+                    x={cx}
+                    y={cy + 0.5}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={7}
+                    fill="#666"
+                    pointerEvents="none"
+                    style={{ userSelect: 'none' }}
+                  >
+                    {prunedIds.length}
+                  </text>
+                )}
+                <title>
+                  {prunedIds.length === 1
+                    ? `Click to regrow pruned subtree (${prunedIds[0]})`
+                    : `Click to regrow ${prunedIds.length} pruned subtrees`}
+                </title>
+              </g>
             );
           })}
         </g>
