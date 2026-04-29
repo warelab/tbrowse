@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTBrowseStore } from '../store';
 import { computeVisibleRows } from '../visibleRows';
 import type { HostData, NodeId, ZoneDefinition, ZoneRenderProps } from '../types';
+import { ChromeStrip } from './ChromeStrip';
 import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
 import { computeRowRange } from './rowRange';
@@ -148,17 +149,27 @@ export function Layout({ data, zones }: LayoutProps) {
 
   return (
     <div
-      ref={outerRef}
-      className="tbrowse-outer"
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      className="tbrowse-shell"
       style={{
-        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
         width: '100%',
         height: '100%',
-        overflow: 'auto',
         background: 'white',
       }}
     >
+      <ChromeStrip zones={zones} data={data} />
+      <div
+        ref={outerRef}
+        className="tbrowse-outer"
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        style={{
+          position: 'relative',
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+        }}
+      >
       <div
         ref={gridRef}
         className="tbrowse-grid"
@@ -243,6 +254,7 @@ export function Layout({ data, zones }: LayoutProps) {
             }}
           />
         )}
+      </div>
       </div>
     </div>
   );
