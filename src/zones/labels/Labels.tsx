@@ -133,6 +133,8 @@ const LabelsBody = ({
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              opacity: r.opacity ?? 1,
+              transform: `translateX(${-32 * (1 - (r.opacity ?? 1))}px)`,
             }}
             title={display}
           >

@@ -15,6 +15,22 @@ const EXTENSION_COLOR = '#bbb';
 const EXTENSION_HIGHLIGHT_COLOR = '#2878dc';
 const SELECT_COLOR = '#f59e0b';
 const HIT_STROKE_WIDTH = 10;
+const SPECIATION_COLOR = '#777';
+const DUPLICATION_COLOR = '#c0392b';
+const NODE_GLYPH_RADIUS = 2.5;
+const NODE_GLYPH_SQUARE = 5;
+const COLLAPSED_TRIANGLE_WIDTH = 18;
+const COLLAPSED_TRIANGLE_MIN_H = 8;
+const COLLAPSED_TRIANGLE_MAX_H = 22;
+const COLLAPSED_TRIANGLE_FILL = 'rgba(100, 110, 120, 0.20)';
+const COLLAPSED_TRIANGLE_STROKE = '#666';
+
+function collapsedTriangleHeight(leafCount: number): number {
+  // Logarithmic so a 2-leaf and a 1000-leaf collapsed subtree are
+  // distinguishable but both stay inside a single row's height.
+  const h = 4 + Math.log2(Math.max(1, leafCount + 1)) * 4;
+  return Math.max(COLLAPSED_TRIANGLE_MIN_H, Math.min(COLLAPSED_TRIANGLE_MAX_H, h));
+}
 
 type TreeZoneState = Record<string, never>;
 
@@ -44,11 +60,13 @@ const TreeBody = ({
   selectedNodeId,
   collapsedNodeIds,
   prunedNodeIds,
+  swappedNodeIds,
   onHoverNode,
   onSelectNode,
   onClearSelection,
   onToggleCollapsed,
   onTogglePruned,
+  onToggleSwapped,
 }: ZoneRenderProps<TreeZoneState>) => {
   const drawingWidth = Math.max(0, width - LEFT_PAD - RIGHT_PAD);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -76,6 +94,27 @@ const TreeBody = ({
     for (const n of layout.nodes) m.set(n.nodeId, n);
     return m;
   }, [layout]);
+
+  // Per-node opacity for the animation pipeline. Visible-end rows (leaves
+  // and collapsed-summaries) carry an opacity hint via visibleRows; an
+  // internal node inherits the max opacity of any visible-end in its
+  // subtree, so branches in a fading subtree all fade together.
+  const opacityById = useMemo(() => {
+    const m = new Map<NodeId, number>();
+    for (const n of layout.nodes) m.set(n.nodeId, 0);
+    for (const r of visibleRows) m.set(r.nodeId, r.opacity ?? 1);
+    for (const r of visibleRows) {
+      const op = r.opacity ?? 1;
+      let cur: NodeId | null = data.tree.nodes[r.nodeId]?.parentId ?? null;
+      while (cur !== null) {
+        if (!m.has(cur)) break;
+        const curOp = m.get(cur) ?? 0;
+        if (op > curOp) m.set(cur, op);
+        cur = data.tree.nodes[cur]?.parentId ?? null;
+      }
+    }
+    return m;
+  }, [layout, visibleRows, data.tree]);
 
   // Pruned-node stub glyphs: one per pruned id, placed adjacent to its
   // anchor's branch at a small fixed offset. The side (above or below) is
@@ -117,7 +156,12 @@ const TreeBody = ({
       const anchor = byId.get(anchorId);
       if (!anchor) continue;
 
-      const fullChildren = fullChildrenIndex.get(anchorId) ?? [];
+      // Swap inverts the visual order of children, so the "side" a pruned
+      // branch sits on flips when the anchor is swapped.
+      const rawChildren = fullChildrenIndex.get(anchorId) ?? [];
+      const fullChildren = swappedNodeIds.has(anchorId)
+        ? [...rawChildren].reverse()
+        : rawChildren;
       const visibleIndices: number[] = [];
       fullChildren.forEach((cid, idx) => {
         if (byId.has(cid)) visibleIndices.push(idx);
@@ -181,7 +225,7 @@ const TreeBody = ({
       });
     }
     return stubs;
-  }, [prunedNodeIds, data.tree, byId, fullChildrenIndex]);
+  }, [prunedNodeIds, data.tree, byId, fullChildrenIndex, swappedNodeIds]);
 
   const isHighlighted = (nodeId: NodeId): boolean =>
     hoveredSubtreeIds.has(nodeId) || ancestorsHighlight.has(nodeId);
@@ -263,13 +307,18 @@ const TreeBody = ({
             );
           })}
         </g>
-        {/* Visible branches. */}
+        {/* Visible branches. During animation a fading-out child retracts
+            toward its parent (right→left for collapse/prune) and a
+            fading-in child extends from its parent (left→right for
+            expand/regrow). The parent end stays anchored. */}
         <g pointerEvents="none">
           {layout.nodes.map((child) => {
             if (child.parentId === null) return null;
             const parent = byId.get(child.parentId);
             if (!parent) return null;
-            const d = `M ${parent.x} ${parent.y} L ${parent.x} ${child.y} L ${child.x} ${child.y}`;
+            const opacity = opacityById.get(child.nodeId) ?? 1;
+            const childX = parent.x + (child.x - parent.x) * opacity;
+            const d = `M ${parent.x} ${parent.y} L ${parent.x} ${child.y} L ${childX} ${child.y}`;
             const hl = isHighlighted(child.nodeId);
             return (
               <path
@@ -278,27 +327,115 @@ const TreeBody = ({
                 stroke={hl ? HIGHLIGHT_COLOR : BRANCH_COLOR}
                 strokeWidth={hl ? HIGHLIGHT_WIDTH : BRANCH_WIDTH}
                 fill="none"
+                opacity={opacity}
               />
             );
           })}
         </g>
-        {/* Leaf extensions. */}
+        {/* Leaf extensions. Tracked to the leaf's interpolated x so the
+            extension visibly anchors to where the branch tip currently is.
+            For collapsed-summary nodes the extension starts past the
+            triangle's base. */}
         <g pointerEvents="none">
           {layout.nodes.map((n) => {
             if (!n.isVisibleEnd) return null;
-            if (n.x >= extensionEndX) return null;
             const hl = isHighlighted(n.nodeId);
+            const opacity = opacityById.get(n.nodeId) ?? 1;
+            const parent = n.parentId !== null ? byId.get(n.parentId) : null;
+            const tipX = parent
+              ? parent.x + (n.x - parent.x) * opacity
+              : n.x;
+            const extStart = n.isCollapsedSummary
+              ? tipX + COLLAPSED_TRIANGLE_WIDTH
+              : tipX;
+            if (extStart >= extensionEndX) return null;
             return (
               <line
                 key={`e-${n.nodeId}`}
-                x1={n.x}
+                x1={extStart}
                 y1={n.y}
                 x2={extensionEndX}
                 y2={n.y}
                 stroke={hl ? EXTENSION_HIGHLIGHT_COLOR : EXTENSION_COLOR}
                 strokeWidth={hl ? 1.5 : 1}
                 strokeDasharray="2 3"
+                opacity={opacity}
               />
+            );
+          })}
+        </g>
+        {/* Collapsed-summary triangles. Apex at the (interpolated) branch
+            tip; base extends right by COLLAPSED_TRIANGLE_WIDTH; vertical
+            base height scales (logarithmically) with the subtree's leaf
+            count, capped to fit within a single row. */}
+        <g pointerEvents="none">
+          {layout.nodes.map((n) => {
+            if (!n.isCollapsedSummary) return null;
+            const row = visibleRows.find((r) => r.nodeId === n.nodeId);
+            if (!row) return null;
+            const opacity = opacityById.get(n.nodeId) ?? 1;
+            const parent = n.parentId !== null ? byId.get(n.parentId) : null;
+            const apexX = parent
+              ? parent.x + (n.x - parent.x) * opacity
+              : n.x;
+            const baseX = apexX + COLLAPSED_TRIANGLE_WIDTH;
+            const h = collapsedTriangleHeight(row.leafCount);
+            const top = n.y - h / 2;
+            const bot = n.y + h / 2;
+            return (
+              <polygon
+                key={`c-${n.nodeId}`}
+                points={`${apexX},${n.y} ${baseX},${top} ${baseX},${bot}`}
+                fill={COLLAPSED_TRIANGLE_FILL}
+                stroke={COLLAPSED_TRIANGLE_STROKE}
+                strokeWidth={1}
+                opacity={opacity}
+              >
+                <title>{`Collapsed (${row.leafCount} leaves)`}</title>
+              </polygon>
+            );
+          })}
+        </g>
+        {/* Internal-node glyphs. Speciation → small filled circle;
+            duplication → small filled square. Position tracks the branch
+            tip during collapse/expand/prune/regrow animations so the
+            glyph sits at the visible bend even mid-animation. */}
+        <g pointerEvents="none">
+          {layout.nodes.map((n) => {
+            if (n.isLeaf) return null;
+            if (n.isVisibleEnd) return null; // collapsed-summary; render its own marker if needed elsewhere
+            const treeNode = data.tree.nodes[n.nodeId];
+            if (!treeNode) return null;
+            const opacity = opacityById.get(n.nodeId) ?? 1;
+            const parent = n.parentId !== null ? byId.get(n.parentId) : null;
+            const glyphX = parent ? parent.x + (n.x - parent.x) * opacity : n.x;
+            const isDuplication = treeNode.eventType === 'duplication';
+            if (isDuplication) {
+              return (
+                <rect
+                  key={`g-${n.nodeId}`}
+                  x={glyphX - NODE_GLYPH_SQUARE / 2}
+                  y={n.y - NODE_GLYPH_SQUARE / 2}
+                  width={NODE_GLYPH_SQUARE}
+                  height={NODE_GLYPH_SQUARE}
+                  fill={DUPLICATION_COLOR}
+                  opacity={opacity}
+                >
+                  <title>duplication</title>
+                </rect>
+              );
+            }
+            return (
+              <circle
+                key={`g-${n.nodeId}`}
+                cx={glyphX}
+                cy={n.y}
+                r={NODE_GLYPH_RADIUS}
+                fill={SPECIATION_COLOR}
+                opacity={opacity}
+              >
+                <title>{treeNode.eventType ?? 'speciation'}</title>
+              </circle>
             );
           })}
         </g>
@@ -399,6 +536,7 @@ const TreeBody = ({
           onClose={onClearSelection}
           onToggleCollapsed={onToggleCollapsed}
           onTogglePruned={onTogglePruned}
+          onToggleSwapped={onToggleSwapped}
         />
       )}
     </>

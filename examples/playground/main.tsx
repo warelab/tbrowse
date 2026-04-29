@@ -26,6 +26,7 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
     selectedNodeId: null,
     collapsedNodeIds: [],
     prunedNodeIds: [],
+    swappedNodeIds: [],
     zones: zoneIds.map((id, i) => ({
       id,
       width: [280, 220, 360][i] ?? 200,

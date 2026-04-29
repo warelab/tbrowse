@@ -21,6 +21,7 @@ export interface TooltipProps {
   onClose: () => void;
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
+  onToggleSwapped: (id: NodeId) => void;
 }
 
 export function Tooltip({
@@ -34,6 +35,7 @@ export function Tooltip({
   onClose,
   onToggleCollapsed,
   onTogglePruned,
+  onToggleSwapped,
 }: TooltipProps) {
   const screenPos = useTrackedScreenPos(svgRef, layoutNode.x, layoutNode.y);
 
@@ -124,13 +126,28 @@ export function Tooltip({
         {canCollapseExpand && (
           <ActionButton
             label={isCollapsed ? 'Expand' : 'Collapse'}
-            onClick={() => onToggleCollapsed(layoutNode.nodeId)}
+            onClick={() => {
+              onToggleCollapsed(layoutNode.nodeId);
+              onClose();
+            }}
+          />
+        )}
+        {isInternal && !isPruned && !isCollapsed && (
+          <ActionButton
+            label="Swap children"
+            onClick={() => {
+              onToggleSwapped(layoutNode.nodeId);
+              onClose();
+            }}
           />
         )}
         <ActionButton
           label={isPruned ? 'Regrow' : 'Prune'}
           color={isPruned ? COLOR_PRIMARY : COLOR_DANGER}
-          onClick={() => onTogglePruned(layoutNode.nodeId)}
+          onClick={() => {
+            onTogglePruned(layoutNode.nodeId);
+            onClose();
+          }}
         />
       </div>
     </div>,

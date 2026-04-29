@@ -15,6 +15,7 @@ const baseDefaults: ViewState = {
   selectedNodeId: null,
   collapsedNodeIds: [],
   prunedNodeIds: [],
+  swappedNodeIds: [],
   zones: [],
   zoneStates: {},
   search: null,

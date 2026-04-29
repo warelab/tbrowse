@@ -7,10 +7,12 @@ export interface VisibleRowsInput {
   tree: Tree;
   collapsedNodeIds: ReadonlySet<NodeId>;
   prunedNodeIds: ReadonlySet<NodeId>;
+  /** Internal nodes whose children should be walked in reversed order. */
+  swappedNodeIds?: ReadonlySet<NodeId>;
 }
 
 export function computeVisibleRows(input: VisibleRowsInput): VisibleRow[] {
-  const { tree, collapsedNodeIds, prunedNodeIds } = input;
+  const { tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds } = input;
 
   const childrenOf: Record<NodeId, NodeId[]> = {};
   for (const node of Object.values(tree.nodes)) {
@@ -53,8 +55,11 @@ export function computeVisibleRows(input: VisibleRowsInput): VisibleRow[] {
       return;
     }
 
-    for (const childId of childrenOf[nodeId] ?? []) {
-      walk(childId);
+    const kids = childrenOf[nodeId] ?? [];
+    if (swappedNodeIds?.has(nodeId)) {
+      for (let i = kids.length - 1; i >= 0; i--) walk(kids[i]);
+    } else {
+      for (const childId of kids) walk(childId);
     }
   };
 

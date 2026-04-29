@@ -189,6 +189,11 @@ const MSABody = ({
       if (!seq) continue;
 
       const rowYCenter = r.y + r.height / 2;
+      const rowOpacity = r.opacity ?? 1;
+      const rowTx = -32 * (1 - rowOpacity);
+      ctx.globalAlpha = rowOpacity;
+      ctx.save();
+      ctx.translate(rowTx, 0);
       if (renderText) {
         for (let col = vp.start; col < vp.end; col++) {
           const ch = seq[col];
@@ -206,7 +211,9 @@ const MSABody = ({
           ctx.fillRect(x, r.y + 2, Math.max(residueWidth, 0.5), r.height - 4);
         }
       }
+      ctx.restore();
     }
+    ctx.globalAlpha = 1;
   }, [
     msa,
     visibleRows,
@@ -315,6 +322,8 @@ const MSABody = ({
                     ? 'rgba(40, 120, 220, 0.03)'
                     : 'transparent',
               borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
+              opacity: r.opacity ?? 1,
+              transform: `translateX(${-32 * (1 - (r.opacity ?? 1))}px)`,
             }}
           />
         );

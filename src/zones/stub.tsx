@@ -101,6 +101,8 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
                   borderBottom: '1px solid #f0f0f0',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
+                  opacity: r.opacity ?? 1,
+                  transform: `translateX(${-32 * (1 - (r.opacity ?? 1))}px)`,
                 }}
               >
                 <span>{r.kind === 'leaf' ? r.nodeId : `${r.nodeId} (collapsed, ${r.leafCount})`}</span>

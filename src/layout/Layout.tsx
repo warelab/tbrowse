@@ -2,13 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTBrowseStore } from '../store';
 import { buildChildrenIndex, EMPTY_NODE_ID_SET, subtreeIdsOf } from '../treeIndex';
 import { computeVisibleRows } from '../visibleRows';
-import type { HostData, NodeId, ZoneDefinition, ZoneRenderProps } from '../types';
+import type {
+  HostData,
+  NodeId,
+  VisibleRow,
+  ZoneDefinition,
+  ZoneRenderProps,
+} from '../types';
 import { ChromeStrip } from './ChromeStrip';
 import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
 import { computeRowRange } from './rowRange';
 
 export const HEADER_HEIGHT = 40;
+const ANIMATION_DURATION_MS = 260;
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 2);
 
 interface LayoutProps {
   data: HostData;
@@ -47,16 +55,96 @@ export function Layout({ data, zones }: LayoutProps) {
     () => new Set(viewState.prunedNodeIds),
     [viewState.prunedNodeIds],
   );
+  const swappedNodeIds = useMemo(
+    () => new Set(viewState.swappedNodeIds ?? []),
+    [viewState.swappedNodeIds],
+  );
 
-  const visibleRows = useMemo(
+  const targetVisibleRows = useMemo(
     () =>
       computeVisibleRows({
         tree: data.tree,
         collapsedNodeIds,
         prunedNodeIds,
+        swappedNodeIds,
       }),
-    [data.tree, collapsedNodeIds, prunedNodeIds],
+    [data.tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds],
   );
+
+  // Animation: lerp visibleRows between the previous and target snapshots
+  // whenever collapse / prune state changes. Existing rows interpolate y;
+  // added rows fade in at the target y; removed rows fade out at their
+  // previous y. Animation state lives in refs (with a single render-trigger
+  // useState) so the rAF loop is not coupled to React's effect lifecycle.
+  const animationRef = useRef<{
+    previous: VisibleRow[];
+    target: VisibleRow[];
+    startTime: number;
+  } | null>(null);
+  const [animationTick, setAnimationTick] = useState(0);
+  const lastRowsRef = useRef<VisibleRow[]>(targetVisibleRows);
+
+  useEffect(() => {
+    if (lastRowsRef.current === targetVisibleRows) return;
+    const prev = lastRowsRef.current;
+    lastRowsRef.current = targetVisibleRows;
+    if (prev.length === 0 && targetVisibleRows.length === 0) return;
+
+    animationRef.current = {
+      previous: prev,
+      target: targetVisibleRows,
+      startTime: performance.now(),
+    };
+    setAnimationTick((n) => n + 1);
+
+    const tick = () => {
+      const a = animationRef.current;
+      if (!a) return;
+      const t = Math.min(1, (performance.now() - a.startTime) / ANIMATION_DURATION_MS);
+      if (t >= 1) {
+        animationRef.current = null;
+        setAnimationTick((n) => n + 1);
+        return;
+      }
+      setAnimationTick((n) => n + 1);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [targetVisibleRows]);
+
+  const visibleRows = useMemo<VisibleRow[]>(() => {
+    const a = animationRef.current;
+    if (!a) return targetVisibleRows;
+    const t = Math.min(1, (performance.now() - a.startTime) / ANIMATION_DURATION_MS);
+    if (t >= 1) return targetVisibleRows;
+    const eased = easeOut(t);
+    const targetById = new Map(a.target.map((r) => [r.nodeId, r]));
+    const previousById = new Map(a.previous.map((r) => [r.nodeId, r]));
+
+    const merged: VisibleRow[] = [];
+    for (const target of a.target) {
+      const prev = previousById.get(target.nodeId);
+      if (prev) {
+        merged.push({
+          ...target,
+          y: prev.y + (target.y - prev.y) * eased,
+          opacity: 1,
+        });
+      } else {
+        merged.push({ ...target, opacity: eased });
+      }
+    }
+    for (const prev of a.previous) {
+      if (!targetById.has(prev.nodeId)) {
+        merged.push({ ...prev, opacity: 1 - eased });
+      }
+    }
+    merged.sort((a, b) => a.y - b.y);
+    return merged;
+    // animationTick is the render-trigger; including it makes the memo
+    // re-run on every rAF tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetVisibleRows, animationTick]);
 
   const childrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
 
@@ -65,10 +153,14 @@ export function Layout({ data, zones }: LayoutProps) {
     return subtreeIdsOf(hoveredNodeId, childrenIndex);
   }, [hoveredNodeId, childrenIndex]);
 
-  const totalContentHeight = useMemo(
-    () => visibleRows.reduce((h, r) => h + r.height, 0),
-    [visibleRows],
-  );
+  const totalContentHeight = useMemo(() => {
+    let h = 0;
+    for (const r of visibleRows) {
+      const bottom = r.y + r.height;
+      if (bottom > h) h = bottom;
+    }
+    return h;
+  }, [visibleRows]);
 
   const outerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -140,6 +232,18 @@ export function Layout({ data, zones }: LayoutProps) {
     [setViewState],
   );
 
+  const onToggleSwapped = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const swapped = vs.swappedNodeIds ?? [];
+        const idx = swapped.indexOf(id);
+        return idx >= 0
+          ? { ...vs, swappedNodeIds: swapped.filter((x) => x !== id) }
+          : { ...vs, swappedNodeIds: [...swapped, id] };
+      }),
+    [setViewState],
+  );
+
   const setZoneState = useCallback(
     (zoneId: string, fallback: unknown, next: unknown | ((prev: unknown) => unknown)) => {
       setViewState((vs) => {
@@ -179,11 +283,13 @@ export function Layout({ data, zones }: LayoutProps) {
       selectedNodeId: viewState.selectedNodeId,
       collapsedNodeIds,
       prunedNodeIds,
+      swappedNodeIds,
       onHoverNode,
       onSelectNode,
       onClearSelection,
       onToggleCollapsed,
       onTogglePruned,
+      onToggleSwapped,
       zoneState: stored === undefined ? def.defaultZoneState : stored,
       setZoneState: (next) => setZoneState(zoneId, def.defaultZoneState, next as unknown),
       width,

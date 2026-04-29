@@ -73,6 +73,8 @@ export interface ViewState {
   selectedNodeId: NodeId | null;
   collapsedNodeIds: NodeId[];
   prunedNodeIds: NodeId[];
+  /** Internal nodes whose children are rendered in reversed order. */
+  swappedNodeIds: NodeId[];
   zones: ZoneViewState[];
   /**
    * Per-zone state, keyed by zone id. Built-in zones use well-known keys
@@ -89,6 +91,12 @@ export interface VisibleRow {
   y: number;
   height: number;
   leafCount: number;
+  /**
+   * Animation opacity (0..1). Set by the chassis during transitions —
+   * rows being added animate 0 → 1, rows being removed animate 1 → 0.
+   * Undefined = settled at 1.
+   */
+  opacity?: number;
 }
 
 export interface RowRange {
@@ -118,11 +126,13 @@ export interface ZoneRenderProps<S = unknown> {
   selectedNodeId: NodeId | null;
   collapsedNodeIds: ReadonlySet<NodeId>;
   prunedNodeIds: ReadonlySet<NodeId>;
+  swappedNodeIds: ReadonlySet<NodeId>;
   onHoverNode: (id: NodeId | null) => void;
   onSelectNode: (id: NodeId) => void;
   onClearSelection: () => void;
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
+  onToggleSwapped: (id: NodeId) => void;
   zoneState: S;
   setZoneState: (next: S | ((prev: S) => S)) => void;
   width: number;
