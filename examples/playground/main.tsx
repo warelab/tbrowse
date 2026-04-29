@@ -23,7 +23,12 @@ function App() {
     () => [
       createStubZone({ id: 'tree-stub', displayName: 'Tree (stub)', defaultWidth: 240 }),
       createStubZone({ id: 'labels-stub', displayName: 'Labels (stub)', defaultWidth: 200 }),
-      createStubZone({ id: 'msa-stub', displayName: 'MSA (stub)', defaultWidth: 320 }),
+      createStubZone({
+        id: 'msa-stub',
+        displayName: 'MSA (stub)',
+        defaultWidth: 320,
+        contentWidth: 1400,
+      }),
     ],
     [],
   );

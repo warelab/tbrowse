@@ -5,24 +5,35 @@ export interface StubZoneOptions {
   displayName: string;
   defaultWidth?: number;
   minWidth?: number;
-  background?: string;
+  /** If set, body content has this width (px) and is horizontally pannable via wheel. */
+  contentWidth?: number;
 }
 
 export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<string, never>> {
-  const Header = ({ width }: ZoneRenderProps<Record<string, never>>) => (
+  const contentWidth = opts.contentWidth;
+
+  const Header = ({ width, bodyScrollLeft }: ZoneRenderProps<Record<string, never>>) => (
     <div
       style={{
         padding: '0 10px',
         height: '100%',
         display: 'flex',
         alignItems: 'center',
+        gap: 10,
         fontSize: 13,
-        fontWeight: 600,
         color: '#333',
+        position: 'relative',
       }}
     >
-      {opts.displayName}
-      <span style={{ marginLeft: 8, fontWeight: 400, color: '#888' }}>{width}px</span>
+      <span style={{ fontWeight: 600 }}>{opts.displayName}</span>
+      <span style={{ fontWeight: 400, color: '#888' }}>{width}px</span>
+      {contentWidth !== undefined && (
+        <ViewportIndicator
+          contentWidth={contentWidth}
+          width={width}
+          bodyScrollLeft={bodyScrollLeft}
+        />
+      )}
     </div>
   );
 
@@ -33,46 +44,72 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
     selectedNodeId,
     onHoverNode,
     onSelectNode,
+    width,
+    bodyScrollLeft,
+    setBodyScrollLeft,
   }: ZoneRenderProps<Record<string, never>>) => {
     const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
+    const maxScroll = contentWidth !== undefined ? Math.max(0, contentWidth - width) : 0;
+
+    const onWheel = (e: React.WheelEvent) => {
+      if (contentWidth === undefined) return;
+      if (e.deltaX === 0) return;
+      e.preventDefault();
+      setBodyScrollLeft((prev) => Math.max(0, Math.min(maxScroll, prev + e.deltaX)));
+    };
+
+    const innerStyle: React.CSSProperties = {
+      position: 'relative',
+      height: '100%',
+      width: contentWidth ?? '100%',
+      transform: contentWidth !== undefined ? `translateX(${-bodyScrollLeft}px)` : undefined,
+    };
+
     return (
-      <>
-        {rows.map((r) => {
-          const isHovered = hoveredNodeId === r.nodeId;
-          const isSelected = selectedNodeId === r.nodeId;
-          return (
-            <div
-              key={r.nodeId}
-              onMouseEnter={() => onHoverNode(r.nodeId)}
-              onMouseLeave={() => onHoverNode(null)}
-              onClick={() => onSelectNode(r.nodeId)}
-              style={{
-                position: 'absolute',
-                top: r.y,
-                left: 0,
-                right: 0,
-                height: r.height,
-                fontSize: 12,
-                padding: '0 10px',
-                display: 'flex',
-                alignItems: 'center',
-                background: isSelected
-                  ? 'rgba(40, 120, 220, 0.15)'
-                  : isHovered
-                    ? 'rgba(0, 0, 0, 0.04)'
-                    : opts.background ?? 'transparent',
-                borderBottom: '1px solid #f0f0f0',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {r.kind === 'leaf' ? r.nodeId : `${r.nodeId} (collapsed, ${r.leafCount} leaves)`}
-            </div>
-          );
-        })}
-      </>
+      <div onWheel={onWheel} style={{ height: '100%', position: 'relative' }}>
+        <div style={innerStyle}>
+          {rows.map((r) => {
+            const isHovered = hoveredNodeId === r.nodeId;
+            const isSelected = selectedNodeId === r.nodeId;
+            return (
+              <div
+                key={r.nodeId}
+                onMouseEnter={() => onHoverNode(r.nodeId)}
+                onMouseLeave={() => onHoverNode(null)}
+                onClick={() => onSelectNode(r.nodeId)}
+                style={{
+                  position: 'absolute',
+                  top: r.y,
+                  left: 0,
+                  width: contentWidth ?? '100%',
+                  height: r.height,
+                  fontSize: 12,
+                  padding: '0 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  background: isSelected
+                    ? 'rgba(40, 120, 220, 0.15)'
+                    : isHovered
+                      ? 'rgba(0, 0, 0, 0.04)'
+                      : 'transparent',
+                  borderBottom: '1px solid #f0f0f0',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>{r.kind === 'leaf' ? r.nodeId : `${r.nodeId} (collapsed, ${r.leafCount})`}</span>
+                {contentWidth !== undefined && (
+                  <span style={{ color: '#aaa', fontFamily: 'monospace', fontSize: 11 }}>
+                    {/* repeated content to make rows visibly wide */}
+                    {Array.from({ length: 24 }, (_, i) => `col${i}`).join(' · ')}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     );
   };
 
@@ -86,4 +123,46 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
     defaultZoneState: {},
     isAvailable: () => true,
   };
+}
+
+function ViewportIndicator({
+  contentWidth,
+  width,
+  bodyScrollLeft,
+}: {
+  contentWidth: number;
+  width: number;
+  bodyScrollLeft: number;
+}) {
+  const trackWidth = 80;
+  const ratio = Math.min(1, width / contentWidth);
+  const indicatorWidth = Math.max(8, trackWidth * ratio);
+  const maxScroll = Math.max(1, contentWidth - width);
+  const offsetRatio = Math.min(1, Math.max(0, bodyScrollLeft / maxScroll));
+  const left = (trackWidth - indicatorWidth) * offsetRatio;
+
+  return (
+    <div
+      style={{
+        marginLeft: 'auto',
+        width: trackWidth,
+        height: 8,
+        background: '#e0e0e0',
+        borderRadius: 4,
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left,
+          top: 0,
+          width: indicatorWidth,
+          height: '100%',
+          background: '#2878dc',
+          borderRadius: 4,
+        }}
+      />
+    </div>
+  );
 }

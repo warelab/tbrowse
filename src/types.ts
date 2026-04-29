@@ -117,6 +117,7 @@ export interface ZoneRenderProps<S = unknown> {
   width: number;
   bodyHeight: number;
   bodyScrollLeft: number;
+  setBodyScrollLeft: (next: number | ((prev: number) => number)) => void;
   data: HostData;
 }
 

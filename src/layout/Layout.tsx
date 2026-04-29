@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTBrowseStore } from '../store';
 import { computeVisibleRows } from '../visibleRows';
 import type { HostData, NodeId, ZoneDefinition, ZoneRenderProps } from '../types';
+import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
 import { computeRowRange } from './rowRange';
 
@@ -10,6 +11,13 @@ export const HEADER_HEIGHT = 40;
 interface LayoutProps {
   data: HostData;
   zones: ZoneDefinition[];
+}
+
+interface DragState {
+  zoneId: string;
+  fromIndex: number;
+  targetIndex: number;
+  cursorX: number;
 }
 
 export function Layout({ data, zones }: LayoutProps) {
@@ -45,8 +53,15 @@ export function Layout({ data, zones }: LayoutProps) {
   );
 
   const outerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+
+  // Per-zone horizontal scroll position (transient, not in viewState).
+  const [scrollLefts, setScrollLefts] = useState<Record<string, number>>({});
+
+  // Reorder drag state (transient).
+  const [dragState, setDragState] = useState<DragState | null>(null);
 
   useEffect(() => {
     const el = outerRef.current;
@@ -88,6 +103,18 @@ export function Layout({ data, zones }: LayoutProps) {
     [setViewState],
   );
 
+  const setBodyScrollLeft = useCallback(
+    (zoneId: string, next: number | ((prev: number) => number)) => {
+      setScrollLefts((prev) => {
+        const cur = prev[zoneId] ?? 0;
+        const resolved = typeof next === 'function' ? next(cur) : next;
+        if (resolved === cur) return prev;
+        return { ...prev, [zoneId]: resolved };
+      });
+    },
+    [],
+  );
+
   const gridTemplateColumns = visibleZones.map((z) => `${z.width}px`).join(' ');
 
   const renderProps = (zoneId: string, width: number, def: ZoneDefinition): ZoneRenderProps => {
@@ -103,10 +130,21 @@ export function Layout({ data, zones }: LayoutProps) {
       setZoneState: (next) => setZoneState(zoneId, next as unknown),
       width,
       bodyHeight: viewportHeight,
-      bodyScrollLeft: 0,
+      bodyScrollLeft: scrollLefts[zoneId] ?? 0,
+      setBodyScrollLeft: (next) => setBodyScrollLeft(zoneId, next),
       data,
     };
   };
+
+  // x-position of the insertion indicator while dragging
+  const indicatorX = useMemo(() => {
+    if (!dragState) return null;
+    let x = 0;
+    for (let i = 0; i < dragState.targetIndex && i < visibleZones.length; i++) {
+      x += visibleZones[i].width;
+    }
+    return x;
+  }, [dragState, visibleZones]);
 
   return (
     <div
@@ -122,6 +160,7 @@ export function Layout({ data, zones }: LayoutProps) {
       }}
     >
       <div
+        ref={gridRef}
         className="tbrowse-grid"
         style={{
           display: 'grid',
@@ -129,11 +168,14 @@ export function Layout({ data, zones }: LayoutProps) {
           gridTemplateColumns: gridTemplateColumns || '1fr',
           height: HEADER_HEIGHT + totalContentHeight,
           minWidth: 'min-content',
+          position: 'relative',
+          cursor: dragState ? 'grabbing' : undefined,
         }}
       >
         {visibleZones.map((zoneVS) => {
           const def = zoneById.get(zoneVS.id)!;
           const props = renderProps(zoneVS.id, zoneVS.width, def);
+          const isDragging = dragState?.zoneId === zoneVS.id;
           return (
             <div
               key={`h-${zoneVS.id}`}
@@ -147,9 +189,20 @@ export function Layout({ data, zones }: LayoutProps) {
                 borderRight: '1px solid #eee',
                 zIndex: 1,
                 overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'stretch',
+                opacity: isDragging ? 0.5 : 1,
               }}
             >
-              <def.Header {...props} />
+              <ReorderHandle
+                zoneId={zoneVS.id}
+                visibleZones={visibleZones}
+                gridRef={gridRef}
+                setDragState={setDragState}
+              />
+              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                <def.Header {...props} />
+              </div>
               <ResizeHandle
                 zoneId={zoneVS.id}
                 currentWidth={zoneVS.width}
@@ -175,8 +228,22 @@ export function Layout({ data, zones }: LayoutProps) {
             </div>
           );
         })}
+        {indicatorX !== null && (
+          <div
+            className="tbrowse-reorder-indicator"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: indicatorX - 1,
+              width: 2,
+              height: '100%',
+              background: '#2878dc',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          />
+        )}
       </div>
     </div>
   );
 }
-
