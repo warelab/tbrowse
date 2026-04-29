@@ -3,6 +3,8 @@ export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visib
 export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
 export { treeZone } from './zones/tree/Tree';
+export { labelsZone, type LabelsZoneState } from './zones/labels/Labels';
+export { builtInFields, type LabelField } from './zones/labels/fields';
 export type {
   NodeId,
   GeneId,

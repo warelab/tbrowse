@@ -1,4 +1,4 @@
-import type { Taxonomy, Tree, TreeNode } from 'tbrowse';
+import type { GeneMetadata, Taxonomy, Tree, TreeNode } from 'tbrowse';
 
 export const sampleTree: Tree = {
   rootId: 'n0',
@@ -12,6 +12,14 @@ export const sampleTree: Tree = {
     n6: { id: 'n6', parentId: 'n1', distance: 0.03, isLeaf: true,  taxonomyId: 10090, geneId: 'ENSMUSG00000001' },
     n7: { id: 'n7', parentId: 'n1', distance: 0.03, isLeaf: true,  taxonomyId: 10116, geneId: 'ENSRNOG00000001' },
   },
+};
+
+export const sampleGeneMetadata: GeneMetadata = {
+  ENSDARG00000001: { displayName: 'tp53', description: 'tumor protein p53 (zebrafish)' },
+  ENSG00000000001: { displayName: 'TP53', description: 'tumor protein p53 (human)' },
+  ENSPTRG00000001: { displayName: 'TP53', description: 'tumor protein p53 (chimpanzee)' },
+  ENSMUSG00000001: { displayName: 'Trp53', description: 'transformation related protein 53' },
+  ENSRNOG00000001: { displayName: 'Tp53', description: 'tumor protein p53 (rat)' },
 };
 
 export const sampleTaxonomy: Taxonomy = {

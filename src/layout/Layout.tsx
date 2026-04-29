@@ -141,9 +141,9 @@ export function Layout({ data, zones }: LayoutProps) {
   );
 
   const setZoneState = useCallback(
-    (zoneId: string, next: unknown | ((prev: unknown) => unknown)) => {
+    (zoneId: string, fallback: unknown, next: unknown | ((prev: unknown) => unknown)) => {
       setViewState((vs) => {
-        const prev = vs.zoneStates[zoneId];
+        const prev = vs.zoneStates[zoneId] !== undefined ? vs.zoneStates[zoneId] : fallback;
         const resolved =
           typeof next === 'function' ? (next as (p: unknown) => unknown)(prev) : next;
         return {
@@ -185,7 +185,7 @@ export function Layout({ data, zones }: LayoutProps) {
       onToggleCollapsed,
       onTogglePruned,
       zoneState: stored === undefined ? def.defaultZoneState : stored,
-      setZoneState: (next) => setZoneState(zoneId, next as unknown),
+      setZoneState: (next) => setZoneState(zoneId, def.defaultZoneState, next as unknown),
       width,
       bodyHeight: viewportHeight,
       bodyScrollLeft: scrollLefts[zoneId] ?? 0,
