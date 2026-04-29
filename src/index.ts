@@ -6,6 +6,13 @@ export { treeZone } from './zones/tree/Tree';
 export { labelsZone, type LabelsZoneState } from './zones/labels/Labels';
 export { msaZone, type MSAZoneState } from './zones/msa/MSA';
 export {
+  COLOR_SCHEMES,
+  defaultSchemeFor,
+  applicableSchemes,
+  type ColorScheme,
+  type ColorSchemeId,
+} from './zones/msa/coloring';
+export {
   builtInFields,
   providerFields,
   allFields,

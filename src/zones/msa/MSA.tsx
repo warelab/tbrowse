@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MSA, ZoneDefinition, ZoneRenderProps } from '../../types';
+import {
+  applicableSchemes,
+  defaultSchemeFor,
+  getScheme,
+  type ColorSchemeId,
+} from './coloring';
 import { Minimap } from './Minimap';
 
 export interface MSAZoneState {
@@ -7,6 +13,8 @@ export interface MSAZoneState {
   viewportStart: number;
   /** Last column (exclusive). When <= viewportStart, treat as "full alignment". */
   viewportEnd: number;
+  /** Optional. Falls back to defaultSchemeFor(alphabet) when undefined. */
+  colorSchemeId?: ColorSchemeId;
 }
 
 const DEFAULT_STATE: MSAZoneState = { viewportStart: 0, viewportEnd: 0 };
@@ -72,12 +80,50 @@ const MSAHeader = ({
           >
             {vp.start + 1}–{vp.end} / {msa.length}
           </span>
+          <SchemeSelect msa={msa} zoneState={zoneState} setZoneState={setZoneState} />
           <Minimap msa={msa} vp={vp} onSetViewport={setViewport} />
         </>
       )}
     </div>
   );
 };
+
+function SchemeSelect({
+  msa,
+  zoneState,
+  setZoneState,
+}: {
+  msa: MSA;
+  zoneState: MSAZoneState;
+  setZoneState: ZoneRenderProps<MSAZoneState>['setZoneState'];
+}) {
+  const schemes = applicableSchemes(msa.alphabet);
+  const selectedId = zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet);
+  return (
+    <select
+      value={selectedId}
+      onChange={(e) =>
+        setZoneState((s) => ({ ...s, colorSchemeId: e.target.value as ColorSchemeId }))
+      }
+      style={{
+        fontSize: 11,
+        padding: '1px 4px',
+        border: '1px solid #ccc',
+        borderRadius: 3,
+        background: 'white',
+        color: '#333',
+        cursor: 'pointer',
+      }}
+      title="Color scheme"
+    >
+      {schemes.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 const MSABody = ({
   data,
@@ -123,15 +169,13 @@ const MSABody = ({
     const vp = resolveViewport(zoneState, msa);
     const innerWidth = Math.max(1, width - 2 * PAD_X);
     const residueWidth = innerWidth / vp.width;
+    const scheme = getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet));
 
     const renderText = residueWidth >= TEXT_RENDER_MIN_PX;
     if (renderText) {
       ctx.font = '11px ui-monospace, "SF Mono", Menlo, monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
-      ctx.fillStyle = RESIDUE_COLOR;
-    } else {
-      ctx.fillStyle = RESIDUE_BG_COLOR;
     }
 
     const startIdx = rowRange.startIndex;
@@ -149,6 +193,7 @@ const MSABody = ({
         for (let col = vp.start; col < vp.end; col++) {
           const ch = seq[col];
           if (!ch || ch === '-') continue;
+          ctx.fillStyle = scheme.color(ch) ?? RESIDUE_COLOR;
           const x = PAD_X + (col - vp.start + 0.5) * residueWidth;
           ctx.fillText(ch, x, rowYCenter);
         }
@@ -156,6 +201,7 @@ const MSABody = ({
         for (let col = vp.start; col < vp.end; col++) {
           const ch = seq[col];
           if (!ch || ch === '-') continue;
+          ctx.fillStyle = scheme.color(ch) ?? RESIDUE_BG_COLOR;
           const x = PAD_X + (col - vp.start) * residueWidth;
           ctx.fillRect(x, r.y + 2, Math.max(residueWidth, 0.5), r.height - 4);
         }
@@ -170,6 +216,7 @@ const MSABody = ({
     totalHeight,
     zoneState.viewportStart,
     zoneState.viewportEnd,
+    zoneState.colorSchemeId,
     data.tree,
   ]);
 
