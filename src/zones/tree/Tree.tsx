@@ -77,12 +77,17 @@ const TreeBody = ({
     return m;
   }, [layout]);
 
-  // Pruned-node stub glyphs: one per pruned id, anchored at the closest
-  // visible ancestor. Each stub is a tiny L-shaped dashed branch (vertical
-  // then horizontal) ending in an open-square mark. All stubs at an anchor
-  // sit on the same side (below the anchor's lowest visible child),
-  // stacking downward for multi-prune cases.
+  // Pruned-node stub glyphs: one per pruned id, placed adjacent to its
+  // anchor's branch at a small fixed offset. The side (above or below) is
+  // chosen to match where the pruned branch came from — and where it will
+  // regrow back to — based on its position in the anchor's original
+  // children list.
   const prunedStubs = useMemo(() => {
+    const STUB_OFFSET = 5;
+    const STUB_STEP = 8;
+    const STUB_LEN = 12;
+
+    // Group pruned ids by closest visible ancestor.
     const byAnchor = new Map<NodeId, NodeId[]>();
     for (const prunedId of prunedNodeIds) {
       let cur: NodeId | null = data.tree.nodes[prunedId]?.parentId ?? null;
@@ -97,41 +102,81 @@ const TreeBody = ({
       }
       arr.push(prunedId);
     }
+
     type Stub = {
       prunedId: NodeId;
-      anchorId: NodeId;
       anchorX: number;
       anchorY: number;
-      verticalY: number; // y of the bend
-      horizontalX: number; // x of the mark
+      stubY: number;
       markX: number;
       markY: number;
     };
     const stubs: Stub[] = [];
+
     for (const [anchorId, ids] of byAnchor) {
       const anchor = byId.get(anchorId);
       if (!anchor) continue;
-      // Park stubs below the anchor's lowest visible descendant-line so they
-      // never collide with existing branches.
-      const visibleChildYs = (fullChildrenIndex.get(anchorId) ?? [])
-        .map((cid) => byId.get(cid))
-        .filter((n): n is TreeLayoutNode => n !== undefined)
-        .map((n) => n.y);
-      const baseY =
-        (visibleChildYs.length > 0 ? Math.max(...visibleChildYs) : anchor.y) + 8;
-      const horizontalLen = 12;
-      ids.forEach((prunedId, i) => {
-        const verticalY = baseY + i * 8;
-        const horizontalX = anchor.x + horizontalLen;
+
+      const fullChildren = fullChildrenIndex.get(anchorId) ?? [];
+      const visibleIndices: number[] = [];
+      fullChildren.forEach((cid, idx) => {
+        if (byId.has(cid)) visibleIndices.push(idx);
+      });
+      // Avg index of visible siblings — split point between "above" and "below".
+      const visibleAvg =
+        visibleIndices.length > 0
+          ? visibleIndices.reduce((a, b) => a + b, 0) / visibleIndices.length
+          : 0;
+
+      type Tagged = { prunedId: NodeId; baIdx: number; above: boolean };
+      const tagged: Tagged[] = ids.map((prunedId) => {
+        // Walk up from prunedId until parent === anchor; cur ends up as the
+        // direct child of anchor on the path to prunedId (the "branch
+        // ancestor").
+        let cur: NodeId = prunedId;
+        let parent: NodeId | null =
+          data.tree.nodes[prunedId]?.parentId ?? null;
+        while (parent !== null && parent !== anchorId) {
+          cur = parent;
+          parent = data.tree.nodes[parent]?.parentId ?? null;
+        }
+        const baIdx = fullChildren.indexOf(cur);
+        // Below visibleAvg → branch came from above the anchor (lower-index
+        // siblings sit higher in the tree visualization). Tie → below.
+        const above = baIdx >= 0 && baIdx < visibleAvg;
+        return { prunedId, baIdx, above };
+      });
+
+      // Stack stubs on each side, stacking outward by sibling order so the
+      // ones farthest from the visible siblings end up farthest from the
+      // anchor.
+      const aboveSide = tagged
+        .filter((t) => t.above)
+        .sort((a, b) => b.baIdx - a.baIdx);
+      const belowSide = tagged
+        .filter((t) => !t.above)
+        .sort((a, b) => a.baIdx - b.baIdx);
+
+      aboveSide.forEach((t, j) => {
+        const stubY = anchor.y - (STUB_OFFSET + j * STUB_STEP);
         stubs.push({
-          prunedId,
-          anchorId,
+          prunedId: t.prunedId,
           anchorX: anchor.x,
           anchorY: anchor.y,
-          verticalY,
-          horizontalX,
-          markX: horizontalX,
-          markY: verticalY,
+          stubY,
+          markX: anchor.x + STUB_LEN,
+          markY: stubY,
+        });
+      });
+      belowSide.forEach((t, j) => {
+        const stubY = anchor.y + (STUB_OFFSET + j * STUB_STEP);
+        stubs.push({
+          prunedId: t.prunedId,
+          anchorX: anchor.x,
+          anchorY: anchor.y,
+          stubY,
+          markX: anchor.x + STUB_LEN,
+          markY: stubY,
         });
       });
     }
@@ -293,10 +338,11 @@ const TreeBody = ({
         </g>
         {/* Pruned-branch stub glyphs. Rendered LAST so they sit above the
             branch hit paths in the SVG z-order and reliably capture clicks.
-            One glyph per pruned id, drawn as a dashed L-branch ending in a
-            small open-square mark — visually conveys "branch pruned here".
-            Click → select the pruned node so the tooltip opens with a
-            Regrow button. */}
+            One glyph per pruned id; each draws a tiny dashed stump where
+            its branch was sheared off, pointing in the original branch's
+            direction. The stub's y comes from the shadow layout so when
+            the user regrows, the new branch lands at the same y the stub
+            was indicating. */}
         <g>
           {prunedStubs.map((stub) => {
             const isSelected = selectedNodeId === stub.prunedId;
@@ -311,10 +357,11 @@ const TreeBody = ({
                   onSelectNode(stub.prunedId);
                 }}
               >
-                {/* Tiny dashed L-branch: vertical from anchor to bend,
-                    then horizontal to the mark. */}
+                {/* Tiny dashed L-stub off the anchor's branch: short
+                    vertical down, then horizontal in the original
+                    branch's direction. */}
                 <path
-                  d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.verticalY} L ${stub.horizontalX} ${stub.verticalY}`}
+                  d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${stub.markX} ${stub.stubY}`}
                   fill="none"
                   stroke={stroke}
                   strokeWidth={1}
