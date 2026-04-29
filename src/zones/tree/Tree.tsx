@@ -77,24 +77,60 @@ const TreeBody = ({
     return m;
   }, [layout]);
 
-  // Pruned-node stub glyphs: group pruned ids by closest visible ancestor.
-  // The ancestor is the regrow anchor where we render the glyph.
-  const stubsByAnchor = useMemo(() => {
-    const map = new Map<NodeId, NodeId[]>();
+  // Pruned-node stub glyphs: one per pruned id, anchored at the closest
+  // visible ancestor. Each stub is a tiny L-shaped dashed branch (vertical
+  // then horizontal) ending in an open-square mark. Multiple stubs sharing
+  // an anchor fan out alternately above and below.
+  const prunedStubs = useMemo(() => {
+    const byAnchor = new Map<NodeId, NodeId[]>();
     for (const prunedId of prunedNodeIds) {
       let cur: NodeId | null = data.tree.nodes[prunedId]?.parentId ?? null;
       while (cur !== null && !byId.has(cur)) {
         cur = data.tree.nodes[cur]?.parentId ?? null;
       }
       if (cur === null) continue;
-      let arr = map.get(cur);
+      let arr = byAnchor.get(cur);
       if (!arr) {
         arr = [];
-        map.set(cur, arr);
+        byAnchor.set(cur, arr);
       }
       arr.push(prunedId);
     }
-    return map;
+    type Stub = {
+      prunedId: NodeId;
+      anchorId: NodeId;
+      anchorX: number;
+      anchorY: number;
+      verticalY: number; // y of the bend
+      horizontalX: number; // x of the mark
+      markX: number;
+      markY: number;
+    };
+    const stubs: Stub[] = [];
+    for (const [anchorId, ids] of byAnchor) {
+      const anchor = byId.get(anchorId);
+      if (!anchor) continue;
+      ids.forEach((prunedId, i) => {
+        // i = 0 → down; i = 1 → up; i = 2 → down further; ...
+        const slot = Math.ceil((i + 1) / 2);
+        const dir = i % 2 === 0 ? 1 : -1;
+        const verticalLen = 5 + (slot - 1) * 8;
+        const horizontalLen = 12;
+        const verticalY = anchor.y + dir * verticalLen;
+        const horizontalX = anchor.x + horizontalLen;
+        stubs.push({
+          prunedId,
+          anchorId,
+          anchorX: anchor.x,
+          anchorY: anchor.y,
+          verticalY,
+          horizontalX,
+          markX: horizontalX,
+          markY: verticalY,
+        });
+      });
+    }
+    return stubs;
   }, [prunedNodeIds, data.tree, byId]);
 
   const isHighlighted = (nodeId: NodeId): boolean =>
@@ -108,9 +144,28 @@ const TreeBody = ({
       : 0;
 
   const extensionEndX = width - 1;
-  const selectedLayoutNode = selectedNodeId !== null ? byId.get(selectedNodeId) : null;
+
+  // The tooltip needs a (x, y) anchor for any selected node. Visible nodes
+  // come from the layout; pruned nodes don't appear in the layout, so we
+  // synthesize an anchor at their stub mark position.
   const selectedTreeNode =
     selectedNodeId !== null ? data.tree.nodes[selectedNodeId] : null;
+  let selectedLayoutNode: TreeLayoutNode | null =
+    selectedNodeId !== null ? (byId.get(selectedNodeId) ?? null) : null;
+  if (!selectedLayoutNode && selectedNodeId !== null && prunedNodeIds.has(selectedNodeId)) {
+    const stub = prunedStubs.find((s) => s.prunedId === selectedNodeId);
+    if (stub && selectedTreeNode) {
+      selectedLayoutNode = {
+        nodeId: selectedNodeId,
+        parentId: selectedTreeNode.parentId,
+        x: stub.markX,
+        y: stub.markY,
+        isVisibleEnd: false,
+        isLeaf: selectedTreeNode.isLeaf,
+        isCollapsedSummary: false,
+      };
+    }
+  }
 
   const selectedSubtreeLeafCount =
     selectedNodeId !== null && selectedTreeNode && !selectedTreeNode.isLeaf
@@ -231,67 +286,50 @@ const TreeBody = ({
             );
           })}
         </g>
-        {/* Pruned-node stub glyphs. Rendered LAST so they sit on top of
-            the branch hit paths and reliably capture clicks. One glyph per
-            anchor (closest visible ancestor of any pruned id); clicking it
-            regrows everything in that anchor's pruned closure. */}
+        {/* Pruned-branch stub glyphs. Rendered LAST so they sit above the
+            branch hit paths in the SVG z-order and reliably capture clicks.
+            One glyph per pruned id, drawn as a dashed L-branch ending in a
+            small open-square mark — visually conveys "branch pruned here".
+            Click → select the pruned node so the tooltip opens with a
+            Regrow button. */}
         <g>
-          {[...stubsByAnchor.entries()].map(([anchorId, prunedIds]) => {
-            const anchor = byId.get(anchorId);
-            if (!anchor) return null;
-            const cx = anchor.x + 8;
-            const cy = anchor.y;
+          {prunedStubs.map((stub) => {
+            const isSelected = selectedNodeId === stub.prunedId;
+            const stroke = isSelected ? HIGHLIGHT_COLOR : '#888';
+            const markFill = isSelected ? HIGHLIGHT_COLOR : 'white';
             return (
               <g
-                key={`pstub-${anchorId}`}
+                key={`pstub-${stub.prunedId}`}
                 style={{ cursor: 'pointer' }}
-                onMouseEnter={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  for (const id of prunedIds) onTogglePruned(id);
+                  onSelectNode(stub.prunedId);
                 }}
               >
-                <line
-                  x1={anchor.x}
-                  y1={anchor.y}
-                  x2={cx}
-                  y2={cy}
-                  stroke="#999"
+                {/* Tiny dashed L-branch: vertical from anchor to bend,
+                    then horizontal to the mark. */}
+                <path
+                  d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.verticalY} L ${stub.horizontalX} ${stub.verticalY}`}
+                  fill="none"
+                  stroke={stroke}
                   strokeWidth={1}
                   strokeDasharray="2 2"
                   pointerEvents="none"
                 />
-                {/* Outer transparent disc for a forgiving click target. */}
-                <circle cx={cx} cy={cy} r={8} fill="transparent" />
-                {/* Visible glyph. */}
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={4}
-                  fill="white"
-                  stroke="#888"
+                {/* Open-square branch tip. */}
+                <rect
+                  x={stub.markX - 3}
+                  y={stub.markY - 3}
+                  width={6}
+                  height={6}
+                  fill={markFill}
+                  stroke={stroke}
                   strokeWidth={1}
                   pointerEvents="none"
                 />
-                {prunedIds.length > 1 && (
-                  <text
-                    x={cx}
-                    y={cy + 0.5}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontSize={7}
-                    fill="#666"
-                    pointerEvents="none"
-                    style={{ userSelect: 'none' }}
-                  >
-                    {prunedIds.length}
-                  </text>
-                )}
-                <title>
-                  {prunedIds.length === 1
-                    ? `Click to regrow pruned subtree (${prunedIds[0]})`
-                    : `Click to regrow ${prunedIds.length} pruned subtrees`}
-                </title>
+                {/* Forgiving transparent click target. */}
+                <circle cx={stub.markX} cy={stub.markY} r={9} fill="transparent" />
+                <title>{`Click to inspect pruned subtree (${stub.prunedId})`}</title>
               </g>
             );
           })}
