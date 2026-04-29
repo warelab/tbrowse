@@ -1,4 +1,9 @@
 export { TBrowse } from './TBrowse';
+export {
+  fromEnsemblGeneTree,
+  type FromEnsemblOptions,
+  type FromEnsemblResult,
+} from './adapters/ensembl';
 export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
 export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
