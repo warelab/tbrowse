@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
+import { computePivotState } from './pivot';
 import type { NodeId, TBrowseProps, ViewState } from './types';
 
 export interface TBrowseState {
@@ -34,8 +35,21 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
   for (const z of props.zones) {
     zoneStates[z.id] = z.defaultZoneState;
   }
+
+  let collapsedFromPivot: NodeId[] = [];
+  let swappedFromPivot: NodeId[] = [];
+  if (props.nodeOfInterest) {
+    const pivot = computePivotState(props.tree, props.nodeOfInterest);
+    if (pivot) {
+      collapsedFromPivot = pivot.collapsedNodeIds;
+      swappedFromPivot = pivot.swappedNodeIds;
+    }
+  }
+
   return {
     ...baseDefaults,
+    collapsedNodeIds: collapsedFromPivot,
+    swappedNodeIds: swappedFromPivot,
     zones: props.zones.map((z) => ({
       id: z.id,
       width: z.defaultWidth,

@@ -2,6 +2,7 @@ import { StrictMode, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   TBrowse,
+  computePivotState,
   fromEnsemblGeneTree,
   labelsZone,
   msaZone,
@@ -18,8 +19,8 @@ import {
   sampleTree,
 } from './sampleTree';
 
-const ENSEMBL_URL =
-  'https://rest.ensembl.org/genetree/id/ENSGT00390000003602?aligned=1&sequence=protein';
+const ENSEMBL_GENE_OF_INTEREST = 'ENSG00000139618'; // BRCA2 (human)
+const ENSEMBL_URL = `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${ENSEMBL_GENE_OF_INTEREST}?aligned=1&sequence=protein`;
 
 function buildInitialViewState(zoneIds: string[]): ViewState {
   return {
@@ -51,10 +52,24 @@ function App() {
   const [ensemblStatus, setEnsemblStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [ensemblError, setEnsemblError] = useState<string | null>(null);
 
+  const applyEnsemblViewState = (data: FromEnsemblResult) => {
+    const pivot = computePivotState(data.tree, ENSEMBL_GENE_OF_INTEREST);
+    const initial = buildInitialViewState(zoneIds);
+    setViewState(
+      pivot
+        ? {
+            ...initial,
+            collapsedNodeIds: pivot.collapsedNodeIds,
+            swappedNodeIds: pivot.swappedNodeIds,
+          }
+        : initial,
+    );
+  };
+
   const loadEnsembl = async () => {
     if (ensemblData) {
       setDataSource('ensembl');
-      setViewState(buildInitialViewState(zoneIds));
+      applyEnsemblViewState(ensemblData);
       return;
     }
     setEnsemblStatus('loading');
@@ -66,7 +81,7 @@ function App() {
       const data = fromEnsemblGeneTree(json);
       setEnsemblData(data);
       setDataSource('ensembl');
-      setViewState(buildInitialViewState(zoneIds));
+      applyEnsemblViewState(data);
       setEnsemblStatus('idle');
     } catch (err) {
       setEnsemblError(err instanceof Error ? err.message : String(err));
@@ -84,6 +99,20 @@ function App() {
   const setPruned = (ids: string[]) =>
     setViewState((vs) => ({ ...vs, prunedNodeIds: ids }));
   const reset = () => setViewState(buildInitialViewState(zoneIds));
+
+  const pivotTo = (identifier: string) => {
+    const treeForPivot = dataSource === 'sample' ? tree : ensemblData?.tree;
+    if (!treeForPivot) return;
+    const pivot = computePivotState(treeForPivot, identifier);
+    if (!pivot) return;
+    setViewState((vs) => ({
+      ...buildInitialViewState(zoneIds),
+      collapsedNodeIds: pivot.collapsedNodeIds,
+      swappedNodeIds: pivot.swappedNodeIds,
+      zones: vs.zones,
+      zoneStates: vs.zoneStates,
+    }));
+  };
 
   const dataProps =
     dataSource === 'sample' || !ensemblData
@@ -142,6 +171,8 @@ function App() {
               <button onClick={() => setCollapsed(['n3'])}>collapse n3</button>
               <button onClick={() => setPruned(['n1'])}>prune n1</button>
               <button onClick={() => setPruned(['n4'])}>prune n4</button>
+              <button onClick={() => pivotTo('ENSG00000000001')}>pivot to Human</button>
+              <button onClick={() => pivotTo('ENSDARG00000001')}>pivot to Zebrafish</button>
               <button
                 onClick={() => setTree((t) => (t === sampleTree ? largeSampleTree : sampleTree))}
               >
@@ -168,6 +199,7 @@ function App() {
       <div style={{ flex: 1, minHeight: 0 }}>
         <TBrowse
           {...dataProps}
+          nodeOfInterest={dataSource === 'ensembl' ? ENSEMBL_GENE_OF_INTEREST : undefined}
           zones={zones}
           viewState={viewState}
           onViewStateChange={setViewState}

@@ -159,6 +159,15 @@ export interface TBrowseProps {
   msa?: MSA;
   geneMetadata?: GeneMetadata;
   nodeAnnotations?: NodeAnnotation[];
+  /**
+   * If provided, the initial view collapses every subtree except the path
+   * to this node and swaps siblings so the node sits at the top of the
+   * display. Resolved as a leaf `geneId` first, then as a node `id`. Has
+   * effect only when the chassis builds the initial viewState
+   * (uncontrolled mode); controlled hosts can call `computePivotState`
+   * themselves to bootstrap their viewState.
+   */
+  nodeOfInterest?: string;
   zones: ZoneDefinition[];
   labelProviders?: LabelProvider[];
   viewState?: ViewState;

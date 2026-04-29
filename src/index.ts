@@ -4,6 +4,7 @@ export {
   type FromEnsemblOptions,
   type FromEnsemblResult,
 } from './adapters/ensembl';
+export { computePivotState, type PivotState } from './pivot';
 export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
 export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
