@@ -2,6 +2,7 @@ export { TBrowse } from './TBrowse';
 export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
 export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
+export { treeZone } from './zones/tree/Tree';
 export type {
   NodeId,
   GeneId,

@@ -1,6 +1,6 @@
 import { StrictMode, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TBrowse, createStubZone, type ViewState } from 'tbrowse';
+import { TBrowse, createStubZone, treeZone, type ViewState } from 'tbrowse';
 import { largeSampleTree, sampleTaxonomy, sampleTree } from './sampleTree';
 
 function buildInitialViewState(zoneIds: string[]): ViewState {
@@ -10,7 +10,7 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
     prunedNodeIds: [],
     zones: zoneIds.map((id, i) => ({
       id,
-      width: [240, 200, 320][i] ?? 200,
+      width: [280, 200, 320][i] ?? 200,
       visible: true,
     })),
     zoneStates: {},
@@ -21,7 +21,7 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
 function App() {
   const zones = useMemo(
     () => [
-      createStubZone({ id: 'tree-stub', displayName: 'Tree (stub)', defaultWidth: 240 }),
+      treeZone,
       createStubZone({ id: 'labels-stub', displayName: 'Labels (stub)', defaultWidth: 200 }),
       createStubZone({
         id: 'msa-stub',
