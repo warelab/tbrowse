@@ -41,6 +41,7 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
     visibleRows,
     rowRange,
     hoveredNodeId,
+    hoveredSubtreeIds,
     selectedNodeId,
     onHoverNode,
     onSelectNode,
@@ -69,7 +70,8 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
       <div onWheel={onWheel} style={{ height: '100%', position: 'relative' }}>
         <div style={innerStyle}>
           {rows.map((r) => {
-            const isHovered = hoveredNodeId === r.nodeId;
+            const isExactHover = hoveredNodeId === r.nodeId;
+            const isInHoveredSubtree = hoveredSubtreeIds.has(r.nodeId);
             const isSelected = selectedNodeId === r.nodeId;
             return (
               <div
@@ -90,9 +92,12 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
                   gap: 16,
                   background: isSelected
                     ? 'rgba(40, 120, 220, 0.15)'
-                    : isHovered
-                      ? 'rgba(0, 0, 0, 0.04)'
-                      : 'transparent',
+                    : isExactHover
+                      ? 'rgba(40, 120, 220, 0.08)'
+                      : isInHoveredSubtree
+                        ? 'rgba(40, 120, 220, 0.04)'
+                        : 'transparent',
+                  fontWeight: isInHoveredSubtree ? 600 : 400,
                   borderBottom: '1px solid #f0f0f0',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',

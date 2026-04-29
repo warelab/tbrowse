@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTBrowseStore } from '../store';
+import { buildChildrenIndex, EMPTY_NODE_ID_SET, subtreeIdsOf } from '../treeIndex';
 import { computeVisibleRows } from '../visibleRows';
 import type { HostData, NodeId, ZoneDefinition, ZoneRenderProps } from '../types';
 import { ChromeStrip } from './ChromeStrip';
@@ -47,6 +48,13 @@ export function Layout({ data, zones }: LayoutProps) {
       }),
     [data.tree, viewState.collapsedNodeIds, viewState.prunedNodeIds],
   );
+
+  const childrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
+
+  const hoveredSubtreeIds = useMemo<ReadonlySet<NodeId>>(() => {
+    if (hoveredNodeId === null) return EMPTY_NODE_ID_SET;
+    return subtreeIdsOf(hoveredNodeId, childrenIndex);
+  }, [hoveredNodeId, childrenIndex]);
 
   const totalContentHeight = useMemo(
     () => visibleRows.reduce((h, r) => h + r.height, 0),
@@ -124,6 +132,7 @@ export function Layout({ data, zones }: LayoutProps) {
       visibleRows,
       rowRange,
       hoveredNodeId,
+      hoveredSubtreeIds,
       selectedNodeId: viewState.selectedNodeId,
       onHoverNode,
       onSelectNode,

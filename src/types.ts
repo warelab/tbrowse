@@ -109,6 +109,12 @@ export interface ZoneRenderProps<S = unknown> {
   visibleRows: VisibleRow[];
   rowRange: RowRange;
   hoveredNodeId: NodeId | null;
+  /**
+   * Closure of hovered node and its descendants. Empty set when nothing is
+   * hovered. Non-tree zones use this to highlight the rows whose leaves are
+   * within the hovered subtree.
+   */
+  hoveredSubtreeIds: ReadonlySet<NodeId>;
   selectedNodeId: NodeId | null;
   onHoverNode: (id: NodeId | null) => void;
   onSelectNode: (id: NodeId) => void;
