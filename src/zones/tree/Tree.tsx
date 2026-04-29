@@ -71,6 +71,32 @@ const TreeBody = ({
 
   const fullChildrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
 
+  const byId = useMemo(() => {
+    const m = new Map<string, TreeLayoutNode>();
+    for (const n of layout.nodes) m.set(n.nodeId, n);
+    return m;
+  }, [layout]);
+
+  // Pruned-node stub glyphs: group pruned ids by closest visible ancestor.
+  // The ancestor is the regrow anchor where we render the glyph.
+  const stubsByAnchor = useMemo(() => {
+    const map = new Map<NodeId, NodeId[]>();
+    for (const prunedId of prunedNodeIds) {
+      let cur: NodeId | null = data.tree.nodes[prunedId]?.parentId ?? null;
+      while (cur !== null && !byId.has(cur)) {
+        cur = data.tree.nodes[cur]?.parentId ?? null;
+      }
+      if (cur === null) continue;
+      let arr = map.get(cur);
+      if (!arr) {
+        arr = [];
+        map.set(cur, arr);
+      }
+      arr.push(prunedId);
+    }
+    return map;
+  }, [prunedNodeIds, data.tree, byId]);
+
   const isHighlighted = (nodeId: NodeId): boolean =>
     hoveredSubtreeIds.has(nodeId) || ancestorsHighlight.has(nodeId);
 
@@ -80,9 +106,6 @@ const TreeBody = ({
     visibleRows.length > 0
       ? visibleRows[visibleRows.length - 1].y + visibleRows[visibleRows.length - 1].height
       : 0;
-
-  const byId = new Map<string, TreeLayoutNode>();
-  for (const n of layout.nodes) byId.set(n.nodeId, n);
 
   const extensionEndX = width - 1;
   const selectedLayoutNode = selectedNodeId !== null ? byId.get(selectedNodeId) : null;
@@ -171,6 +194,63 @@ const TreeBody = ({
                 strokeWidth={hl ? 1.5 : 1}
                 strokeDasharray="2 3"
               />
+            );
+          })}
+        </g>
+        {/* Pruned-node stub glyphs. One per anchor (closest visible ancestor
+            of any pruned id). Clicking regrows everything in that anchor's
+            pruned closure. */}
+        <g>
+          {[...stubsByAnchor.entries()].map(([anchorId, prunedIds]) => {
+            const anchor = byId.get(anchorId);
+            if (!anchor) return null;
+            const cx = anchor.x + 6;
+            const cy = anchor.y;
+            return (
+              <g
+                key={`pstub-${anchorId}`}
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  for (const id of prunedIds) onTogglePruned(id);
+                }}
+              >
+                <line
+                  x1={anchor.x}
+                  y1={anchor.y}
+                  x2={cx}
+                  y2={cy}
+                  stroke="#999"
+                  strokeWidth={1}
+                  strokeDasharray="2 2"
+                />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={3.5}
+                  fill="white"
+                  stroke="#888"
+                  strokeWidth={1}
+                />
+                {prunedIds.length > 1 && (
+                  <text
+                    x={cx}
+                    y={cy + 0.5}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={7}
+                    fill="#666"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {prunedIds.length}
+                  </text>
+                )}
+                <title>
+                  {prunedIds.length === 1
+                    ? `Click to regrow pruned subtree (${prunedIds[0]})`
+                    : `Click to regrow ${prunedIds.length} pruned subtrees`}
+                </title>
+              </g>
             );
           })}
         </g>
