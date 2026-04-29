@@ -1,16 +1,29 @@
 # tbrowse
 
-[![Travis][build-badge]][build]
-[![npm package][npm-badge]][npm]
-[![Coveralls][coveralls-badge]][coveralls]
+Embeddable React component for visualizing phylogenetic trees with pluggable data zones.
 
-Describe tbrowse here.
+A `<TBrowse>` instance renders one tree alongside one or more configurable zones (labels, MSA, custom). Tree topology, taxonomy, MSA, gene metadata, and node annotations are independent host-provided inputs — TBrowse does no data fetching of its own.
 
-[build-badge]: https://img.shields.io/travis/warelab/tbrowse/master.png?style=flat-square
-[build]: https://travis-ci.org/warelab/tbrowse
+## Status
 
-[npm-badge]: https://img.shields.io/npm/v/npm-package.png?style=flat-square
-[npm]: https://www.npmjs.org/package/tbrowse
+Pre-alpha. The package is being rewritten from scratch on the `rewrite` branch. The previous nwb / React 16 / Redux-Toolkit implementation is preserved at tag-equivalent commit `b017a74` on `master`, with an in-progress migration parked on `wip/grid-migration`.
 
-[coveralls-badge]: https://img.shields.io/coveralls/warelab/tbrowse/master.png?style=flat-square
-[coveralls]: https://coveralls.io/github/warelab/tbrowse
+## Development
+
+```sh
+npm install
+npm run dev         # vite dev server, mounts examples/playground
+npm run typecheck   # tsc --noEmit
+npm run build       # library build to dist/
+```
+
+## Project layout
+
+```
+src/                  library source
+  types.ts            host-facing API (Tree, MSA, ViewState, ZoneDefinition, …)
+  TBrowse.tsx         <TBrowse> entry component
+  store.tsx           zustand store + context
+  visibleRows.ts      pure derivation: tree + collapsed/pruned → visible rows
+examples/playground/  vite dev app
+```
