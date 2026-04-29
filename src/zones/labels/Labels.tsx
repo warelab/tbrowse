@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import type { ZoneDefinition, ZoneRenderProps } from '../../types';
-import { builtInFields, type LabelField } from './fields';
+import { allFields, builtInFields, providerFields, type LabelField } from './fields';
 import { FieldPicker } from './FieldPicker';
+import { useProviderCache } from './providerCache';
 
 export interface LabelsZoneState {
   visibleFields: string[];
@@ -12,11 +13,14 @@ const DEFAULT_STATE: LabelsZoneState = {
 };
 
 const FIELD_SEPARATOR = ' · ';
+const PENDING_PLACEHOLDER = '…';
 
 const LabelsHeader = ({
   zoneState,
   setZoneState,
+  data,
 }: ZoneRenderProps<LabelsZoneState>) => {
+  const fields = useMemo(() => allFields(data), [data]);
   return (
     <div
       style={{
@@ -31,7 +35,7 @@ const LabelsHeader = ({
     >
       <span style={{ fontWeight: 600 }}>Labels</span>
       <FieldPicker
-        fields={builtInFields}
+        fields={fields}
         visibleFields={zoneState.visibleFields}
         onChange={(next) =>
           setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), visibleFields: next }))
@@ -52,12 +56,37 @@ const LabelsBody = ({
   onHoverNode,
   onSelectNode,
 }: ZoneRenderProps<LabelsZoneState>) => {
+  const allDefinedFields = useMemo(() => allFields(data), [data]);
+
   const activeFields = useMemo<LabelField[]>(() => {
-    const byId = new Map(builtInFields.map((f) => [f.id, f]));
+    const byId = new Map(allDefinedFields.map((f) => [f.id, f]));
     return zoneState.visibleFields
       .map((id) => byId.get(id))
       .filter((f): f is LabelField => f !== undefined);
-  }, [zoneState.visibleFields]);
+  }, [zoneState.visibleFields, allDefinedFields]);
+
+  // Provider fetches need geneIds across all currently-visible leaves.
+  // Use the FULL visibleRows (not the windowed rowRange) so scroll doesn't
+  // tear down in-flight fetches.
+  const activeProviders = useMemo(() => {
+    if (!data.labelProviders) return [];
+    const wantedProviderIds = new Set(
+      activeFields.filter((f) => f.kind === 'provider').map((f) => f.providerId),
+    );
+    return data.labelProviders.filter((p) => wantedProviderIds.has(p.id));
+  }, [data.labelProviders, activeFields]);
+
+  const allGeneIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const r of visibleRows) {
+      if (r.kind !== 'leaf') continue;
+      const node = data.tree.nodes[r.nodeId];
+      if (node?.geneId) ids.push(node.geneId);
+    }
+    return ids;
+  }, [visibleRows, data.tree]);
+
+  const providerCache = useProviderCache(activeProviders, allGeneIds);
 
   const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
 
@@ -68,23 +97,10 @@ const LabelsBody = ({
         const isInHoveredSubtree = hoveredSubtreeIds.has(r.nodeId);
         const isSelected = selectedNodeId === r.nodeId;
 
-        let display: string;
         const isCollapsed = r.kind === 'collapsedSummary';
-        if (isCollapsed) {
-          display = `(${r.leafCount} leaves)`;
-        } else {
-          const node = data.tree.nodes[r.nodeId];
-          if (!node) {
-            display = '?';
-          } else {
-            const parts: string[] = [];
-            for (const f of activeFields) {
-              const v = f.get(node, data);
-              if (v !== null && v !== '') parts.push(v);
-            }
-            display = parts.length > 0 ? parts.join(FIELD_SEPARATOR) : '—';
-          }
-        }
+        const display = isCollapsed
+          ? collapsedSummaryLabel(r.nodeId, r.leafCount, data)
+          : leafLabel(r.nodeId, activeFields, data, providerCache);
 
         return (
           <div
@@ -128,6 +144,43 @@ const LabelsBody = ({
   );
 };
 
+function leafLabel(
+  nodeId: string,
+  fields: LabelField[],
+  data: ZoneRenderProps['data'],
+  cache: ReturnType<typeof useProviderCache>,
+): string {
+  const node = data.tree.nodes[nodeId];
+  if (!node) return '?';
+  const parts: string[] = [];
+  for (const f of fields) {
+    if (f.kind === 'builtin') {
+      const v = f.get(node, data);
+      if (v !== null && v !== '') parts.push(v);
+    } else {
+      if (!node.geneId) continue;
+      const v = cache.get(f.providerId, node.geneId);
+      if (v === 'pending') parts.push(PENDING_PLACEHOLDER);
+      else if (v !== null && v !== '') parts.push(v);
+    }
+  }
+  return parts.length > 0 ? parts.join(FIELD_SEPARATOR) : '—';
+}
+
+function collapsedSummaryLabel(
+  nodeId: string,
+  leafCount: number,
+  data: ZoneRenderProps['data'],
+): string {
+  const node = data.tree.nodes[nodeId];
+  if (node && node.taxonomyId !== undefined && data.taxonomy?.[node.taxonomyId]) {
+    const tax = data.taxonomy[node.taxonomyId];
+    const name = tax.scientificName ?? tax.commonName;
+    if (name) return `(${leafCount}) ${name}`;
+  }
+  return `(${leafCount} leaves)`;
+}
+
 export const labelsZone: ZoneDefinition<LabelsZoneState> = {
   id: 'labels',
   displayName: 'Labels',
@@ -138,3 +191,6 @@ export const labelsZone: ZoneDefinition<LabelsZoneState> = {
   defaultZoneState: DEFAULT_STATE,
   isAvailable: (data) => Boolean(data.tree),
 };
+
+// Re-exports so consumers don't need to reach into ./fields.
+export { builtInFields, providerFields };

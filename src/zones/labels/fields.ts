@@ -1,24 +1,31 @@
-import type { HostData, TreeNode } from '../../types';
+import type { HostData, LabelProvider, TreeNode } from '../../types';
 
-export interface LabelField {
-  /** Stable id used in viewState.zoneStates['labels'].visibleFields. */
+export interface BuiltinLabelField {
+  kind: 'builtin';
   id: string;
-  /** Human-readable name shown in the field picker. */
   label: string;
-  /**
-   * Resolve a value for this field given the leaf's tree node + host data.
-   * Return null when the value isn't available so the renderer can skip it.
-   */
+  /** Synchronous resolver. Returns null when the value isn't available. */
   get: (node: TreeNode, data: HostData) => string | null;
 }
 
-export const builtInFields: LabelField[] = [
+export interface ProviderLabelField {
+  kind: 'provider';
+  id: string;
+  label: string;
+  providerId: string;
+}
+
+export type LabelField = BuiltinLabelField | ProviderLabelField;
+
+export const builtInFields: BuiltinLabelField[] = [
   {
+    kind: 'builtin',
     id: 'gene.id',
     label: 'Gene ID',
     get: (n) => n.geneId ?? null,
   },
   {
+    kind: 'builtin',
     id: 'gene.name',
     label: 'Gene name',
     get: (n, d) => {
@@ -28,6 +35,7 @@ export const builtInFields: LabelField[] = [
     },
   },
   {
+    kind: 'builtin',
     id: 'gene.description',
     label: 'Gene description',
     get: (n, d) => {
@@ -37,6 +45,7 @@ export const builtInFields: LabelField[] = [
     },
   },
   {
+    kind: 'builtin',
     id: 'taxonomy.scientificName',
     label: 'Scientific name',
     get: (n, d) => {
@@ -45,6 +54,7 @@ export const builtInFields: LabelField[] = [
     },
   },
   {
+    kind: 'builtin',
     id: 'taxonomy.commonName',
     label: 'Common name',
     get: (n, d) => {
@@ -53,3 +63,19 @@ export const builtInFields: LabelField[] = [
     },
   },
 ];
+
+/** Derive provider-backed fields from the host's registered labelProviders. */
+export function providerFields(providers: readonly LabelProvider[] | undefined): ProviderLabelField[] {
+  if (!providers || providers.length === 0) return [];
+  return providers.map((p) => ({
+    kind: 'provider',
+    id: p.id,
+    label: p.label,
+    providerId: p.id,
+  }));
+}
+
+/** Returns built-in + provider fields, in canonical order. */
+export function allFields(data: HostData): LabelField[] {
+  return [...builtInFields, ...providerFields(data.labelProviders)];
+}

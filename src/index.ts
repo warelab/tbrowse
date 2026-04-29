@@ -4,7 +4,14 @@ export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
 export { treeZone } from './zones/tree/Tree';
 export { labelsZone, type LabelsZoneState } from './zones/labels/Labels';
-export { builtInFields, type LabelField } from './zones/labels/fields';
+export {
+  builtInFields,
+  providerFields,
+  allFields,
+  type LabelField,
+  type BuiltinLabelField,
+  type ProviderLabelField,
+} from './zones/labels/fields';
 export type {
   NodeId,
   GeneId,

@@ -87,36 +87,74 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
               boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
               padding: '6px 0',
               zIndex: 1000,
-              minWidth: 180,
+              minWidth: 200,
             }}
           >
-            {fields.map((f) => {
-              const checked = visibleSet.has(f.id);
-              return (
-                <label
-                  key={f.id}
+            {renderGroup('Built-in', fields.filter((f) => f.kind === 'builtin'), visibleSet, toggleField)}
+            {fields.some((f) => f.kind === 'provider') && (
+              <>
+                <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '4px 12px',
-                    fontSize: 12,
-                    cursor: 'pointer',
+                    height: 1,
+                    background: '#eee',
+                    margin: '4px 0',
                   }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleField(f.id)}
-                    style={{ margin: 0 }}
-                  />
-                  <span>{f.label}</span>
-                </label>
-              );
-            })}
+                />
+                {renderGroup('External', fields.filter((f) => f.kind === 'provider'), visibleSet, toggleField)}
+              </>
+            )}
           </div>,
           document.body,
         )}
+    </>
+  );
+}
+
+function renderGroup(
+  title: string,
+  fields: LabelField[],
+  visibleSet: Set<string>,
+  toggleField: (id: string) => void,
+) {
+  if (fields.length === 0) return null;
+  return (
+    <>
+      <div
+        style={{
+          padding: '2px 12px',
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          color: '#999',
+          fontWeight: 600,
+        }}
+      >
+        {title}
+      </div>
+      {fields.map((f) => {
+        const checked = visibleSet.has(f.id);
+        return (
+          <label
+            key={f.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 12px',
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => toggleField(f.id)}
+              style={{ margin: 0 }}
+            />
+            <span>{f.label}</span>
+          </label>
+        );
+      })}
     </>
   );
 }

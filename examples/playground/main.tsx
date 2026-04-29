@@ -1,7 +1,13 @@
 import { StrictMode, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TBrowse, createStubZone, labelsZone, treeZone, type ViewState } from 'tbrowse';
-import { largeSampleTree, sampleGeneMetadata, sampleTaxonomy, sampleTree } from './sampleTree';
+import {
+  largeSampleTree,
+  sampleGeneMetadata,
+  sampleGoProvider,
+  sampleTaxonomy,
+  sampleTree,
+} from './sampleTree';
 
 function buildInitialViewState(zoneIds: string[]): ViewState {
   return {
@@ -64,6 +70,7 @@ function App() {
           tree={tree}
           taxonomy={sampleTaxonomy}
           geneMetadata={sampleGeneMetadata}
+          labelProviders={[sampleGoProvider]}
           zones={zones}
           viewState={viewState}
           onViewStateChange={setViewState}

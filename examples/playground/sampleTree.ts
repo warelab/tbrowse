@@ -1,4 +1,4 @@
-import type { GeneMetadata, Taxonomy, Tree, TreeNode } from 'tbrowse';
+import type { GeneMetadata, LabelProvider, Taxonomy, Tree, TreeNode } from 'tbrowse';
 
 export const sampleTree: Tree = {
   rootId: 'n0',
@@ -31,6 +31,31 @@ export const sampleTaxonomy: Taxonomy = {
   9606:  { scientificName: 'Homo sapiens', commonName: 'Human' },
   10090: { scientificName: 'Mus musculus', commonName: 'Mouse' },
   10116: { scientificName: 'Rattus norvegicus', commonName: 'Rat' },
+};
+
+// Sample label provider that simulates an async fetch (~600ms latency).
+// Demonstrates the LabelProvider plugin point: hosts register one of these
+// with an arbitrary fetch and TBrowse surfaces it as a togglable Labels field.
+export const sampleGoProvider: LabelProvider = {
+  id: 'go-summary',
+  label: 'GO summary',
+  fetch: async (geneId: string, signal: AbortSignal) => {
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, 600);
+      signal.addEventListener('abort', () => {
+        clearTimeout(t);
+        reject(new DOMException('aborted', 'AbortError'));
+      });
+    });
+    const annotations: Record<string, string> = {
+      ENSDARG00000001: 'apoptosis, cell cycle',
+      ENSG00000000001: 'apoptosis, DNA repair, cell cycle',
+      ENSPTRG00000001: 'apoptosis, cell cycle, transcription',
+      ENSMUSG00000001: 'apoptosis, cell cycle',
+      ENSRNOG00000001: 'apoptosis, cell cycle',
+    };
+    return annotations[geneId] ?? null;
+  },
 };
 
 // Synthetic balanced binary tree with `leafCount` leaves, for exercising virtualization.
