@@ -49,3 +49,25 @@ export function ancestorIdsOf(tree: Tree, nodeId: NodeId): Set<NodeId> {
 }
 
 export const EMPTY_NODE_ID_SET: ReadonlySet<NodeId> = new Set();
+
+/** Count of leaf nodes in the full subtree rooted at `rootId`. */
+export function countLeavesInSubtree(
+  rootId: NodeId,
+  tree: Tree,
+  childrenIndex: ChildrenIndex,
+): number {
+  let count = 0;
+  const stack: NodeId[] = [rootId];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    const n = tree.nodes[id];
+    if (!n) continue;
+    if (n.isLeaf) {
+      count++;
+      continue;
+    }
+    const kids = childrenIndex.get(id);
+    if (kids) for (const k of kids) stack.push(k);
+  }
+  return count;
+}

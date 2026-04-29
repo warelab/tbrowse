@@ -39,14 +39,23 @@ export function Layout({ data, zones }: LayoutProps) {
     [viewState.zones, zoneById],
   );
 
+  const collapsedNodeIds = useMemo(
+    () => new Set(viewState.collapsedNodeIds),
+    [viewState.collapsedNodeIds],
+  );
+  const prunedNodeIds = useMemo(
+    () => new Set(viewState.prunedNodeIds),
+    [viewState.prunedNodeIds],
+  );
+
   const visibleRows = useMemo(
     () =>
       computeVisibleRows({
         tree: data.tree,
-        collapsedNodeIds: new Set(viewState.collapsedNodeIds),
-        prunedNodeIds: new Set(viewState.prunedNodeIds),
+        collapsedNodeIds,
+        prunedNodeIds,
       }),
-    [data.tree, viewState.collapsedNodeIds, viewState.prunedNodeIds],
+    [data.tree, collapsedNodeIds, prunedNodeIds],
   );
 
   const childrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
@@ -92,9 +101,43 @@ export function Layout({ data, zones }: LayoutProps) {
     [setViewState],
   );
 
+  const onClearSelection = useCallback(
+    () => setViewState((vs) => (vs.selectedNodeId === null ? vs : { ...vs, selectedNodeId: null })),
+    [setViewState],
+  );
+
   const onHoverNode = useCallback(
     (id: NodeId | null) => setHoveredNodeId(id),
     [setHoveredNodeId],
+  );
+
+  const onToggleCollapsed = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const idx = vs.collapsedNodeIds.indexOf(id);
+        return idx >= 0
+          ? { ...vs, collapsedNodeIds: vs.collapsedNodeIds.filter((x) => x !== id) }
+          : { ...vs, collapsedNodeIds: [...vs.collapsedNodeIds, id] };
+      }),
+    [setViewState],
+  );
+
+  const onTogglePruned = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const idx = vs.prunedNodeIds.indexOf(id);
+        if (idx >= 0) {
+          return { ...vs, prunedNodeIds: vs.prunedNodeIds.filter((x) => x !== id) };
+        }
+        // Pruning the selected node hides it from the tree, so clear selection
+        // to avoid leaving an orphaned tooltip / selection marker.
+        return {
+          ...vs,
+          prunedNodeIds: [...vs.prunedNodeIds, id],
+          selectedNodeId: vs.selectedNodeId === id ? null : vs.selectedNodeId,
+        };
+      }),
+    [setViewState],
   );
 
   const setZoneState = useCallback(
@@ -134,8 +177,13 @@ export function Layout({ data, zones }: LayoutProps) {
       hoveredNodeId,
       hoveredSubtreeIds,
       selectedNodeId: viewState.selectedNodeId,
+      collapsedNodeIds,
+      prunedNodeIds,
       onHoverNode,
       onSelectNode,
+      onClearSelection,
+      onToggleCollapsed,
+      onTogglePruned,
       zoneState: stored === undefined ? def.defaultZoneState : stored,
       setZoneState: (next) => setZoneState(zoneId, next as unknown),
       width,

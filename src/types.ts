@@ -116,8 +116,13 @@ export interface ZoneRenderProps<S = unknown> {
    */
   hoveredSubtreeIds: ReadonlySet<NodeId>;
   selectedNodeId: NodeId | null;
+  collapsedNodeIds: ReadonlySet<NodeId>;
+  prunedNodeIds: ReadonlySet<NodeId>;
   onHoverNode: (id: NodeId | null) => void;
   onSelectNode: (id: NodeId) => void;
+  onClearSelection: () => void;
+  onToggleCollapsed: (id: NodeId) => void;
+  onTogglePruned: (id: NodeId) => void;
   zoneState: S;
   setZoneState: (next: S | ((prev: S) => S)) => void;
   width: number;
