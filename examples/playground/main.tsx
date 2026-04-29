@@ -1,10 +1,11 @@
 import { StrictMode, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TBrowse, createStubZone, labelsZone, treeZone, type ViewState } from 'tbrowse';
+import { TBrowse, labelsZone, msaZone, treeZone, type ViewState } from 'tbrowse';
 import {
   largeSampleTree,
   sampleGeneMetadata,
   sampleGoProvider,
+  sampleMSA,
   sampleTaxonomy,
   sampleTree,
 } from './sampleTree';
@@ -16,7 +17,7 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
     prunedNodeIds: [],
     zones: zoneIds.map((id, i) => ({
       id,
-      width: [280, 220, 320][i] ?? 200,
+      width: [280, 220, 360][i] ?? 200,
       visible: true,
     })),
     zoneStates: {},
@@ -25,19 +26,7 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
 }
 
 function App() {
-  const zones = useMemo(
-    () => [
-      treeZone,
-      labelsZone,
-      createStubZone({
-        id: 'msa-stub',
-        displayName: 'MSA (stub)',
-        defaultWidth: 320,
-        contentWidth: 1400,
-      }),
-    ],
-    [],
-  );
+  const zones = useMemo(() => [treeZone, labelsZone, msaZone], []);
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
   const [tree, setTree] = useState(sampleTree);
@@ -70,6 +59,7 @@ function App() {
           tree={tree}
           taxonomy={sampleTaxonomy}
           geneMetadata={sampleGeneMetadata}
+          msa={sampleMSA}
           labelProviders={[sampleGoProvider]}
           zones={zones}
           viewState={viewState}

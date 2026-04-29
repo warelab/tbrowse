@@ -1,4 +1,4 @@
-import type { GeneMetadata, LabelProvider, Taxonomy, Tree, TreeNode } from 'tbrowse';
+import type { GeneMetadata, LabelProvider, MSA, Taxonomy, Tree, TreeNode } from 'tbrowse';
 
 export const sampleTree: Tree = {
   rootId: 'n0',
@@ -31,6 +31,21 @@ export const sampleTaxonomy: Taxonomy = {
   9606:  { scientificName: 'Homo sapiens', commonName: 'Human' },
   10090: { scientificName: 'Mus musculus', commonName: 'Mouse' },
   10116: { scientificName: 'Rattus norvegicus', commonName: 'Rat' },
+};
+
+// Sample MSA: short hand-written protein alignment for the five sample genes.
+// Real Ensembl alignments would be hundreds of columns; this is enough to
+// exercise the canvas renderer at small scale.
+export const sampleMSA: MSA = {
+  alphabet: 'protein',
+  length: 60,
+  sequences: {
+    ENSG00000000001:    'MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP',
+    ENSPTRG00000001:    'MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP',
+    ENSMUSG00000001:    'MTAMEESQSDISLELPLSQETFSGLWKLLPPEDILPSPHCMDDLLLPQDVEEFFEGPSEA',
+    ENSRNOG00000001:    'MEDSQSDMSI-ELPLSQETFSDLWKLLPPNNVLSTLPSSDSIEELFLPRSDIDQWLSEDR',
+    ENSDARG00000001:    'MAQEPQSDLSIEPPLSQETFSELWNLLSPDSIPSSCSMHEALL------------ESVN',
+  },
 };
 
 // Sample label provider that simulates an async fetch (~600ms latency).

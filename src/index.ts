@@ -4,6 +4,7 @@ export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
 export { treeZone } from './zones/tree/Tree';
 export { labelsZone, type LabelsZoneState } from './zones/labels/Labels';
+export { msaZone, type MSAZoneState } from './zones/msa/MSA';
 export {
   builtInFields,
   providerFields,
