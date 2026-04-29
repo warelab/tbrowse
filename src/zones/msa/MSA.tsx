@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MSA, ZoneDefinition, ZoneRenderProps } from '../../types';
+import { Minimap } from './Minimap';
 
 export interface MSAZoneState {
   /** First column (inclusive) of the visible viewport. */
@@ -31,9 +32,20 @@ function resolveViewport(state: MSAZoneState, msa: MSA): ResolvedViewport {
   return { start: 0, end: msa.length, width: Math.max(1, msa.length) };
 }
 
-const MSAHeader = ({ data, zoneState }: ZoneRenderProps<MSAZoneState>) => {
+const MSAHeader = ({
+  data,
+  zoneState,
+  setZoneState,
+}: ZoneRenderProps<MSAZoneState>) => {
   const msa = data.msa;
   const vp = msa ? resolveViewport(zoneState, msa) : null;
+
+  const setViewport = useCallback(
+    (start: number, end: number) =>
+      setZoneState((s) => ({ ...s, viewportStart: start, viewportEnd: end })),
+    [setZoneState],
+  );
+
   return (
     <div
       style={{
@@ -50,9 +62,17 @@ const MSAHeader = ({ data, zoneState }: ZoneRenderProps<MSAZoneState>) => {
       {msa && vp && (
         <>
           <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{msa.alphabet}</span>
-          <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>
-            cols {vp.start + 1}–{vp.end} / {msa.length}
+          <span
+            style={{
+              fontWeight: 400,
+              color: '#888',
+              fontSize: 11,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {vp.start + 1}–{vp.end} / {msa.length}
           </span>
+          <Minimap msa={msa} vp={vp} onSetViewport={setViewport} />
         </>
       )}
     </div>
@@ -65,6 +85,7 @@ const MSABody = ({
   rowRange,
   width,
   zoneState,
+  setZoneState,
   hoveredNodeId,
   hoveredSubtreeIds,
   selectedNodeId,
@@ -73,6 +94,7 @@ const MSABody = ({
 }: ZoneRenderProps<MSAZoneState>) => {
   const msa = data.msa;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const totalHeight = useMemo(
     () =>
@@ -151,6 +173,53 @@ const MSABody = ({
     data.tree,
   ]);
 
+  // Wheel handler: deltaX → pan, ctrl/shift + deltaY → zoom centred on cursor.
+  // Has to be attached via native addEventListener (passive: false) because
+  // React's synthetic onWheel is passive and can't preventDefault.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !msa) return;
+    const handler = (e: WheelEvent) => {
+      const vp = resolveViewport(zoneState, msa);
+      const innerWidth = Math.max(1, width - 2 * PAD_X);
+      const length = vp.end - vp.start;
+
+      if (e.ctrlKey || e.shiftKey) {
+        e.preventDefault();
+        const rect = el.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left - PAD_X;
+        const clamped = Math.max(0, Math.min(innerWidth, cursorX));
+        const cursorCol = vp.start + (clamped / innerWidth) * length;
+        const factor = Math.exp(e.deltaY * 0.002);
+        let newLength = Math.round(length * factor);
+        newLength = Math.max(2, Math.min(msa.length, newLength));
+        let newStart = Math.round(cursorCol - (clamped / innerWidth) * newLength);
+        newStart = Math.max(0, Math.min(msa.length - newLength, newStart));
+        setZoneState((s) => ({
+          ...s,
+          viewportStart: newStart,
+          viewportEnd: newStart + newLength,
+        }));
+        return;
+      }
+
+      if (e.deltaX !== 0) {
+        e.preventDefault();
+        const panSpeed = length / innerWidth;
+        let newStart = Math.round(vp.start + e.deltaX * panSpeed);
+        newStart = Math.max(0, Math.min(msa.length - length, newStart));
+        if (newStart === vp.start) return;
+        setZoneState((s) => ({
+          ...s,
+          viewportStart: newStart,
+          viewportEnd: newStart + length,
+        }));
+      }
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [msa, width, zoneState.viewportStart, zoneState.viewportEnd, setZoneState]);
+
   if (!msa) {
     return (
       <div style={{ padding: '8px 10px', fontSize: 12, color: '#888' }}>
@@ -162,7 +231,7 @@ const MSABody = ({
   // Render row-aligned hit overlays (for hover/select) on top of the canvas.
   const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
   return (
-    <>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <canvas
         ref={canvasRef}
         style={{
@@ -203,7 +272,7 @@ const MSABody = ({
           />
         );
       })}
-    </>
+    </div>
   );
 };
 
