@@ -79,8 +79,9 @@ const TreeBody = ({
 
   // Pruned-node stub glyphs: one per pruned id, anchored at the closest
   // visible ancestor. Each stub is a tiny L-shaped dashed branch (vertical
-  // then horizontal) ending in an open-square mark. Multiple stubs sharing
-  // an anchor fan out alternately above and below.
+  // then horizontal) ending in an open-square mark. All stubs at an anchor
+  // sit on the same side (below the anchor's lowest visible child),
+  // stacking downward for multi-prune cases.
   const prunedStubs = useMemo(() => {
     const byAnchor = new Map<NodeId, NodeId[]>();
     for (const prunedId of prunedNodeIds) {
@@ -110,13 +111,17 @@ const TreeBody = ({
     for (const [anchorId, ids] of byAnchor) {
       const anchor = byId.get(anchorId);
       if (!anchor) continue;
+      // Park stubs below the anchor's lowest visible descendant-line so they
+      // never collide with existing branches.
+      const visibleChildYs = (fullChildrenIndex.get(anchorId) ?? [])
+        .map((cid) => byId.get(cid))
+        .filter((n): n is TreeLayoutNode => n !== undefined)
+        .map((n) => n.y);
+      const baseY =
+        (visibleChildYs.length > 0 ? Math.max(...visibleChildYs) : anchor.y) + 8;
+      const horizontalLen = 12;
       ids.forEach((prunedId, i) => {
-        // i = 0 → down; i = 1 → up; i = 2 → down further; ...
-        const slot = Math.ceil((i + 1) / 2);
-        const dir = i % 2 === 0 ? 1 : -1;
-        const verticalLen = 5 + (slot - 1) * 8;
-        const horizontalLen = 12;
-        const verticalY = anchor.y + dir * verticalLen;
+        const verticalY = baseY + i * 8;
         const horizontalX = anchor.x + horizontalLen;
         stubs.push({
           prunedId,
@@ -131,7 +136,7 @@ const TreeBody = ({
       });
     }
     return stubs;
-  }, [prunedNodeIds, data.tree, byId]);
+  }, [prunedNodeIds, data.tree, byId, fullChildrenIndex]);
 
   const isHighlighted = (nodeId: NodeId): boolean =>
     hoveredSubtreeIds.has(nodeId) || ancestorsHighlight.has(nodeId);
