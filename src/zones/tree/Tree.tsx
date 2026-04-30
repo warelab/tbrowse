@@ -43,7 +43,31 @@ function collapsedTriangleHeight(leafCount: number): number {
   return Math.max(COLLAPSED_TRIANGLE_MIN_H, Math.min(COLLAPSED_TRIANGLE_MAX_H, h));
 }
 
-type TreeZoneState = Record<string, never>;
+/**
+ * Visual style used when rendering "pruned-branch" markers — the little
+ * affordances dangling off an anchor branch where the user has hidden a
+ * subtree. The default `'square'` is the original look (hollow square at
+ * the end of a dashed L-bend); the other options are alternatives we're
+ * trialling — see the playground dropdown for live previews.
+ */
+export type PrunedNodeStyle =
+  | 'square'
+  | 'triangle'
+  | 'cap'
+  | 'slash'
+  | 'scissors'
+  | 'ellipsis'
+  | 'ghost'
+  | 'minitree'
+  | 'count'
+  | 'broken'
+  | 'bracket';
+
+export interface TreeZoneState {
+  prunedNodeStyle?: PrunedNodeStyle;
+}
+
+const DEFAULT_PRUNED_STYLE: PrunedNodeStyle = 'triangle';
 
 const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => {
   const hoveredInfo = useMemo(
@@ -146,7 +170,9 @@ const TreeBody = ({
   onExpandSubtree,
   onMakeNodeOfInterest,
   onShowParalogs,
+  zoneState,
 }: ZoneRenderProps<TreeZoneState>) => {
+  const prunedNodeStyle = zoneState.prunedNodeStyle ?? DEFAULT_PRUNED_STYLE;
   const drawingWidth = Math.max(0, width - LEFT_PAD - RIGHT_PAD);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -201,7 +227,7 @@ const TreeBody = ({
   // regrow back to — based on its position in the anchor's original
   // children list.
   const prunedStubs = useMemo(() => {
-    const STUB_OFFSET = 5;
+    const STUB_OFFSET = 6;
     const STUB_STEP = 8;
     const STUB_LEN = 12;
 
@@ -228,6 +254,8 @@ const TreeBody = ({
       stubY: number;
       markX: number;
       markY: number;
+      /** Leaf count of the pruned subtree (used by the "count" style). */
+      leafCount: number;
     };
     const stubs: Stub[] = [];
 
@@ -289,6 +317,7 @@ const TreeBody = ({
           stubY,
           markX: anchor.x + STUB_LEN,
           markY: stubY,
+          leafCount: countLeavesInSubtree(t.prunedId, data.tree, fullChildrenIndex),
         });
       });
       belowSide.forEach((t, j) => {
@@ -300,6 +329,7 @@ const TreeBody = ({
           stubY,
           markX: anchor.x + STUB_LEN,
           markY: stubY,
+          leafCount: countLeavesInSubtree(t.prunedId, data.tree, fullChildrenIndex),
         });
       });
     }
@@ -630,18 +660,22 @@ const TreeBody = ({
             );
           })}
         </g>
-        {/* Selection marker. */}
-        {selectedLayoutNode && (
-          <circle
-            cx={selectedLayoutNode.x}
-            cy={selectedLayoutNode.y}
-            r={SELECT_RADIUS}
-            fill={SELECT_COLOR}
-            stroke="white"
-            strokeWidth={1.5}
-            pointerEvents="none"
-          />
-        )}
+        {/* Selection marker. Skipped for pruned nodes — those already
+            highlight via the stub's own selected-state colour, and an
+            extra circle on top would obscure the marker glyph. */}
+        {selectedLayoutNode &&
+          selectedNodeId !== null &&
+          !prunedNodeIds.has(selectedNodeId) && (
+            <circle
+              cx={selectedLayoutNode.x}
+              cy={selectedLayoutNode.y}
+              r={SELECT_RADIUS}
+              fill={SELECT_COLOR}
+              stroke="white"
+              strokeWidth={1.5}
+              pointerEvents="none"
+            />
+          )}
         {/* Branch hit areas. Top of stack so they win over row rects on
             overlaps. */}
         <g>
@@ -696,8 +730,6 @@ const TreeBody = ({
           {prunedStubs.map((stub) => {
             if (!yInRange(stub.markY) && !yInRange(stub.anchorY)) return null;
             const isSelected = selectedNodeId === stub.prunedId;
-            const stroke = isSelected ? HIGHLIGHT_COLOR : '#888';
-            const markFill = isSelected ? HIGHLIGHT_COLOR : 'white';
             return (
               <g
                 key={`pstub-${stub.prunedId}`}
@@ -707,29 +739,9 @@ const TreeBody = ({
                   onSelectNode(stub.prunedId);
                 }}
               >
-                {/* Tiny dashed L-stub off the anchor's branch: short
-                    vertical down, then horizontal in the original
-                    branch's direction. */}
-                <path
-                  d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${stub.markX} ${stub.stubY}`}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={1}
-                  strokeDasharray="2 2"
-                  pointerEvents="none"
-                />
-                {/* Open-square branch tip. */}
-                <rect
-                  x={stub.markX - 3}
-                  y={stub.markY - 3}
-                  width={6}
-                  height={6}
-                  fill={markFill}
-                  stroke={stroke}
-                  strokeWidth={1}
-                  pointerEvents="none"
-                />
-                {/* Forgiving transparent click target. */}
+                {renderPrunedStub(prunedNodeStyle, stub, isSelected)}
+                {/* Forgiving transparent click target. Centered on the
+                    marker; same r across styles for consistent feel. */}
                 <circle cx={stub.markX} cy={stub.markY} r={9} fill="transparent" />
                 <title>{`Click to inspect pruned subtree (${stub.prunedId})`}</title>
               </g>
@@ -762,6 +774,291 @@ const TreeBody = ({
   );
 };
 
+/**
+ * Render the connector + terminal-mark for a single pruned stub in the
+ * given style. The connector goes from the anchor branch down/up to a
+ * horizontal stub at `stubY`, and the marker sits at (markX, markY).
+ *
+ * Each branch of the switch is independent; styles are easy to add or tweak.
+ */
+function renderPrunedStub(
+  style: PrunedNodeStyle,
+  stub: {
+    prunedId: NodeId;
+    anchorX: number;
+    anchorY: number;
+    stubY: number;
+    markX: number;
+    markY: number;
+    leafCount: number;
+  },
+  isSelected: boolean,
+) {
+  const stroke = isSelected ? HIGHLIGHT_COLOR : '#888';
+  const fill = isSelected ? HIGHLIGHT_COLOR : 'white';
+  const text = isSelected ? HIGHLIGHT_COLOR : '#666';
+  const dashedL = (
+    <path
+      d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${stub.markX} ${stub.stubY}`}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={1}
+      strokeDasharray="2 2"
+      pointerEvents="none"
+    />
+  );
+  const solidL = (
+    <path
+      d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${stub.markX} ${stub.stubY}`}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={1}
+      pointerEvents="none"
+    />
+  );
+  const mx = stub.markX;
+  const my = stub.markY;
+  switch (style) {
+    case 'square':
+      return (
+        <>
+          {dashedL}
+          <rect
+            x={mx - 3}
+            y={my - 3}
+            width={6}
+            height={6}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+        </>
+      );
+    case 'triangle':
+      // Left-pointing isosceles triangle; apex on the left, base on the
+      // right — same orientation as the live collapsed-clade triangles.
+      return (
+        <>
+          {dashedL}
+          <polygon
+            points={`${mx - 4},${my} ${mx + 4},${my - 4} ${mx + 4},${my + 4}`}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+        </>
+      );
+    case 'cap':
+      // Dashed L ending in a short vertical "⊣" cap. No terminal glyph.
+      return (
+        <>
+          {dashedL}
+          <line
+            x1={mx}
+            y1={my - 4}
+            x2={mx}
+            y2={my + 4}
+            stroke={stroke}
+            strokeWidth={1.5}
+            pointerEvents="none"
+          />
+        </>
+      );
+    case 'slash':
+      return (
+        <>
+          {dashedL}
+          <rect
+            x={mx - 3}
+            y={my - 3}
+            width={6}
+            height={6}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+          <line
+            x1={mx - 3}
+            y1={my + 3}
+            x2={mx + 3}
+            y2={my - 3}
+            stroke={stroke}
+            strokeWidth={1.2}
+            pointerEvents="none"
+          />
+        </>
+      );
+    case 'scissors':
+      // Two short crossed strokes forming an "x".
+      return (
+        <>
+          {dashedL}
+          <line
+            x1={mx - 3}
+            y1={my - 3}
+            x2={mx + 3}
+            y2={my + 3}
+            stroke={stroke}
+            strokeWidth={1.4}
+            pointerEvents="none"
+          />
+          <line
+            x1={mx - 3}
+            y1={my + 3}
+            x2={mx + 3}
+            y2={my - 3}
+            stroke={stroke}
+            strokeWidth={1.4}
+            pointerEvents="none"
+          />
+        </>
+      );
+    case 'ellipsis':
+      return (
+        <>
+          {dashedL}
+          <rect
+            x={mx - 6}
+            y={my - 4}
+            width={12}
+            height={8}
+            rx={2}
+            ry={2}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+          <text
+            x={mx}
+            y={my + 0.5}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={8}
+            fontFamily="ui-monospace, monospace"
+            fill={text}
+            pointerEvents="none"
+          >
+            …
+          </text>
+        </>
+      );
+    case 'ghost':
+      // Faint hollow rounded square with low opacity.
+      return (
+        <g opacity={0.45}>
+          {dashedL}
+          <rect
+            x={mx - 4}
+            y={my - 4}
+            width={8}
+            height={8}
+            rx={2}
+            ry={2}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+        </g>
+      );
+    case 'minitree':
+      // 3-prong tree silhouette: a vertical stem with three horizontal
+      // prongs branching off, all in a ~10x10 box.
+      return (
+        <>
+          {dashedL}
+          <g pointerEvents="none">
+            <line x1={mx - 3} y1={my} x2={mx + 1} y2={my} stroke={stroke} strokeWidth={1} />
+            <line x1={mx + 1} y1={my - 4} x2={mx + 1} y2={my + 4} stroke={stroke} strokeWidth={1} />
+            <line x1={mx + 1} y1={my - 4} x2={mx + 4} y2={my - 4} stroke={stroke} strokeWidth={1} />
+            <line x1={mx + 1} y1={my} x2={mx + 4} y2={my} stroke={stroke} strokeWidth={1} />
+            <line x1={mx + 1} y1={my + 4} x2={mx + 4} y2={my + 4} stroke={stroke} strokeWidth={1} />
+          </g>
+        </>
+      );
+    case 'count': {
+      // Auto-width pill that scales to the digit count; centered on markX.
+      const label = String(stub.leafCount);
+      const charW = 5;
+      const w = Math.max(12, label.length * charW + 6);
+      return (
+        <>
+          {dashedL}
+          <rect
+            x={mx - w / 2}
+            y={my - 5}
+            width={w}
+            height={10}
+            rx={5}
+            ry={5}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+          <text
+            x={mx}
+            y={my + 0.5}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={8}
+            fontFamily="ui-monospace, monospace"
+            fontWeight={600}
+            fill={text}
+            pointerEvents="none"
+          >
+            {label}
+          </text>
+        </>
+      );
+    }
+    case 'broken': {
+      // Solid stub that ends in a small jagged "break" (zigzag) — no
+      // terminal glyph, conveys "branch continues but is interrupted".
+      const x0 = stub.markX - 6;
+      const x1 = stub.markX;
+      return (
+        <>
+          {/* L-bend, drawn solid up to the break start. */}
+          <path
+            d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${x0} ${stub.stubY}`}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+          {/* Zigzag spans (x0..x1) at stubY. */}
+          <polyline
+            points={`${x0},${stub.stubY} ${x0 + 1.5},${stub.stubY - 3} ${x0 + 3},${stub.stubY + 3} ${x0 + 4.5},${stub.stubY - 3} ${x1},${stub.stubY + 1}`}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+        </>
+      );
+    }
+    case 'bracket':
+      // Solid L-bend ending in a small right bracket "]".
+      return (
+        <>
+          {solidL}
+          <polyline
+            points={`${mx - 1},${my - 4} ${mx + 3},${my - 4} ${mx + 3},${my + 4} ${mx - 1},${my + 4}`}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.2}
+            pointerEvents="none"
+          />
+        </>
+      );
+  }
+}
+
 export const treeZone: ZoneDefinition<TreeZoneState> = {
   id: 'tree',
   displayName: 'Tree',
@@ -769,6 +1066,6 @@ export const treeZone: ZoneDefinition<TreeZoneState> = {
   Body: TreeBody,
   defaultWidth: 280,
   minWidth: 120,
-  defaultZoneState: {},
+  defaultZoneState: { prunedNodeStyle: DEFAULT_PRUNED_STYLE },
   isAvailable: (data) => Boolean(data.tree),
 };

@@ -34,30 +34,79 @@ const DEFAULT_MASK = { enabled: true, minCoverage: 1, padding: 0, expandedRuns: 
 
 const PAD_X = 4;
 const TEXT_RENDER_MIN_PX = 7;
+/** Protein-only: above this residue width the body switches from single-
+ *  letter to 3-letter amino acid codes. */
+const THREE_LETTER_MIN_PX = 22;
+/** Protein-only zoom cap. The wheel zoom and minimap edge drags clamp the
+ *  viewport so each visible column gets at most this many pixels — i.e.
+ *  enough room to render a 3-letter code (with a sliver of breathing room).
+ *  The future "render codons under each AA" affordance will live in this
+ *  same column footprint. */
+const MAX_RESIDUE_PX_PROTEIN = 28;
 const RESIDUE_COLOR = '#444';
 const RESIDUE_BG_COLOR = '#cfd6df';
 const CONSENSUS_OPACITY = 0.7;
 
-/** Returns the most-common non-gap residue across the given sequences at `col`, or null. */
-function consensusAt(
+/** Single-letter → 3-letter amino acid code. Includes the standard 20 plus
+ *  the IUPAC ambiguity codes and a few uncommon residues. Lookup is upper-
+ *  case; lower-case input is handled at the call site. */
+const AA_THREE_LETTER: Record<string, string> = {
+  A: 'Ala', R: 'Arg', N: 'Asn', D: 'Asp', C: 'Cys',
+  E: 'Glu', Q: 'Gln', G: 'Gly', H: 'His', I: 'Ile',
+  L: 'Leu', K: 'Lys', M: 'Met', F: 'Phe', P: 'Pro',
+  S: 'Ser', T: 'Thr', W: 'Trp', Y: 'Tyr', V: 'Val',
+  B: 'Asx', Z: 'Glx', X: 'Xaa', U: 'Sec', O: 'Pyl',
+};
+
+/** Smallest viewport length (in visible columns) allowed by the zoom cap.
+ *  Returns 2 for non-protein alignments. */
+function minViewportLength(alphabet: MSA['alphabet'], innerWidth: number): number {
+  if (alphabet === 'protein' && innerWidth > 0) {
+    return Math.max(2, Math.ceil(innerWidth / MAX_RESIDUE_PX_PROTEIN));
+  }
+  return 2;
+}
+
+/**
+ * Returns an array of length `msa.length`, one entry per ORIGINAL column,
+ * giving the most-common non-gap residue across the supplied sequences (or
+ * null when every contributor is a gap).
+ *
+ * Caching one of these per (msa, activeGeneIds) lets the header consensus
+ * track and each collapsed-summary row recover its residue in O(1) per
+ * column on subsequent renders, instead of re-counting every visible column
+ * after each mask toggle / scroll / hover.
+ */
+function computeConsensusArray(
   geneIds: readonly GeneId[],
   sequences: MSA['sequences'],
-  col: number,
-): string | null {
-  const counts: Record<string, number> = {};
-  let bestCh: string | null = null;
-  let bestN = 0;
+  length: number,
+): (string | null)[] {
+  const result = new Array<string | null>(length).fill(null);
+  if (geneIds.length === 0) return result;
+  // Pre-resolve sequences once (avoids per-column hash lookups).
+  const seqs: string[] = [];
   for (const id of geneIds) {
-    const ch = sequences[id]?.[col];
-    if (!ch || ch === '-') continue;
-    const n = (counts[ch] ?? 0) + 1;
-    counts[ch] = n;
-    if (n > bestN) {
-      bestN = n;
-      bestCh = ch;
-    }
+    const s = sequences[id];
+    if (s) seqs.push(s);
   }
-  return bestCh;
+  for (let col = 0; col < length; col++) {
+    const counts: Record<string, number> = {};
+    let bestCh: string | null = null;
+    let bestN = 0;
+    for (const s of seqs) {
+      const ch = s[col];
+      if (!ch || ch === '-') continue;
+      const n = (counts[ch] ?? 0) + 1;
+      counts[ch] = n;
+      if (n > bestN) {
+        bestN = n;
+        bestCh = ch;
+      }
+    }
+    result[col] = bestCh;
+  }
+  return result;
 }
 
 /**
@@ -144,21 +193,31 @@ const MSAHeader = ({
   const vp = msa ? resolveViewport(zoneState, totalVisible) : null;
   const headerScheme = msa ? getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet)) : null;
 
-  // Per-visible-column consensus residue + colour, fed to the consensus
-  // track (the "root node consensus" view, scaled to span the whole header
-  // so the body's viewport rectangle can be aligned against it).
+  // Per-original-column consensus residue across every active leaf. The
+  // expensive part (counting residues across geneIds × cols) only re-runs
+  // when the alignment or the active leaf set changes — NOT when the user
+  // pans, toggles a mask run, or switches color schemes.
+  const consensusByCol = useMemo(() => {
+    if (!msa) return null;
+    return computeConsensusArray([...activeGeneIds], msa.sequences, msa.length);
+  }, [msa, activeGeneIds]);
+
+  // Cheap O(visibleCols) projection: pick the residues for the currently
+  // visible columns and apply the active scheme. Re-runs on mask toggles
+  // and scheme changes, but never re-counts residues.
   const consensus = useMemo(() => {
-    if (!msa || !mask) return { residues: [] as (string | null)[], colors: [] as (string | null)[] };
-    const ids = [...activeGeneIds];
+    if (!consensusByCol || !mask) {
+      return { residues: [] as (string | null)[], colors: [] as (string | null)[] };
+    }
     const residues = new Array<string | null>(mask.visibleCols.length);
     const colors = new Array<string | null>(mask.visibleCols.length);
     for (let i = 0; i < mask.visibleCols.length; i++) {
-      const ch = consensusAt(ids, msa.sequences, mask.visibleCols[i]);
+      const ch = consensusByCol[mask.visibleCols[i]] ?? null;
       residues[i] = ch;
       colors[i] = ch ? (headerScheme?.color(ch) ?? '#888') : null;
     }
     return { residues, colors };
-  }, [msa, mask, activeGeneIds, headerScheme]);
+  }, [consensusByCol, mask, headerScheme]);
 
   const setViewport = useCallback(
     (start: number, end: number) =>
@@ -172,6 +231,9 @@ const MSAHeader = ({
   // row reserves room above the minimap by leaving `LEAF_ROW_HEIGHT + gap` of
   // bottom space.
   const minimapWidth = Math.max(0, width - 2 * PAD_X);
+  const minVpLength = msa
+    ? Math.min(totalVisible || Infinity, minViewportLength(msa.alphabet, minimapWidth))
+    : 2;
   return (
     <div
       style={{
@@ -237,6 +299,7 @@ const MSAHeader = ({
             onSetViewport={setViewport}
             height={LEAF_ROW_HEIGHT}
             width={minimapWidth}
+            minLength={minVpLength}
           />
         </div>
       )}
@@ -365,6 +428,24 @@ const MSABody = ({
     };
   }, [data.tree, childrenIndex, msa, activeGeneIds]);
 
+  // Per-collapsed-node consensus residue array, lazily computed on first
+  // access and reused across re-renders. Same invalidation key as
+  // leafGeneIdsByNode (tree / prunes / msa change) so any change that
+  // shifts the active leaf set drops the cache.
+  const consensusByNode = useMemo(() => {
+    const cache = new Map<NodeId, (string | null)[]>();
+    return (rootId: NodeId): (string | null)[] | null => {
+      if (!msa) return null;
+      const cached = cache.get(rootId);
+      if (cached) return cached;
+      const ids = leafGeneIdsByNode(rootId);
+      if (ids.length === 0) return null;
+      const arr = computeConsensusArray(ids, msa.sequences, msa.length);
+      cache.set(rootId, arr);
+      return arr;
+    };
+  }, [msa, leafGeneIdsByNode]);
+
   // Re-paint whenever the inputs that affect the canvas change.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -388,8 +469,15 @@ const MSABody = ({
     const visibleCols = mask ? mask.visibleCols : null;
 
     const renderText = residueWidth >= TEXT_RENDER_MIN_PX;
+    // Above THREE_LETTER_MIN_PX, protein columns get the 3-letter abbreviation
+    // (Ala, Arg, ...) so the wide column doesn't look empty. Future codon
+    // rendering will draw a second line below this one in the same column.
+    const renderThreeLetter =
+      renderText && msa.alphabet === 'protein' && residueWidth >= THREE_LETTER_MIN_PX;
     if (renderText) {
-      ctx.font = '11px ui-monospace, "SF Mono", Menlo, monospace';
+      ctx.font = renderThreeLetter
+        ? '10px ui-monospace, "SF Mono", Menlo, monospace'
+        : '11px ui-monospace, "SF Mono", Menlo, monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
     }
@@ -409,9 +497,9 @@ const MSABody = ({
         const seq = node?.geneId ? msa.sequences[node.geneId] : undefined;
         if (seq) getCh = (col) => seq[col];
       } else if (r.kind === 'collapsedSummary') {
-        const ids = leafGeneIdsByNode(r.nodeId);
-        if (ids.length > 0) {
-          getCh = (col) => consensusAt(ids, msa.sequences, col) ?? undefined;
+        const arr = consensusByNode(r.nodeId);
+        if (arr) {
+          getCh = (col) => arr[col] ?? undefined;
           consensusRow = true;
         }
       }
@@ -432,7 +520,10 @@ const MSABody = ({
           if (!ch || ch === '-') continue;
           ctx.fillStyle = scheme.color(ch) ?? RESIDUE_COLOR;
           const x = PAD_X + (vCol - vp.start + 0.5) * residueWidth;
-          ctx.fillText(ch, x, rowYCenter);
+          const text = renderThreeLetter
+            ? (AA_THREE_LETTER[ch.toUpperCase()] ?? ch)
+            : ch;
+          ctx.fillText(text, x, rowYCenter);
         }
       } else {
         for (let vCol = vp.start; vCol < vp.end; vCol++) {
@@ -461,7 +552,7 @@ const MSABody = ({
     zoneState.viewportEnd,
     zoneState.colorSchemeId,
     data.tree,
-    leafGeneIdsByNode,
+    consensusByNode,
     mask,
     totalVisible,
   ]);
@@ -484,8 +575,9 @@ const MSABody = ({
         const clamped = Math.max(0, Math.min(innerWidth, cursorX));
         const cursorCol = vp.start + (clamped / innerWidth) * length;
         const factor = Math.exp(e.deltaY * 0.002);
+        const minLen = Math.min(totalVisible, minViewportLength(msa.alphabet, innerWidth));
         let newLength = Math.round(length * factor);
-        newLength = Math.max(2, Math.min(totalVisible, newLength));
+        newLength = Math.max(minLen, Math.min(totalVisible, newLength));
         let newStart = Math.round(cursorCol - (clamped / innerWidth) * newLength);
         newStart = Math.max(0, Math.min(totalVisible - newLength, newStart));
         setZoneState((s) => ({

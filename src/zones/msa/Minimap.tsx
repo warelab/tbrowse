@@ -3,6 +3,8 @@ import type { ResolvedViewport } from './MSA';
 
 const VIEWPORT_FILL = 'rgba(40, 120, 220, 0.18)';
 const VIEWPORT_STROKE = 'rgb(54 0 255)';
+/** Pixel width of the draggable edge handles (centered on each viewport edge). */
+const EDGE_HANDLE_WIDTH = 10;
 
 interface MinimapProps {
   /** One entry per visible column: a CSS color for the consensus residue,
@@ -17,6 +19,10 @@ interface MinimapProps {
    *  measuring via ResizeObserver. Use this when the parent wants the minimap
    *  to align pixel-for-pixel with another element (e.g. the MSA body grid). */
   width?: number;
+  /** Minimum viewport length (in columns) the edge-drag handles will allow.
+   *  Defaults to 1. The MSA zone passes a larger value for protein
+   *  alignments to enforce the 3-letter zoom cap. */
+  minLength?: number;
 }
 
 /**
@@ -33,6 +39,7 @@ export function Minimap({
   onSetViewport,
   height,
   width: widthProp,
+  minLength = 1,
 }: MinimapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,6 +125,41 @@ export function Minimap({
     onSetViewport(newStart, newStart + length);
   };
 
+  // Edge-drag handlers. Dragging the left handle moves vp.start (keeping
+  // vp.end pinned); dragging the right handle moves vp.end (keeping vp.start
+  // pinned). The other end stays anchored, so dragging an edge zooms in/out
+  // around that anchor — distinct from dragging the rect body, which pans.
+  const onPointerDownEdge =
+    (side: 'start' | 'end') => (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const initialStart = vp.start;
+      const initialEnd = vp.end;
+      const containerWidth = width;
+      const clampedMin = Math.max(1, Math.min(totalCols, minLength));
+
+      const onMove = (ev: PointerEvent) => {
+        const deltaPx = ev.clientX - startX;
+        const deltaCols = (deltaPx / containerWidth) * totalCols;
+        if (side === 'start') {
+          let newStart = Math.round(initialStart + deltaCols);
+          newStart = Math.max(0, Math.min(initialEnd - clampedMin, newStart));
+          onSetViewport(newStart, initialEnd);
+        } else {
+          let newEnd = Math.round(initialEnd + deltaCols);
+          newEnd = Math.max(initialStart + clampedMin, Math.min(totalCols, newEnd));
+          onSetViewport(initialStart, newEnd);
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    };
+
   return (
     <div
       ref={containerRef}
@@ -156,6 +198,32 @@ export function Minimap({
           outlineOffset: 0,
           cursor: 'grab',
           boxSizing: 'border-box',
+        }}
+      />
+      {/* Left/right edge grab handles for zoom-by-edge-drag. Centered on the
+          viewport outline; rendered as siblings of the rect (rather than
+          children) so their pointerdown doesn't bubble through the pan
+          handler. */}
+      <div
+        onPointerDown={onPointerDownEdge('start')}
+        style={{
+          position: 'absolute',
+          left: vpStartPx - EDGE_HANDLE_WIDTH / 2,
+          top: 0,
+          width: EDGE_HANDLE_WIDTH,
+          height: '100%',
+          cursor: 'ew-resize',
+        }}
+      />
+      <div
+        onPointerDown={onPointerDownEdge('end')}
+        style={{
+          position: 'absolute',
+          left: vpStartPx + vpWidthPx - EDGE_HANDLE_WIDTH / 2,
+          top: 0,
+          width: EDGE_HANDLE_WIDTH,
+          height: '100%',
+          cursor: 'ew-resize',
         }}
       />
     </div>

@@ -8,7 +8,11 @@ export { computePivotState, type PivotState } from './pivot';
 export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
 export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
-export { treeZone } from './zones/tree/Tree';
+export {
+  treeZone,
+  type TreeZoneState,
+  type PrunedNodeStyle,
+} from './zones/tree/Tree';
 export { labelsZone, type LabelsZoneState } from './zones/labels/Labels';
 export { msaZone, type MSAZoneState } from './zones/msa/MSA';
 export {

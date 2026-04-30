@@ -8,8 +8,23 @@ import {
   msaZone,
   treeZone,
   type FromEnsemblResult,
+  type PrunedNodeStyle,
   type ViewState,
 } from 'tbrowse';
+
+const PRUNED_STYLES: { id: PrunedNodeStyle; label: string }[] = [
+  { id: 'square', label: 'Square' },
+  { id: 'triangle', label: 'Triangle (default)' },
+  { id: 'cap', label: 'Cap (⊣ cut-stub)' },
+  { id: 'slash', label: 'Slash (suppressed)' },
+  { id: 'scissors', label: 'Scissors (cut mark)' },
+  { id: 'ellipsis', label: 'Ellipsis (…)' },
+  { id: 'ghost', label: 'Ghost (faint)' },
+  { id: 'minitree', label: 'Mini subtree' },
+  { id: 'count', label: 'Count badge' },
+  { id: 'broken', label: 'Broken branch' },
+  { id: 'bracket', label: 'Bracket (])' },
+];
 import {
   largeSampleTree,
   sampleGeneMetadata,
@@ -102,6 +117,18 @@ function App() {
     setViewState((vs) => ({ ...vs, prunedNodeIds: ids }));
   const reset = () => setViewState(buildInitialViewState(zoneIds));
 
+  const prunedStyle =
+    ((viewState.zoneStates.tree as { prunedNodeStyle?: PrunedNodeStyle } | undefined)
+      ?.prunedNodeStyle) ?? 'triangle';
+  const setPrunedStyle = (next: PrunedNodeStyle) =>
+    setViewState((vs) => ({
+      ...vs,
+      zoneStates: {
+        ...vs.zoneStates,
+        tree: { ...(vs.zoneStates.tree ?? {}), prunedNodeStyle: next },
+      },
+    }));
+
   const pivotTo = (identifier: string) => {
     const treeForPivot = dataSource === 'sample' ? tree : ensemblData?.tree;
     if (!treeForPivot) return;
@@ -183,6 +210,19 @@ function App() {
               </button>
             </>
           )}
+        </span>
+        <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
+          pruned-mark:&nbsp;
+          <select
+            value={prunedStyle}
+            onChange={(e) => setPrunedStyle(e.target.value as PrunedNodeStyle)}
+          >
+            {PRUNED_STYLES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
         </span>
         <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
           selected: {viewState.selectedNodeId ?? '—'}
