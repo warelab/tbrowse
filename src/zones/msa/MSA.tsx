@@ -1,28 +1,85 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { MSA, ZoneDefinition, ZoneRenderProps } from '../../types';
+import { buildChildrenIndex, subtreeIdsOf } from '../../treeIndex';
+import type { GeneId, MSA, NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
 import {
   applicableSchemes,
   defaultSchemeFor,
   getScheme,
   type ColorSchemeId,
 } from './coloring';
+import { computeMSAMask, unmaskedMSA, type MSAMask } from './mask';
+import { MaskPanel } from './MaskPanel';
 import { Minimap } from './Minimap';
 
 export interface MSAZoneState {
-  /** First column (inclusive) of the visible viewport. */
+  /** First visible-column (inclusive) of the viewport. */
   viewportStart: number;
-  /** Last column (exclusive). When <= viewportStart, treat as "full alignment". */
+  /** Last visible-column (exclusive). When <= viewportStart, treat as "full alignment". */
   viewportEnd: number;
   /** Optional. Falls back to defaultSchemeFor(alphabet) when undefined. */
   colorSchemeId?: ColorSchemeId;
+  /** Mask parameters. When undefined, defaults are used. */
+  mask?: { enabled: boolean; minCoverage: number; padding: number };
 }
 
 const DEFAULT_STATE: MSAZoneState = { viewportStart: 0, viewportEnd: 0 };
+const DEFAULT_MASK = { enabled: true, minCoverage: 1, padding: 5 };
 
 const PAD_X = 4;
 const TEXT_RENDER_MIN_PX = 7;
 const RESIDUE_COLOR = '#444';
 const RESIDUE_BG_COLOR = '#cfd6df';
+const CONSENSUS_OPACITY = 0.7;
+
+/** Returns the most-common non-gap residue across the given sequences at `col`, or null. */
+function consensusAt(
+  geneIds: readonly GeneId[],
+  sequences: MSA['sequences'],
+  col: number,
+): string | null {
+  const counts: Record<string, number> = {};
+  let bestCh: string | null = null;
+  let bestN = 0;
+  for (const id of geneIds) {
+    const ch = sequences[id]?.[col];
+    if (!ch || ch === '-') continue;
+    const n = (counts[ch] ?? 0) + 1;
+    counts[ch] = n;
+    if (n > bestN) {
+      bestN = n;
+      bestCh = ch;
+    }
+  }
+  return bestCh;
+}
+
+/**
+ * Walk every leaf in the tree and collect those whose sequence is in the
+ * MSA AND whose ancestor chain contains no pruned node. Used both for the
+ * column-mask coverage and for collapsed-summary consensus.
+ */
+function computeActiveGeneIds(
+  tree: ZoneRenderProps['data']['tree'],
+  msa: MSA,
+  prunedNodeIds: ReadonlySet<NodeId>,
+): Set<GeneId> {
+  const set = new Set<GeneId>();
+  for (const node of Object.values(tree.nodes)) {
+    if (!node.isLeaf || !node.geneId) continue;
+    if (!msa.sequences[node.geneId]) continue;
+    let cur: NodeId | null = node.id;
+    let isPruned = false;
+    while (cur !== null) {
+      if (prunedNodeIds.has(cur)) {
+        isPruned = true;
+        break;
+      }
+      cur = tree.nodes[cur]?.parentId ?? null;
+    }
+    if (!isPruned) set.add(node.geneId);
+  }
+  return set;
+}
 
 interface ResolvedViewport {
   start: number;
@@ -31,22 +88,54 @@ interface ResolvedViewport {
   width: number;
 }
 
-function resolveViewport(state: MSAZoneState, msa: MSA): ResolvedViewport {
+function resolveViewport(state: MSAZoneState, totalCols: number): ResolvedViewport {
   if (state.viewportEnd > state.viewportStart) {
     const start = Math.max(0, state.viewportStart);
-    const end = Math.min(msa.length, state.viewportEnd);
+    const end = Math.min(totalCols, state.viewportEnd);
     return { start, end, width: Math.max(1, end - start) };
   }
-  return { start: 0, end: msa.length, width: Math.max(1, msa.length) };
+  return { start: 0, end: totalCols, width: Math.max(1, totalCols) };
 }
 
 const MSAHeader = ({
   data,
   zoneState,
   setZoneState,
+  prunedNodeIds,
 }: ZoneRenderProps<MSAZoneState>) => {
   const msa = data.msa;
-  const vp = msa ? resolveViewport(zoneState, msa) : null;
+  const maskParams = zoneState.mask ?? DEFAULT_MASK;
+  const activeGeneIds = useMemo(
+    () => (msa ? computeActiveGeneIds(data.tree, msa, prunedNodeIds) : new Set<GeneId>()),
+    [msa, data.tree, prunedNodeIds],
+  );
+  const mask = useMemo<MSAMask | null>(() => {
+    if (!msa) return null;
+    return maskParams.enabled
+      ? computeMSAMask(msa, activeGeneIds, maskParams.minCoverage, maskParams.padding)
+      : unmaskedMSA(msa);
+  }, [msa, activeGeneIds, maskParams.enabled, maskParams.minCoverage, maskParams.padding]);
+  const totalVisible = mask?.visibleCols.length ?? 0;
+  const vp = msa ? resolveViewport(zoneState, totalVisible) : null;
+
+  // Coverage over visible columns only — fed to the minimap.
+  const coverage = useMemo(() => {
+    if (!msa || !mask) return new Float32Array(0);
+    const out = new Float32Array(mask.visibleCols.length);
+    if (activeGeneIds.size === 0) return out;
+    const ids = [...activeGeneIds];
+    const denom = ids.length;
+    for (let i = 0; i < mask.visibleCols.length; i++) {
+      const col = mask.visibleCols[i];
+      let nonGap = 0;
+      for (const id of ids) {
+        const ch = msa.sequences[id]?.[col];
+        if (ch && ch !== '-') nonGap++;
+      }
+      out[i] = nonGap / denom;
+    }
+    return out;
+  }, [msa, mask, activeGeneIds]);
 
   const setViewport = useCallback(
     (start: number, end: number) =>
@@ -78,10 +167,23 @@ const MSAHeader = ({
               whiteSpace: 'nowrap',
             }}
           >
-            {vp.start + 1}–{vp.end} / {msa.length}
+            {vp.start + 1}–{vp.end} / {totalVisible}
+            {mask && totalVisible < msa.length ? ` (of ${msa.length})` : ''}
           </span>
           <SchemeSelect msa={msa} zoneState={zoneState} setZoneState={setZoneState} />
-          <Minimap msa={msa} vp={vp} onSetViewport={setViewport} />
+          <MaskPanel
+            params={maskParams}
+            maxCoverage={activeGeneIds.size}
+            hiddenCols={msa.length - totalVisible}
+            totalCols={msa.length}
+            onChange={(next) => setZoneState((s) => ({ ...s, mask: next }))}
+          />
+          <Minimap
+            coverage={coverage}
+            totalCols={totalVisible}
+            vp={vp}
+            onSetViewport={setViewport}
+          />
         </>
       )}
     </div>
@@ -135,6 +237,7 @@ const MSABody = ({
   hoveredNodeId,
   hoveredSubtreeIds,
   selectedNodeId,
+  prunedNodeIds,
   onHoverNode,
   onSelectNode,
 }: ZoneRenderProps<MSAZoneState>) => {
@@ -149,6 +252,47 @@ const MSABody = ({
         : 0,
     [visibleRows],
   );
+
+  // Active leaves (not under any pruned ancestor) drive both the column mask
+  // and consensus rendering for collapsed-summary rows.
+  const activeGeneIds = useMemo(
+    () => (msa ? computeActiveGeneIds(data.tree, msa, prunedNodeIds) : new Set<GeneId>()),
+    [msa, data.tree, prunedNodeIds],
+  );
+  const maskParams = zoneState.mask ?? DEFAULT_MASK;
+  const mask = useMemo<MSAMask | null>(() => {
+    if (!msa) return null;
+    return maskParams.enabled
+      ? computeMSAMask(msa, activeGeneIds, maskParams.minCoverage, maskParams.padding)
+      : unmaskedMSA(msa);
+  }, [msa, activeGeneIds, maskParams.enabled, maskParams.minCoverage, maskParams.padding]);
+  const totalVisible = mask?.visibleCols.length ?? 0;
+
+  // Pre-compute leaf gene-id sets per collapsed-summary node, restricted to
+  // the active (non-pruned) set. Cache invalidates on tree or prune change.
+  const childrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
+  const leafGeneIdsByNode = useMemo(() => {
+    const cache = new Map<NodeId, GeneId[]>();
+    return (rootId: NodeId): GeneId[] => {
+      const cached = cache.get(rootId);
+      if (cached) return cached;
+      const subtree = subtreeIdsOf(rootId, childrenIndex);
+      const ids: GeneId[] = [];
+      for (const id of subtree) {
+        const node = data.tree.nodes[id];
+        if (
+          node?.isLeaf &&
+          node.geneId &&
+          msa?.sequences[node.geneId] &&
+          activeGeneIds.has(node.geneId)
+        ) {
+          ids.push(node.geneId);
+        }
+      }
+      cache.set(rootId, ids);
+      return ids;
+    };
+  }, [data.tree, childrenIndex, msa, activeGeneIds]);
 
   // Re-paint whenever the inputs that affect the canvas change.
   useEffect(() => {
@@ -166,10 +310,11 @@ const MSABody = ({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, totalHeight);
 
-    const vp = resolveViewport(zoneState, msa);
+    const vp = resolveViewport(zoneState, totalVisible);
     const innerWidth = Math.max(1, width - 2 * PAD_X);
     const residueWidth = innerWidth / vp.width;
     const scheme = getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet));
+    const visibleCols = mask ? mask.visibleCols : null;
 
     const renderText = residueWidth >= TEXT_RENDER_MIN_PX;
     if (renderText) {
@@ -182,38 +327,79 @@ const MSABody = ({
     const endIdx = Math.min(rowRange.endIndex, visibleRows.length);
     for (let i = startIdx; i < endIdx; i++) {
       const r = visibleRows[i];
-      if (r.kind !== 'leaf') continue;
-      const node = data.tree.nodes[r.nodeId];
-      if (!node?.geneId) continue;
-      const seq = msa.sequences[node.geneId];
-      if (!seq) continue;
+
+      // Resolve a "sequence" for this row. Leaves use the host-provided
+      // alignment directly; collapsed summaries fall back to a per-column
+      // consensus across their subtree's (non-pruned) leaves.
+      let getCh: ((col: number) => string | undefined) | null = null;
+      let consensusRow = false;
+      if (r.kind === 'leaf') {
+        const node = data.tree.nodes[r.nodeId];
+        const seq = node?.geneId ? msa.sequences[node.geneId] : undefined;
+        if (seq) getCh = (col) => seq[col];
+      } else if (r.kind === 'collapsedSummary') {
+        const ids = leafGeneIdsByNode(r.nodeId);
+        if (ids.length > 0) {
+          getCh = (col) => consensusAt(ids, msa.sequences, col) ?? undefined;
+          consensusRow = true;
+        }
+      }
+      if (!getCh) continue;
 
       const rowYCenter = r.y + r.height / 2;
-      const rowOpacity = r.opacity ?? 1;
-      const rowTx = -32 * (1 - rowOpacity);
+      const baseOpacity = r.opacity ?? 1;
+      const rowOpacity = consensusRow ? baseOpacity * CONSENSUS_OPACITY : baseOpacity;
+      const rowTx = -32 * (1 - baseOpacity);
       ctx.globalAlpha = rowOpacity;
       ctx.save();
       ctx.translate(rowTx, 0);
       if (renderText) {
-        for (let col = vp.start; col < vp.end; col++) {
-          const ch = seq[col];
+        for (let vCol = vp.start; vCol < vp.end; vCol++) {
+          const oCol = visibleCols ? visibleCols[vCol] : vCol;
+          if (oCol === undefined) continue;
+          const ch = getCh(oCol);
           if (!ch || ch === '-') continue;
           ctx.fillStyle = scheme.color(ch) ?? RESIDUE_COLOR;
-          const x = PAD_X + (col - vp.start + 0.5) * residueWidth;
+          const x = PAD_X + (vCol - vp.start + 0.5) * residueWidth;
           ctx.fillText(ch, x, rowYCenter);
         }
       } else {
-        for (let col = vp.start; col < vp.end; col++) {
-          const ch = seq[col];
+        for (let vCol = vp.start; vCol < vp.end; vCol++) {
+          const oCol = visibleCols ? visibleCols[vCol] : vCol;
+          if (oCol === undefined) continue;
+          const ch = getCh(oCol);
           if (!ch || ch === '-') continue;
           ctx.fillStyle = scheme.color(ch) ?? RESIDUE_BG_COLOR;
-          const x = PAD_X + (col - vp.start) * residueWidth;
+          const x = PAD_X + (vCol - vp.start) * residueWidth;
           ctx.fillRect(x, r.y + 2, Math.max(residueWidth, 0.5), r.height - 4);
         }
       }
       ctx.restore();
     }
     ctx.globalAlpha = 1;
+
+    // Triangle markers for hidden runs that fall inside the viewport. Rendered
+    // at the very top of the canvas (y 0..6) so they sit above the first row;
+    // canvas y=0 is the top of the body, which is just under the sticky header.
+    if (mask && mask.hiddenRuns.length > 0 && visibleCols) {
+      ctx.fillStyle = '#888';
+      ctx.beginPath();
+      // Draw a small downward triangle wherever two adjacent visible columns
+      // (within the viewport) flank a hidden run in the original alignment.
+      for (let vCol = vp.start; vCol + 1 < vp.end; vCol++) {
+        const oCol = visibleCols[vCol];
+        const nextOCol = visibleCols[vCol + 1];
+        if (oCol === undefined || nextOCol === undefined) continue;
+        if (nextOCol > oCol + 1) {
+          const x = PAD_X + (vCol - vp.start + 1) * residueWidth;
+          ctx.moveTo(x - 3.5, 0);
+          ctx.lineTo(x + 3.5, 0);
+          ctx.lineTo(x, 5.5);
+          ctx.closePath();
+        }
+      }
+      ctx.fill();
+    }
   }, [
     msa,
     visibleRows,
@@ -225,6 +411,9 @@ const MSABody = ({
     zoneState.viewportEnd,
     zoneState.colorSchemeId,
     data.tree,
+    leafGeneIdsByNode,
+    mask,
+    totalVisible,
   ]);
 
   // Wheel handler: deltaX → pan, ctrl/shift + deltaY → zoom centred on cursor.
@@ -234,7 +423,7 @@ const MSABody = ({
     const el = containerRef.current;
     if (!el || !msa) return;
     const handler = (e: WheelEvent) => {
-      const vp = resolveViewport(zoneState, msa);
+      const vp = resolveViewport(zoneState, totalVisible);
       const innerWidth = Math.max(1, width - 2 * PAD_X);
       const length = vp.end - vp.start;
 
@@ -246,9 +435,9 @@ const MSABody = ({
         const cursorCol = vp.start + (clamped / innerWidth) * length;
         const factor = Math.exp(e.deltaY * 0.002);
         let newLength = Math.round(length * factor);
-        newLength = Math.max(2, Math.min(msa.length, newLength));
+        newLength = Math.max(2, Math.min(totalVisible, newLength));
         let newStart = Math.round(cursorCol - (clamped / innerWidth) * newLength);
-        newStart = Math.max(0, Math.min(msa.length - newLength, newStart));
+        newStart = Math.max(0, Math.min(totalVisible - newLength, newStart));
         setZoneState((s) => ({
           ...s,
           viewportStart: newStart,
@@ -261,7 +450,7 @@ const MSABody = ({
         e.preventDefault();
         const panSpeed = length / innerWidth;
         let newStart = Math.round(vp.start + e.deltaX * panSpeed);
-        newStart = Math.max(0, Math.min(msa.length - length, newStart));
+        newStart = Math.max(0, Math.min(totalVisible - length, newStart));
         if (newStart === vp.start) return;
         setZoneState((s) => ({
           ...s,
@@ -272,7 +461,7 @@ const MSABody = ({
     };
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
-  }, [msa, width, zoneState.viewportStart, zoneState.viewportEnd, setZoneState]);
+  }, [msa, width, zoneState.viewportStart, zoneState.viewportEnd, totalVisible, setZoneState]);
 
   if (!msa) {
     return (

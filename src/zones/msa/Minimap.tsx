@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MSA } from '../../types';
-import { computeColumnCoverage } from './coverage';
+import { useEffect, useRef, useState } from 'react';
 import type { ResolvedViewport } from './MSA';
 
 const COVERAGE_COLOR = 'rgba(80, 110, 140, 0.85)';
@@ -8,13 +6,22 @@ const VIEWPORT_FILL = 'rgba(40, 120, 220, 0.18)';
 const VIEWPORT_STROKE = '#2878dc';
 
 interface MinimapProps {
-  msa: MSA;
+  /** Per-column coverage in [0,1], one entry per visible column. */
+  coverage: Float32Array;
+  /** Total visible-column count the viewport units operate in (mask-aware). */
+  totalCols: number;
   vp: ResolvedViewport;
   onSetViewport: (start: number, end: number) => void;
   height?: number;
 }
 
-export function Minimap({ msa, vp, onSetViewport, height = 28 }: MinimapProps) {
+export function Minimap({
+  coverage,
+  totalCols,
+  vp,
+  onSetViewport,
+  height = 28,
+}: MinimapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -29,11 +36,9 @@ export function Minimap({ msa, vp, onSetViewport, height = 28 }: MinimapProps) {
     return () => ro.disconnect();
   }, []);
 
-  const coverage = useMemo(() => computeColumnCoverage(msa), [msa]);
-
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || width <= 0) return;
+    if (!canvas || width <= 0 || totalCols <= 0) return;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.floor(width * dpr);
     canvas.height = Math.floor(height * dpr);
@@ -44,10 +49,10 @@ export function Minimap({ msa, vp, onSetViewport, height = 28 }: MinimapProps) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const colWidth = width / msa.length;
+    const colWidth = width / totalCols;
     ctx.fillStyle = COVERAGE_COLOR;
-    for (let c = 0; c < msa.length; c++) {
-      const cov = coverage[c];
+    for (let c = 0; c < totalCols; c++) {
+      const cov = coverage[c] ?? 0;
       if (cov <= 0) continue;
       const barHeight = Math.max(1, cov * (height - 4));
       const x = c * colWidth;
@@ -56,10 +61,11 @@ export function Minimap({ msa, vp, onSetViewport, height = 28 }: MinimapProps) {
       ctx.fillRect(x, y, Math.max(colWidth, 0.5), barHeight);
     }
     ctx.globalAlpha = 1;
-  }, [width, height, msa, coverage]);
+  }, [width, height, totalCols, coverage]);
 
-  const vpStartPx = (vp.start / msa.length) * width;
-  const vpWidthPx = Math.max(2, ((vp.end - vp.start) / msa.length) * width);
+  const vpStartPx = totalCols > 0 ? (vp.start / totalCols) * width : 0;
+  const vpWidthPx =
+    totalCols > 0 ? Math.max(2, ((vp.end - vp.start) / totalCols) * width) : 0;
 
   const onPointerDownRect = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -71,9 +77,9 @@ export function Minimap({ msa, vp, onSetViewport, height = 28 }: MinimapProps) {
 
     const onMove = (ev: PointerEvent) => {
       const deltaPx = ev.clientX - startX;
-      const deltaCols = (deltaPx / containerWidth) * msa.length;
+      const deltaCols = (deltaPx / containerWidth) * totalCols;
       let newStart = Math.round(initialStart + deltaCols);
-      newStart = Math.max(0, Math.min(msa.length - length, newStart));
+      newStart = Math.max(0, Math.min(totalCols - length, newStart));
       onSetViewport(newStart, newStart + length);
     };
     const onUp = () => {
@@ -85,13 +91,13 @@ export function Minimap({ msa, vp, onSetViewport, height = 28 }: MinimapProps) {
   };
 
   const onPointerDownContainer = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!containerRef.current || width <= 0) return;
+    if (!containerRef.current || width <= 0 || totalCols <= 0) return;
     const rect = containerRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const targetCol = Math.round((clickX / width) * msa.length);
+    const targetCol = Math.round((clickX / width) * totalCols);
     const length = vp.end - vp.start;
     let newStart = targetCol - Math.floor(length / 2);
-    newStart = Math.max(0, Math.min(msa.length - length, newStart));
+    newStart = Math.max(0, Math.min(totalCols - length, newStart));
     onSetViewport(newStart, newStart + length);
   };
 
