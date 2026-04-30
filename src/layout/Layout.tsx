@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTBrowseStore } from '../store';
-import { buildChildrenIndex, EMPTY_NODE_ID_SET, subtreeIdsOf } from '../treeIndex';
+import { computePivotState } from '../pivot';
+import {
+  buildChildrenIndex,
+  EMPTY_NODE_ID_SET,
+  subtreeIdsOf,
+} from '../treeIndex';
 import { computeVisibleRows } from '../visibleRows';
 import type {
   HostData,
@@ -244,6 +249,60 @@ export function Layout({ data, zones }: LayoutProps) {
     [setViewState],
   );
 
+  const onExpandSubtree = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        if (vs.collapsedNodeIds.length === 0) return vs;
+        const subtree = subtreeIdsOf(id, childrenIndex);
+        const next = vs.collapsedNodeIds.filter((nodeId) => !subtree.has(nodeId));
+        if (next.length === vs.collapsedNodeIds.length) return vs;
+        return { ...vs, collapsedNodeIds: next };
+      }),
+    [setViewState, childrenIndex],
+  );
+
+  const onMakeNodeOfInterest = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const pivot = computePivotState(data.tree, id);
+        if (!pivot) return vs;
+        // Swap-only pivot: do not touch collapsedNodeIds.
+        return {
+          ...vs,
+          swappedNodeIds: pivot.swappedNodeIds,
+          nodeOfInterestId: pivot.targetId,
+        };
+      }),
+    [setViewState, data.tree],
+  );
+
+  const onShowParalogs = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const target = data.tree.nodes[id];
+        if (!target || target.taxonomyId === undefined) return vs;
+        if (vs.collapsedNodeIds.length === 0) return vs;
+        const collapsedSet = new Set(vs.collapsedNodeIds);
+        let changed = false;
+        for (const node of Object.values(data.tree.nodes)) {
+          if (!node.isLeaf) continue;
+          if (node.taxonomyId !== target.taxonomyId) continue;
+          let cur = node.parentId;
+          while (cur !== null) {
+            if (collapsedSet.has(cur)) {
+              collapsedSet.delete(cur);
+              changed = true;
+            }
+            cur = data.tree.nodes[cur]?.parentId ?? null;
+          }
+        }
+        return changed
+          ? { ...vs, collapsedNodeIds: [...collapsedSet] }
+          : vs;
+      }),
+    [setViewState, data.tree],
+  );
+
   const setZoneState = useCallback(
     (zoneId: string, fallback: unknown, next: unknown | ((prev: unknown) => unknown)) => {
       setViewState((vs) => {
@@ -290,6 +349,10 @@ export function Layout({ data, zones }: LayoutProps) {
       onToggleCollapsed,
       onTogglePruned,
       onToggleSwapped,
+      onExpandSubtree,
+      onMakeNodeOfInterest,
+      onShowParalogs,
+      nodeOfInterestId: viewState.nodeOfInterestId ?? null,
       zoneState: stored === undefined ? def.defaultZoneState : stored,
       setZoneState: (next) => setZoneState(zoneId, def.defaultZoneState, next as unknown),
       width,

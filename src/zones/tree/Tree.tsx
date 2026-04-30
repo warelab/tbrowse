@@ -8,17 +8,21 @@ const LEFT_PAD = 6;
 const RIGHT_PAD = 6;
 
 const BRANCH_COLOR = '#444';
-const BRANCH_WIDTH = 1;
+const BRANCH_WIDTH = 1.5;
 const HIGHLIGHT_COLOR = '#2878dc';
-const HIGHLIGHT_WIDTH = 2;
+const HIGHLIGHT_WIDTH = 2.5;
 const EXTENSION_COLOR = '#bbb';
 const EXTENSION_HIGHLIGHT_COLOR = '#2878dc';
 const SELECT_COLOR = '#f59e0b';
-const HIT_STROKE_WIDTH = 10;
+const SELECT_RADIUS = 5;
+const HIT_STROKE_WIDTH = 12;
 const SPECIATION_COLOR = '#777';
 const DUPLICATION_COLOR = '#c0392b';
-const NODE_GLYPH_RADIUS = 2.5;
-const NODE_GLYPH_SQUARE = 5;
+const NODE_GLYPH_RADIUS = 3.5;
+const NODE_GLYPH_SQUARE = 7;
+// Bootstrap (0..100) maps to opacity multiplier in [BOOTSTRAP_MIN, 1].
+// Lets low-confidence branches fade to ~40% without disappearing entirely.
+const BOOTSTRAP_OPACITY_MIN = 0.4;
 const COLLAPSED_TRIANGLE_WIDTH = 18;
 const COLLAPSED_TRIANGLE_MIN_H = 8;
 const COLLAPSED_TRIANGLE_MAX_H = 22;
@@ -61,12 +65,16 @@ const TreeBody = ({
   collapsedNodeIds,
   prunedNodeIds,
   swappedNodeIds,
+  nodeOfInterestId,
   onHoverNode,
   onSelectNode,
   onClearSelection,
   onToggleCollapsed,
   onTogglePruned,
   onToggleSwapped,
+  onExpandSubtree,
+  onMakeNodeOfInterest,
+  onShowParalogs,
 }: ZoneRenderProps<TreeZoneState>) => {
   const drawingWidth = Math.max(0, width - LEFT_PAD - RIGHT_PAD);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -230,6 +238,14 @@ const TreeBody = ({
   const isHighlighted = (nodeId: NodeId): boolean =>
     hoveredSubtreeIds.has(nodeId) || ancestorsHighlight.has(nodeId);
 
+  /** Confidence factor in [BOOTSTRAP_OPACITY_MIN, 1] from a node's bootstrap. */
+  const bootstrapFactor = (nodeId: NodeId): number => {
+    const bs = data.tree.nodes[nodeId]?.bootstrap;
+    if (bs === undefined) return 1;
+    const t = Math.max(0, Math.min(100, bs)) / 100;
+    return BOOTSTRAP_OPACITY_MIN + (1 - BOOTSTRAP_OPACITY_MIN) * t;
+  };
+
   if (layout.nodes.length === 0) return null;
 
   const totalHeight =
@@ -265,6 +281,24 @@ const TreeBody = ({
     selectedNodeId !== null && selectedTreeNode && !selectedTreeNode.isLeaf
       ? countLeavesInSubtree(selectedNodeId, data.tree, fullChildrenIndex)
       : 0;
+
+  // For the tooltip's "Expand all" affordance: does the selected node's
+  // subtree contain any currently-collapsed internal node? Only relevant
+  // when the selected node itself is internal and not currently collapsed.
+  const selectedHasCollapsedDescendants = useMemo(() => {
+    if (selectedNodeId === null) return false;
+    if (!selectedTreeNode || selectedTreeNode.isLeaf) return false;
+    if (collapsedNodeIds.has(selectedNodeId)) return false;
+    if (collapsedNodeIds.size === 0) return false;
+    const stack: NodeId[] = [...(fullChildrenIndex.get(selectedNodeId) ?? [])];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (collapsedNodeIds.has(id)) return true;
+      const kids = fullChildrenIndex.get(id);
+      if (kids) for (const k of kids) stack.push(k);
+    }
+    return false;
+  }, [selectedNodeId, selectedTreeNode, collapsedNodeIds, fullChildrenIndex]);
 
   return (
     <>
@@ -327,7 +361,7 @@ const TreeBody = ({
                 stroke={hl ? HIGHLIGHT_COLOR : BRANCH_COLOR}
                 strokeWidth={hl ? HIGHLIGHT_WIDTH : BRANCH_WIDTH}
                 fill="none"
-                opacity={opacity}
+                opacity={opacity * bootstrapFactor(child.nodeId)}
               />
             );
           })}
@@ -359,7 +393,7 @@ const TreeBody = ({
                 stroke={hl ? EXTENSION_HIGHLIGHT_COLOR : EXTENSION_COLOR}
                 strokeWidth={hl ? 1.5 : 1}
                 strokeDasharray="2 3"
-                opacity={opacity}
+                opacity={opacity * bootstrapFactor(n.nodeId)}
               />
             );
           })}
@@ -409,6 +443,7 @@ const TreeBody = ({
             const opacity = opacityById.get(n.nodeId) ?? 1;
             const parent = n.parentId !== null ? byId.get(n.parentId) : null;
             const glyphX = parent ? parent.x + (n.x - parent.x) * opacity : n.x;
+            const finalOpacity = opacity * bootstrapFactor(n.nodeId);
             const isDuplication = treeNode.eventType === 'duplication';
             if (isDuplication) {
               return (
@@ -419,9 +454,9 @@ const TreeBody = ({
                   width={NODE_GLYPH_SQUARE}
                   height={NODE_GLYPH_SQUARE}
                   fill={DUPLICATION_COLOR}
-                  opacity={opacity}
+                  opacity={finalOpacity}
                 >
-                  <title>duplication</title>
+                  <title>{`duplication${treeNode.bootstrap !== undefined ? ` · bootstrap ${treeNode.bootstrap}` : ''}`}</title>
                 </rect>
               );
             }
@@ -432,9 +467,9 @@ const TreeBody = ({
                 cy={n.y}
                 r={NODE_GLYPH_RADIUS}
                 fill={SPECIATION_COLOR}
-                opacity={opacity}
+                opacity={finalOpacity}
               >
-                <title>{treeNode.eventType ?? 'speciation'}</title>
+                <title>{`${treeNode.eventType ?? 'speciation'}${treeNode.bootstrap !== undefined ? ` · bootstrap ${treeNode.bootstrap}` : ''}`}</title>
               </circle>
             );
           })}
@@ -444,7 +479,7 @@ const TreeBody = ({
           <circle
             cx={selectedLayoutNode.x}
             cy={selectedLayoutNode.y}
-            r={4}
+            r={SELECT_RADIUS}
             fill={SELECT_COLOR}
             stroke="white"
             strokeWidth={1.5}
@@ -532,11 +567,16 @@ const TreeBody = ({
           data={data}
           isCollapsed={collapsedNodeIds.has(selectedNodeId)}
           isPruned={prunedNodeIds.has(selectedNodeId)}
+          isNodeOfInterest={nodeOfInterestId === selectedNodeId}
           subtreeLeafCount={selectedSubtreeLeafCount}
+          hasCollapsedDescendants={selectedHasCollapsedDescendants}
           onClose={onClearSelection}
           onToggleCollapsed={onToggleCollapsed}
           onTogglePruned={onTogglePruned}
           onToggleSwapped={onToggleSwapped}
+          onExpandSubtree={onExpandSubtree}
+          onMakeNodeOfInterest={onMakeNodeOfInterest}
+          onShowParalogs={onShowParalogs}
         />
       )}
     </>

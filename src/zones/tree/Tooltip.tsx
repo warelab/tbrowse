@@ -17,11 +17,16 @@ export interface TooltipProps {
   data: HostData;
   isCollapsed: boolean;
   isPruned: boolean;
+  isNodeOfInterest: boolean;
   subtreeLeafCount: number;
+  hasCollapsedDescendants: boolean;
   onClose: () => void;
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
   onToggleSwapped: (id: NodeId) => void;
+  onExpandSubtree: (id: NodeId) => void;
+  onMakeNodeOfInterest: (id: NodeId) => void;
+  onShowParalogs: (id: NodeId) => void;
 }
 
 export function Tooltip({
@@ -31,11 +36,16 @@ export function Tooltip({
   data,
   isCollapsed,
   isPruned,
+  isNodeOfInterest,
   subtreeLeafCount,
+  hasCollapsedDescendants,
   onClose,
   onToggleCollapsed,
   onTogglePruned,
   onToggleSwapped,
+  onExpandSubtree,
+  onMakeNodeOfInterest,
+  onShowParalogs,
 }: TooltipProps) {
   const screenPos = useTrackedScreenPos(svgRef, layoutNode.x, layoutNode.y);
 
@@ -53,7 +63,11 @@ export function Tooltip({
   const tax = treeNode.taxonomyId !== undefined ? data.taxonomy?.[treeNode.taxonomyId] : undefined;
 
   const isInternal = !treeNode.isLeaf;
+  const isLeaf = treeNode.isLeaf;
   const canCollapseExpand = isInternal && !isPruned;
+  const canShowParalogs =
+    isLeaf && isNodeOfInterest && treeNode.taxonomyId !== undefined && !isPruned;
+  const canMakeNodeOfInterest = isLeaf && !isNodeOfInterest && !isPruned;
 
   return createPortal(
     <div
@@ -132,11 +146,38 @@ export function Tooltip({
             }}
           />
         )}
+        {isInternal && !isPruned && !isCollapsed && hasCollapsedDescendants && (
+          <ActionButton
+            label="Expand all"
+            onClick={() => {
+              onExpandSubtree(layoutNode.nodeId);
+              onClose();
+            }}
+          />
+        )}
         {isInternal && !isPruned && !isCollapsed && (
           <ActionButton
             label="Swap children"
             onClick={() => {
               onToggleSwapped(layoutNode.nodeId);
+              onClose();
+            }}
+          />
+        )}
+        {canMakeNodeOfInterest && (
+          <ActionButton
+            label="Make node of interest"
+            onClick={() => {
+              onMakeNodeOfInterest(layoutNode.nodeId);
+              onClose();
+            }}
+          />
+        )}
+        {canShowParalogs && (
+          <ActionButton
+            label="Show paralogs"
+            onClick={() => {
+              onShowParalogs(layoutNode.nodeId);
               onClose();
             }}
           />

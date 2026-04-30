@@ -17,6 +17,7 @@ const baseDefaults: ViewState = {
   collapsedNodeIds: [],
   prunedNodeIds: [],
   swappedNodeIds: [],
+  nodeOfInterestId: null,
   zones: [],
   zoneStates: {},
   search: null,
@@ -38,11 +39,13 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
 
   let collapsedFromPivot: NodeId[] = [];
   let swappedFromPivot: NodeId[] = [];
+  let nodeOfInterestId: NodeId | null = null;
   if (props.nodeOfInterest) {
     const pivot = computePivotState(props.tree, props.nodeOfInterest);
     if (pivot) {
       collapsedFromPivot = pivot.collapsedNodeIds;
       swappedFromPivot = pivot.swappedNodeIds;
+      nodeOfInterestId = pivot.targetId;
     }
   }
 
@@ -50,6 +53,7 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     ...baseDefaults,
     collapsedNodeIds: collapsedFromPivot,
     swappedNodeIds: swappedFromPivot,
+    nodeOfInterestId,
     zones: props.zones.map((z) => ({
       id: z.id,
       width: z.defaultWidth,

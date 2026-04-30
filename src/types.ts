@@ -75,6 +75,8 @@ export interface ViewState {
   prunedNodeIds: NodeId[];
   /** Internal nodes whose children are rendered in reversed order. */
   swappedNodeIds: NodeId[];
+  /** The leaf id designated as "node of interest". */
+  nodeOfInterestId: NodeId | null;
   zones: ZoneViewState[];
   /**
    * Per-zone state, keyed by zone id. Built-in zones use well-known keys
@@ -133,6 +135,20 @@ export interface ZoneRenderProps<S = unknown> {
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
   onToggleSwapped: (id: NodeId) => void;
+  /** Remove every descendant of `id` from collapsedNodeIds. */
+  onExpandSubtree: (id: NodeId) => void;
+  /**
+   * Designate `id` as the new node of interest. Swaps ancestors so the
+   * leaf sits at the top of the display; does not collapse any branches.
+   */
+  onMakeNodeOfInterest: (id: NodeId) => void;
+  /**
+   * Uncollapse any ancestor that hides a leaf whose taxonomyId matches
+   * the leaf at `id`. Pruned leaves are not touched.
+   */
+  onShowParalogs: (id: NodeId) => void;
+  /** Resolved id of the current node of interest (null until set). */
+  nodeOfInterestId: NodeId | null;
   zoneState: S;
   setZoneState: (next: S | ((prev: S) => S)) => void;
   width: number;

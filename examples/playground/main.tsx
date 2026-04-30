@@ -28,6 +28,7 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
     collapsedNodeIds: [],
     prunedNodeIds: [],
     swappedNodeIds: [],
+    nodeOfInterestId: null,
     zones: zoneIds.map((id, i) => ({
       id,
       width: [280, 220, 360][i] ?? 200,
@@ -61,6 +62,7 @@ function App() {
             ...initial,
             collapsedNodeIds: pivot.collapsedNodeIds,
             swappedNodeIds: pivot.swappedNodeIds,
+            nodeOfInterestId: pivot.targetId,
           }
         : initial,
     );
@@ -109,6 +111,7 @@ function App() {
       ...buildInitialViewState(zoneIds),
       collapsedNodeIds: pivot.collapsedNodeIds,
       swappedNodeIds: pivot.swappedNodeIds,
+      nodeOfInterestId: pivot.targetId,
       zones: vs.zones,
       zoneStates: vs.zoneStates,
     }));
