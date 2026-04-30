@@ -58,6 +58,7 @@ const TreeHeader = ({ width }: ZoneRenderProps<TreeZoneState>) => (
 const TreeBody = ({
   data,
   visibleRows,
+  rowRange,
   width,
   hoveredNodeId,
   hoveredSubtreeIds,
@@ -255,6 +256,25 @@ const TreeBody = ({
 
   const extensionEndX = width - 1;
 
+  // Virtualization: only render branches/glyphs that intersect the visible
+  // y-range. The chassis already supplies rowRange (with its own overscan).
+  // For branches we use range overlap because a branch's vertical segment
+  // can span y values outside both endpoints' rows.
+  const firstVisibleRow = visibleRows[Math.max(0, rowRange.startIndex)];
+  const lastVisibleRow =
+    visibleRows[Math.max(0, Math.min(visibleRows.length - 1, rowRange.endIndex - 1))];
+  const visibleStartY = firstVisibleRow ? firstVisibleRow.y : 0;
+  const visibleEndY = lastVisibleRow
+    ? lastVisibleRow.y + lastVisibleRow.height
+    : totalHeight;
+
+  const yInRange = (y: number) => y >= visibleStartY && y <= visibleEndY;
+  const branchInRange = (parentY: number, childY: number) => {
+    const lo = parentY < childY ? parentY : childY;
+    const hi = parentY < childY ? childY : parentY;
+    return hi >= visibleStartY && lo <= visibleEndY;
+  };
+
   // The tooltip needs a (x, y) anchor for any selected node. Visible nodes
   // come from the layout; pruned nodes don't appear in the layout, so we
   // synthesize an anchor at their stub mark position.
@@ -326,6 +346,7 @@ const TreeBody = ({
             if (!n.isVisibleEnd) return null;
             const r = visibleRows.find((row) => row.nodeId === n.nodeId);
             if (!r) return null;
+            if (!yInRange(r.y)) return null;
             return (
               <rect
                 key={`row-${n.nodeId}`}
@@ -350,6 +371,7 @@ const TreeBody = ({
             if (child.parentId === null) return null;
             const parent = byId.get(child.parentId);
             if (!parent) return null;
+            if (!branchInRange(parent.y, child.y)) return null;
             const opacity = opacityById.get(child.nodeId) ?? 1;
             const childX = parent.x + (child.x - parent.x) * opacity;
             const d = `M ${parent.x} ${parent.y} L ${parent.x} ${child.y} L ${childX} ${child.y}`;
@@ -373,6 +395,7 @@ const TreeBody = ({
         <g pointerEvents="none">
           {layout.nodes.map((n) => {
             if (!n.isVisibleEnd) return null;
+            if (!yInRange(n.y)) return null;
             const hl = isHighlighted(n.nodeId);
             const opacity = opacityById.get(n.nodeId) ?? 1;
             const parent = n.parentId !== null ? byId.get(n.parentId) : null;
@@ -405,6 +428,7 @@ const TreeBody = ({
         <g pointerEvents="none">
           {layout.nodes.map((n) => {
             if (!n.isCollapsedSummary) return null;
+            if (!yInRange(n.y)) return null;
             const row = visibleRows.find((r) => r.nodeId === n.nodeId);
             if (!row) return null;
             const opacity = opacityById.get(n.nodeId) ?? 1;
@@ -438,6 +462,7 @@ const TreeBody = ({
           {layout.nodes.map((n) => {
             if (n.isLeaf) return null;
             if (n.isVisibleEnd) return null; // collapsed-summary; render its own marker if needed elsewhere
+            if (!yInRange(n.y)) return null;
             const treeNode = data.tree.nodes[n.nodeId];
             if (!treeNode) return null;
             const opacity = opacityById.get(n.nodeId) ?? 1;
@@ -493,6 +518,7 @@ const TreeBody = ({
             if (child.parentId === null) return null;
             const parent = byId.get(child.parentId);
             if (!parent) return null;
+            if (!branchInRange(parent.y, child.y)) return null;
             const d = `M ${parent.x} ${parent.y} L ${parent.x} ${child.y} L ${child.x} ${child.y}`;
             return (
               <path
@@ -517,6 +543,7 @@ const TreeBody = ({
             was indicating. */}
         <g>
           {prunedStubs.map((stub) => {
+            if (!yInRange(stub.markY) && !yInRange(stub.anchorY)) return null;
             const isSelected = selectedNodeId === stub.prunedId;
             const stroke = isSelected ? HIGHLIGHT_COLOR : '#888';
             const markFill = isSelected ? HIGHLIGHT_COLOR : 'white';
