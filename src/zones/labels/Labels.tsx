@@ -3,6 +3,7 @@ import type { ZoneDefinition, ZoneRenderProps } from '../../types';
 import { allFields, builtInFields, providerFields, type LabelField } from './fields';
 import { FieldPicker } from './FieldPicker';
 import { useProviderCache } from './providerCache';
+import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 
 export interface LabelsZoneState {
   visibleFields: string[];
@@ -24,23 +25,35 @@ const LabelsHeader = ({
   return (
     <div
       style={{
-        padding: '0 10px',
         height: '100%',
         display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        flexDirection: 'column',
+        gap: 4,
         fontSize: 13,
         color: '#333',
       }}
     >
-      <span style={{ fontWeight: 600 }}>Labels</span>
-      <FieldPicker
-        fields={fields}
-        visibleFields={zoneState.visibleFields}
-        onChange={(next) =>
-          setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), visibleFields: next }))
-        }
-      />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '0 10px 0 18px',
+        }}
+      >
+        <span style={{ fontWeight: 600 }}>Labels</span>
+        <FieldPicker
+          fields={fields}
+          visibleFields={zoneState.visibleFields}
+          onChange={(next) =>
+            setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), visibleFields: next }))
+          }
+        />
+      </div>
+      {/* Reserved second row, kept empty for visual alignment with other zone headers. */}
+      <div style={{ flex: `0 0 ${LEAF_ROW_HEIGHT}px`, minHeight: 0 }} />
     </div>
   );
 };

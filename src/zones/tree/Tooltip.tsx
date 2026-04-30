@@ -20,6 +20,9 @@ export interface TooltipProps {
   isNodeOfInterest: boolean;
   subtreeLeafCount: number;
   hasCollapsedDescendants: boolean;
+  /** When true, pruning this node would leave zero active leaves visible.
+   *  The prune action is disabled (and re-labelled) in this case. */
+  pruneWouldEmptyTree: boolean;
   onClose: () => void;
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
@@ -39,6 +42,7 @@ export function Tooltip({
   isNodeOfInterest,
   subtreeLeafCount,
   hasCollapsedDescendants,
+  pruneWouldEmptyTree,
   onClose,
   onToggleCollapsed,
   onTogglePruned,
@@ -246,14 +250,22 @@ export function Tooltip({
             }}
           />
         )}
-        <ActionButton
-          label={isPruned ? 'Regrow' : 'Prune'}
-          color={isPruned ? COLOR_PRIMARY : COLOR_DANGER}
-          onClick={() => {
-            onTogglePruned(layoutNode.nodeId);
-            onClose();
-          }}
-        />
+        {layoutNode.nodeId !== data.tree.rootId && (
+          <ActionButton
+            label={isPruned ? 'Regrow' : 'Prune'}
+            color={isPruned ? COLOR_PRIMARY : COLOR_DANGER}
+            disabled={!isPruned && pruneWouldEmptyTree}
+            title={
+              !isPruned && pruneWouldEmptyTree
+                ? 'Pruning this node would leave nothing visible'
+                : undefined
+            }
+            onClick={() => {
+              onTogglePruned(layoutNode.nodeId);
+              onClose();
+            }}
+          />
+        )}
       </div>
     </div>,
     document.body,
@@ -280,23 +292,31 @@ function ActionButton({
   label,
   onClick,
   color = '#333',
+  disabled = false,
+  title,
 }: {
   label: string;
   onClick: () => void;
   color?: string;
+  disabled?: boolean;
+  title?: string;
 }) {
+  const effectiveColor = disabled ? COLOR_MUTED : color;
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      title={title}
       style={{
         background: 'white',
-        border: `1px solid ${color}`,
-        color,
+        border: `1px solid ${effectiveColor}`,
+        color: effectiveColor,
         borderRadius: 4,
         padding: '3px 10px',
         fontSize: 12,
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       {label}

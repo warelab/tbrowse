@@ -15,7 +15,7 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
   const Header = ({ width, bodyScrollLeft }: ZoneRenderProps<Record<string, never>>) => (
     <div
       style={{
-        padding: '0 10px',
+        padding: '0 10px 0 18px',
         height: '100%',
         display: 'flex',
         alignItems: 'center',

@@ -1,67 +1,84 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ResolvedViewport } from './MSA';
 
-const COVERAGE_COLOR = 'rgba(80, 110, 140, 0.85)';
 const VIEWPORT_FILL = 'rgba(40, 120, 220, 0.18)';
-const VIEWPORT_STROKE = '#2878dc';
+const VIEWPORT_STROKE = 'rgb(54 0 255)';
 
 interface MinimapProps {
-  /** Per-column coverage in [0,1], one entry per visible column. */
-  coverage: Float32Array;
+  /** One entry per visible column: a CSS color for the consensus residue,
+   *  or null to leave the column empty (gap consensus). */
+  colors: (string | null)[];
   /** Total visible-column count the viewport units operate in (mask-aware). */
   totalCols: number;
   vp: ResolvedViewport;
   onSetViewport: (start: number, end: number) => void;
   height?: number;
+  /** When provided, sizes the canvas to exactly this pixel width instead of
+   *  measuring via ResizeObserver. Use this when the parent wants the minimap
+   *  to align pixel-for-pixel with another element (e.g. the MSA body grid). */
+  width?: number;
 }
 
+/**
+ * The MSA "consensus track": a column-for-column overview of the alignment
+ * coloured by the active scheme, with a draggable viewport rectangle that
+ * reflects the body's current zoom/pan. Dragging the rectangle pans; clicking
+ * an empty area recenters; column units are mask-aware (they index into the
+ * visible-column space, same as the body and the viewport state).
+ */
 export function Minimap({
-  coverage,
+  colors,
   totalCols,
   vp,
   onSetViewport,
-  height = 28,
+  height,
+  width: widthProp,
 }: MinimapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [width, setWidth] = useState(0);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const [containerH, setContainerH] = useState(0);
+  const width = widthProp ?? measuredWidth;
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const needWidth = widthProp === undefined;
+    const needHeight = height === undefined;
+    if (!needWidth && !needHeight) return;
     const ro = new ResizeObserver((entries) => {
-      setWidth(entries[0].contentRect.width);
+      const r = entries[0].contentRect;
+      if (needWidth) setMeasuredWidth(r.width);
+      if (needHeight) setContainerH(r.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [height, widthProp]);
+
+  const effectiveH = height ?? Math.max(8, containerH);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || width <= 0 || totalCols <= 0) return;
+    if (!canvas || width <= 0 || totalCols <= 0 || effectiveH <= 0) return;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
+    canvas.height = Math.floor(effectiveH * dpr);
     canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.style.height = `${effectiveH}px`;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, effectiveH);
 
     const colWidth = width / totalCols;
-    ctx.fillStyle = COVERAGE_COLOR;
+    const drawWidth = Math.max(colWidth, 0.5);
     for (let c = 0; c < totalCols; c++) {
-      const cov = coverage[c] ?? 0;
-      if (cov <= 0) continue;
-      const barHeight = Math.max(1, cov * (height - 4));
-      const x = c * colWidth;
-      const y = (height - barHeight) / 2;
-      ctx.globalAlpha = 0.4 + cov * 0.5;
-      ctx.fillRect(x, y, Math.max(colWidth, 0.5), barHeight);
+      const color = colors[c];
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(c * colWidth, 0, drawWidth, effectiveH);
     }
-    ctx.globalAlpha = 1;
-  }, [width, height, totalCols, coverage]);
+  }, [width, effectiveH, totalCols, colors]);
 
   const vpStartPx = totalCols > 0 ? (vp.start / totalCols) * width : 0;
   const vpWidthPx =
@@ -107,12 +124,14 @@ export function Minimap({
       onPointerDown={onPointerDownContainer}
       style={{
         position: 'relative',
-        flex: 1,
-        height,
-        minWidth: 60,
+        width: widthProp !== undefined ? widthProp : '100%',
+        height: height ?? '100%',
+        minHeight: 12,
         cursor: 'pointer',
-        borderRadius: 2,
-        overflow: 'hidden',
+        // overflow:visible so the viewport rect's outline (drawn outside its
+        // box) is not clipped at full-zoom, where the rect spans the entire
+        // consensus track.
+        overflow: 'visible',
         background: '#f0f2f4',
       }}
     >
@@ -124,10 +143,17 @@ export function Minimap({
           left: vpStartPx,
           top: 0,
           width: vpWidthPx,
-          height,
+          height: '100%',
           background: VIEWPORT_FILL,
-          border: `1px solid ${VIEWPORT_STROKE}`,
-          borderRadius: 2,
+          // Use outline (drawn outside the box) instead of border so the
+          // visible consensus track inside the rect is the full vpWidthPx and
+          // aligns pixel-for-pixel with the MSA body grid. The container's
+          // overflow: hidden clips the outline at full-zoom, where the rect
+          // spans the entire minimap.
+          outline: `3px solid ${VIEWPORT_STROKE}`,
+          // Positive offset draws the outline outside the rect, so it sits
+          // around the consensus track rather than eating into it.
+          outlineOffset: 0,
           cursor: 'grab',
           boxSizing: 'border-box',
         }}

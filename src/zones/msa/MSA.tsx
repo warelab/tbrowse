@@ -10,6 +10,7 @@ import {
 import { computeMSAMask, unmaskedMSA, type MSAMask } from './mask';
 import { MaskPanel } from './MaskPanel';
 import { Minimap } from './Minimap';
+import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 
 export interface MSAZoneState {
   /** First visible-column (inclusive) of the viewport. */
@@ -108,6 +109,7 @@ const MSAHeader = ({
   zoneState,
   setZoneState,
   prunedNodeIds,
+  width,
 }: ZoneRenderProps<MSAZoneState>) => {
   const msa = data.msa;
   const maskParams = zoneState.mask ?? DEFAULT_MASK;
@@ -140,25 +142,23 @@ const MSAHeader = ({
   ]);
   const totalVisible = mask?.visibleCols.length ?? 0;
   const vp = msa ? resolveViewport(zoneState, totalVisible) : null;
+  const headerScheme = msa ? getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet)) : null;
 
-  // Coverage over visible columns only — fed to the minimap.
-  const coverage = useMemo(() => {
-    if (!msa || !mask) return new Float32Array(0);
-    const out = new Float32Array(mask.visibleCols.length);
-    if (activeGeneIds.size === 0) return out;
+  // Per-visible-column consensus residue + colour, fed to the consensus
+  // track (the "root node consensus" view, scaled to span the whole header
+  // so the body's viewport rectangle can be aligned against it).
+  const consensus = useMemo(() => {
+    if (!msa || !mask) return { residues: [] as (string | null)[], colors: [] as (string | null)[] };
     const ids = [...activeGeneIds];
-    const denom = ids.length;
+    const residues = new Array<string | null>(mask.visibleCols.length);
+    const colors = new Array<string | null>(mask.visibleCols.length);
     for (let i = 0; i < mask.visibleCols.length; i++) {
-      const col = mask.visibleCols[i];
-      let nonGap = 0;
-      for (const id of ids) {
-        const ch = msa.sequences[id]?.[col];
-        if (ch && ch !== '-') nonGap++;
-      }
-      out[i] = nonGap / denom;
+      const ch = consensusAt(ids, msa.sequences, mask.visibleCols[i]);
+      residues[i] = ch;
+      colors[i] = ch ? (headerScheme?.color(ch) ?? '#888') : null;
     }
-    return out;
-  }, [msa, mask, activeGeneIds]);
+    return { residues, colors };
+  }, [msa, mask, activeGeneIds, headerScheme]);
 
   const setViewport = useCallback(
     (start: number, end: number) =>
@@ -166,48 +166,79 @@ const MSAHeader = ({
     [setZoneState],
   );
 
+  // The minimap row sits at exactly the body's residue grid extent (PAD_X
+  // from each zone edge), positioned absolutely so its width is independent
+  // of any flex/padding gymnastics on the surrounding header. The top control
+  // row reserves room above the minimap by leaving `LEAF_ROW_HEIGHT + gap` of
+  // bottom space.
+  const minimapWidth = Math.max(0, width - 2 * PAD_X);
   return (
     <div
       style={{
-        padding: '0 10px',
+        position: 'relative',
         height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
         fontSize: 13,
         color: '#333',
       }}
     >
-      <span style={{ fontWeight: 600 }}>MSA</span>
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 10,
+          right: 10,
+          bottom: LEAF_ROW_HEIGHT + 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          paddingLeft: 8, // clear the chassis-level reorder handle in the top-left
+        }}
+      >
+        <span style={{ fontWeight: 600 }}>MSA</span>
+        {msa && vp && (
+          <>
+            <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{msa.alphabet}</span>
+            <span
+              style={{
+                fontWeight: 400,
+                color: '#888',
+                fontSize: 11,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {vp.start + 1}–{vp.end} / {totalVisible}
+              {mask && totalVisible < msa.length ? ` (of ${msa.length})` : ''}
+            </span>
+            <SchemeSelect msa={msa} zoneState={zoneState} setZoneState={setZoneState} />
+            <MaskPanel
+              params={maskParams}
+              maxCoverage={activeGeneIds.size}
+              hiddenCols={msa.length - totalVisible}
+              totalCols={msa.length}
+              onChange={(next) => setZoneState((s) => ({ ...s, mask: next }))}
+            />
+          </>
+        )}
+      </div>
       {msa && vp && (
-        <>
-          <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{msa.alphabet}</span>
-          <span
-            style={{
-              fontWeight: 400,
-              color: '#888',
-              fontSize: 11,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {vp.start + 1}–{vp.end} / {totalVisible}
-            {mask && totalVisible < msa.length ? ` (of ${msa.length})` : ''}
-          </span>
-          <SchemeSelect msa={msa} zoneState={zoneState} setZoneState={setZoneState} />
-          <MaskPanel
-            params={maskParams}
-            maxCoverage={activeGeneIds.size}
-            hiddenCols={msa.length - totalVisible}
-            totalCols={msa.length}
-            onChange={(next) => setZoneState((s) => ({ ...s, mask: next }))}
-          />
+        <div
+          style={{
+            position: 'absolute',
+            left: PAD_X,
+            bottom: 3,
+            width: minimapWidth,
+            height: LEAF_ROW_HEIGHT,
+          }}
+        >
           <Minimap
-            coverage={coverage}
+            colors={consensus.colors}
             totalCols={totalVisible}
             vp={vp}
             onSetViewport={setViewport}
+            height={LEAF_ROW_HEIGHT}
+            width={minimapWidth}
           />
-        </>
+        </div>
       )}
     </div>
   );

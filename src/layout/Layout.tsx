@@ -19,20 +19,24 @@ import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
 import { computeRowRange } from './rowRange';
 
-export const HEADER_HEIGHT = 40;
-const ANIMATION_DURATION_MS = 260;
-const easeOut = (t: number) => 1 - Math.pow(1 - t, 2);
-
-interface LayoutProps {
-  data: HostData;
-  zones: ZoneDefinition[];
-}
+export const HEADER_HEIGHT = 56;
+/** Top portion of the header where the reorder handle lives. Other zones can
+ *  use this as padding-left for content that would otherwise sit beneath it. */
+export const HEADER_HANDLE_HEIGHT = 28;
+export const HEADER_HANDLE_WIDTH = 14;
 
 interface DragState {
   zoneId: string;
   fromIndex: number;
   targetIndex: number;
   cursorX: number;
+}
+const ANIMATION_DURATION_MS = 260;
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 2);
+
+interface LayoutProps {
+  data: HostData;
+  zones: ZoneDefinition[];
 }
 
 export function Layout({ data, zones }: LayoutProps) {
@@ -220,7 +224,10 @@ export function Layout({ data, zones }: LayoutProps) {
   );
 
   const onTogglePruned = useCallback(
-    (id: NodeId) =>
+    (id: NodeId) => {
+      // The root has no parent for the rest of the tree to attach to, so
+      // pruning it would empty the display. Silently ignore.
+      if (id === data.tree.rootId) return;
       setViewState((vs) => {
         const idx = vs.prunedNodeIds.indexOf(id);
         if (idx >= 0) {
@@ -233,8 +240,9 @@ export function Layout({ data, zones }: LayoutProps) {
           prunedNodeIds: [...vs.prunedNodeIds, id],
           selectedNodeId: vs.selectedNodeId === id ? null : vs.selectedNodeId,
         };
-      }),
-    [setViewState],
+      });
+    },
+    [setViewState, data.tree.rootId],
   );
 
   const onToggleSwapped = useCallback(
@@ -363,16 +371,6 @@ export function Layout({ data, zones }: LayoutProps) {
     };
   };
 
-  // x-position of the insertion indicator while dragging
-  const indicatorX = useMemo(() => {
-    if (!dragState) return null;
-    let x = 0;
-    for (let i = 0; i < dragState.targetIndex && i < visibleZones.length; i++) {
-      x += visibleZones[i].width;
-    }
-    return x;
-  }, [dragState, visibleZones]);
-
   return (
     <div
       className="tbrowse-shell"
@@ -431,14 +429,28 @@ export function Layout({ data, zones }: LayoutProps) {
                 opacity: isDragging ? 0.5 : 1,
               }}
             >
-              <ReorderHandle
-                zoneId={zoneVS.id}
-                visibleZones={visibleZones}
-                gridRef={gridRef}
-                setDragState={setDragState}
-              />
               <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <def.Header {...props} />
+              </div>
+              {/* Reorder handle overlaid at the top-left so it only occupies
+                  the upper half of the header. Zones whose top-row content
+                  reaches the left edge add a small padding-left to clear it. */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: HEADER_HANDLE_WIDTH,
+                  height: HEADER_HANDLE_HEIGHT,
+                  zIndex: 2,
+                }}
+              >
+                <ReorderHandle
+                  zoneId={zoneVS.id}
+                  visibleZones={visibleZones}
+                  gridRef={gridRef}
+                  setDragState={setDragState}
+                />
               </div>
               <ResizeHandle
                 zoneId={zoneVS.id}
@@ -465,23 +477,42 @@ export function Layout({ data, zones }: LayoutProps) {
             </div>
           );
         })}
-        {indicatorX !== null && (
-          <div
-            className="tbrowse-reorder-indicator"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: indicatorX - 1,
-              width: 2,
-              height: '100%',
-              background: '#2878dc',
-              pointerEvents: 'none',
-              zIndex: 2,
-            }}
+        {dragState !== null && (
+          <ReorderInsertionIndicator
+            visibleZones={visibleZones}
+            targetIndex={dragState.targetIndex}
           />
         )}
       </div>
       </div>
     </div>
+  );
+}
+
+function ReorderInsertionIndicator({
+  visibleZones,
+  targetIndex,
+}: {
+  visibleZones: { width: number }[];
+  targetIndex: number;
+}) {
+  let x = 0;
+  for (let i = 0; i < targetIndex && i < visibleZones.length; i++) {
+    x += visibleZones[i].width;
+  }
+  return (
+    <div
+      className="tbrowse-reorder-indicator"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: x - 1,
+        width: 2,
+        height: '100%',
+        background: '#2878dc',
+        pointerEvents: 'none',
+        zIndex: 2,
+      }}
+    />
   );
 }

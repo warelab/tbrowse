@@ -3,8 +3,12 @@ import { ancestorIdsOf, buildChildrenIndex, countLeavesInSubtree } from '../../t
 import type { NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
 import { computeTreeLayout, type TreeLayoutNode } from './layout';
 import { Tooltip } from './Tooltip';
+import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 
-const LEFT_PAD = 6;
+// LEFT_PAD must be ≥ ROOT_STUB_LEN so the stub drawn left of the root has
+// room inside the SVG. (The stub is what users hover/click to interact with
+// the root node, since the root's own branch is zero-length.)
+const LEFT_PAD = 16;
 const RIGHT_PAD = 6;
 
 const BRANCH_COLOR = '#444';
@@ -24,6 +28,9 @@ const NODE_GLYPH_SQUARE = 7;
 // Lets low-confidence branches fade to ~40% without disappearing entirely.
 const BOOTSTRAP_OPACITY_MIN = 0.4;
 const COLLAPSED_TRIANGLE_WIDTH = 18;
+/** Length of the visible/clickable horizontal stub drawn to the left of the
+ *  root node so the root has a hit area (its own branch is zero-length). */
+const ROOT_STUB_LEN = 10;
 const COLLAPSED_TRIANGLE_MIN_H = 8;
 const COLLAPSED_TRIANGLE_MAX_H = 22;
 const COLLAPSED_TRIANGLE_FILL = 'rgba(100, 110, 120, 0.20)';
@@ -38,22 +45,85 @@ function collapsedTriangleHeight(leafCount: number): number {
 
 type TreeZoneState = Record<string, never>;
 
-const TreeHeader = ({ width }: ZoneRenderProps<TreeZoneState>) => (
-  <div
-    style={{
-      padding: '0 10px',
-      height: '100%',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      fontSize: 13,
-      color: '#333',
-    }}
-  >
-    <span style={{ fontWeight: 600 }}>Tree</span>
-    <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{width}px</span>
-  </div>
-);
+const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => {
+  const hoveredInfo = useMemo(
+    () => describeHoveredNode(hoveredNodeId, data),
+    [hoveredNodeId, data],
+  );
+  return (
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        fontSize: 13,
+        color: '#333',
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '0 10px 0 18px',
+        }}
+      >
+        <span style={{ fontWeight: 600 }}>Tree</span>
+        <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{width}px</span>
+      </div>
+      {/* Second row: live readout of the hovered node. */}
+      <div
+        style={{
+          flex: `0 0 ${LEAF_ROW_HEIGHT}px`,
+          minHeight: 0,
+          padding: '0 10px 0 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 11,
+          color: '#555',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+        title={hoveredInfo ?? ''}
+      >
+        {hoveredInfo ?? <span style={{ color: '#aaa' }}>hover a node…</span>}
+      </div>
+    </div>
+  );
+};
+
+function describeHoveredNode(
+  nodeId: NodeId | null,
+  data: ZoneRenderProps['data'],
+): string | null {
+  if (!nodeId) return null;
+  const node = data.tree.nodes[nodeId];
+  if (!node) return nodeId;
+  const parts: string[] = [];
+  if (node.isLeaf) {
+    parts.push('leaf');
+    parts.push(node.geneId ?? node.id);
+    if (node.taxonomyId !== undefined && data.taxonomy?.[node.taxonomyId]) {
+      const tax = data.taxonomy[node.taxonomyId];
+      const taxName = tax.commonName ?? tax.scientificName;
+      if (taxName) parts.push(taxName);
+    }
+  } else {
+    parts.push(node.eventType ?? 'internal');
+    if (node.taxonomyId !== undefined && data.taxonomy?.[node.taxonomyId]) {
+      const tax = data.taxonomy[node.taxonomyId];
+      const taxName = tax.scientificName ?? tax.commonName;
+      if (taxName) parts.push(taxName);
+      if (tax.rank) parts.push(tax.rank);
+    }
+  }
+  return parts.join(' · ');
+}
 
 const TreeBody = ({
   data,
@@ -247,6 +317,64 @@ const TreeBody = ({
     return BOOTSTRAP_OPACITY_MIN + (1 - BOOTSTRAP_OPACITY_MIN) * t;
   };
 
+  // Would pruning the selected node empty the tree (no active leaves left)?
+  // An active leaf is one whose ancestor chain contains no pruned node. The
+  // prune button is disabled in that case (regrow is always allowed).
+  const pruneWouldEmptyTree = useMemo(() => {
+    if (selectedNodeId === null) return false;
+    if (prunedNodeIds.has(selectedNodeId)) return false;
+    const node = data.tree.nodes[selectedNodeId];
+    if (!node) return false;
+    // Collect the selected node's subtree (the would-be-pruned set).
+    const subtree = new Set<NodeId>();
+    const stack: NodeId[] = [selectedNodeId];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (subtree.has(id)) continue;
+      subtree.add(id);
+      const kids = fullChildrenIndex.get(id);
+      if (kids) for (const k of kids) stack.push(k);
+    }
+    // Look for any active leaf outside that subtree.
+    for (const n of Object.values(data.tree.nodes)) {
+      if (!n.isLeaf) continue;
+      if (subtree.has(n.id)) continue;
+      let cur: NodeId | null = n.id;
+      let blocked = false;
+      while (cur !== null) {
+        if (prunedNodeIds.has(cur)) {
+          blocked = true;
+          break;
+        }
+        cur = data.tree.nodes[cur]?.parentId ?? null;
+      }
+      if (!blocked) return false;
+    }
+    return true;
+  }, [selectedNodeId, prunedNodeIds, fullChildrenIndex, data.tree]);
+
+  // For the tooltip's "Expand all" affordance: does the selected node's
+  // subtree contain any currently-collapsed internal node? Only relevant
+  // when the selected node itself is internal and not currently collapsed.
+  // Hooked here (rather than later, near the tooltip-related locals) so it
+  // sits BEFORE any conditional early return — React requires every render
+  // to call the same hooks in the same order.
+  const selectedHasCollapsedDescendants = useMemo(() => {
+    if (selectedNodeId === null) return false;
+    const node = data.tree.nodes[selectedNodeId];
+    if (!node || node.isLeaf) return false;
+    if (collapsedNodeIds.has(selectedNodeId)) return false;
+    if (collapsedNodeIds.size === 0) return false;
+    const stack: NodeId[] = [...(fullChildrenIndex.get(selectedNodeId) ?? [])];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (collapsedNodeIds.has(id)) return true;
+      const kids = fullChildrenIndex.get(id);
+      if (kids) for (const k of kids) stack.push(k);
+    }
+    return false;
+  }, [selectedNodeId, data.tree, collapsedNodeIds, fullChildrenIndex]);
+
   if (layout.nodes.length === 0) return null;
 
   const totalHeight =
@@ -302,24 +430,6 @@ const TreeBody = ({
       ? countLeavesInSubtree(selectedNodeId, data.tree, fullChildrenIndex)
       : 0;
 
-  // For the tooltip's "Expand all" affordance: does the selected node's
-  // subtree contain any currently-collapsed internal node? Only relevant
-  // when the selected node itself is internal and not currently collapsed.
-  const selectedHasCollapsedDescendants = useMemo(() => {
-    if (selectedNodeId === null) return false;
-    if (!selectedTreeNode || selectedTreeNode.isLeaf) return false;
-    if (collapsedNodeIds.has(selectedNodeId)) return false;
-    if (collapsedNodeIds.size === 0) return false;
-    const stack: NodeId[] = [...(fullChildrenIndex.get(selectedNodeId) ?? [])];
-    while (stack.length > 0) {
-      const id = stack.pop()!;
-      if (collapsedNodeIds.has(id)) return true;
-      const kids = fullChildrenIndex.get(id);
-      if (kids) for (const k of kids) stack.push(k);
-    }
-    return false;
-  }, [selectedNodeId, selectedTreeNode, collapsedNodeIds, fullChildrenIndex]);
-
   return (
     <>
       <svg
@@ -362,6 +472,27 @@ const TreeBody = ({
             );
           })}
         </g>
+        {/* Root stub: a short horizontal segment to the left of the root so
+            the root node has something visible to hover and click. */}
+        {(() => {
+          if (!layout.rootId) return null;
+          const root = byId.get(layout.rootId);
+          if (!root) return null;
+          if (!yInRange(root.y)) return null;
+          const hl = isHighlighted(root.nodeId);
+          return (
+            <line
+              key="b-root"
+              x1={root.x - ROOT_STUB_LEN}
+              y1={root.y}
+              x2={root.x}
+              y2={root.y}
+              stroke={hl ? HIGHLIGHT_COLOR : BRANCH_COLOR}
+              strokeWidth={hl ? HIGHLIGHT_WIDTH : BRANCH_WIDTH}
+              pointerEvents="none"
+            />
+          );
+        })()}
         {/* Visible branches. During animation a fading-out child retracts
             toward its parent (right→left for collapse/prune) and a
             fading-in child extends from its parent (left→right for
@@ -514,6 +645,26 @@ const TreeBody = ({
         {/* Branch hit areas. Top of stack so they win over row rects on
             overlaps. */}
         <g>
+          {layout.rootId &&
+            (() => {
+              const root = byId.get(layout.rootId);
+              if (!root) return null;
+              if (!yInRange(root.y)) return null;
+              return (
+                <line
+                  key="h-root"
+                  x1={root.x - ROOT_STUB_LEN}
+                  y1={root.y}
+                  x2={root.x}
+                  y2={root.y}
+                  stroke="transparent"
+                  strokeWidth={HIT_STROKE_WIDTH}
+                  onMouseEnter={() => onHoverNode(root.nodeId)}
+                  onClick={() => onSelectNode(root.nodeId)}
+                  style={{ cursor: 'pointer' }}
+                />
+              );
+            })()}
           {layout.nodes.map((child) => {
             if (child.parentId === null) return null;
             const parent = byId.get(child.parentId);
@@ -597,6 +748,7 @@ const TreeBody = ({
           isNodeOfInterest={nodeOfInterestId === selectedNodeId}
           subtreeLeafCount={selectedSubtreeLeafCount}
           hasCollapsedDescendants={selectedHasCollapsedDescendants}
+          pruneWouldEmptyTree={pruneWouldEmptyTree}
           onClose={onClearSelection}
           onToggleCollapsed={onToggleCollapsed}
           onTogglePruned={onTogglePruned}
