@@ -1,0 +1,248 @@
+import type { ComponentType, ReactNode } from 'react';
+
+export type NodeId = string;
+export type GeneId = string;
+export type TaxonomyId = number;
+
+export interface TreeNode {
+  id: NodeId;
+  parentId: NodeId | null;
+  distance: number;
+  isLeaf: boolean;
+  taxonomyId?: TaxonomyId;
+  geneId?: GeneId;
+  eventType?: 'speciation' | 'duplication';
+  bootstrap?: number;
+}
+
+export interface Tree {
+  rootId: NodeId;
+  nodes: Record<NodeId, TreeNode>;
+}
+
+export interface TaxonomyNode {
+  scientificName?: string;
+  commonName?: string;
+  rank?: string;
+  parentId?: TaxonomyId;
+}
+
+export type Taxonomy = Record<TaxonomyId, TaxonomyNode>;
+
+export interface MSA {
+  alphabet: 'dna' | 'protein';
+  length: number;
+  sequences: Record<GeneId, string>;
+}
+
+export type GeneMetadata = Record<GeneId, Record<string, unknown>>;
+
+export interface NodeAnnotation {
+  nodeId: NodeId;
+  source: string;
+  data: unknown;
+}
+
+export interface LabelProvider {
+  id: string;
+  label: string;
+  fetch: (geneId: GeneId, signal: AbortSignal) => Promise<string | null>;
+}
+
+export interface ZoneViewState {
+  id: string;
+  width: number;
+  visible: boolean;
+}
+
+export interface SearchState {
+  field: string;
+  query: string;
+}
+
+export interface MSAViewState {
+  viewportStart: number;
+  viewportEnd: number;
+}
+
+export interface LabelsViewState {
+  visibleFields: string[];
+}
+
+export interface ViewState {
+  selectedNodeId: NodeId | null;
+  collapsedNodeIds: NodeId[];
+  prunedNodeIds: NodeId[];
+  /** Internal nodes whose children are rendered in reversed order. */
+  swappedNodeIds: NodeId[];
+  /**
+   * Per-node *override* set for branch-length compression. The Tree zone
+   * auto-compresses outlier-long branches (anything past a multiple of
+   * the median); a node id appearing here flips the compression state of
+   * its incoming branch — a normally-uncompressed branch becomes
+   * compressed and vice versa, so users can pin specific branches either
+   * way regardless of the auto rule.
+   */
+  compressedNodeIds: NodeId[];
+  /** The leaf id designated as "node of interest". */
+  nodeOfInterestId: NodeId | null;
+  zones: ZoneViewState[];
+  /**
+   * Per-zone state, keyed by zone id. Built-in zones use well-known keys
+   * (e.g. `labels`, `msa`) whose value type is the corresponding state interface
+   * exported from this module. Pluggable zones own their own slots.
+   */
+  zoneStates: Record<string, unknown>;
+  search: SearchState | null;
+}
+
+export interface VisibleRow {
+  kind: 'leaf' | 'collapsedSummary';
+  nodeId: NodeId;
+  y: number;
+  height: number;
+  leafCount: number;
+  /**
+   * Animation opacity (0..1). Set by the chassis during transitions —
+   * rows being added animate 0 → 1, rows being removed animate 1 → 0.
+   * Undefined = settled at 1.
+   */
+  opacity?: number;
+}
+
+export interface RowRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+/**
+ * One protein-domain hit on a single leaf's protein sequence. Coordinates
+ * are 1-based, inclusive, in the UNALIGNED residue index (i.e. positions
+ * within the protein's amino-acid sequence — gaps in the MSA are not
+ * counted). The MSA zone translates these on the fly into aligned-column
+ * positions when it has access to the leaf's sequence in `msa.sequences`.
+ */
+export interface ProteinDomain {
+  /** Stable identifier (e.g. Pfam accession "PF00069"). Drives the color. */
+  id: string;
+  /** Human-readable name (e.g. "Protein kinase domain"). */
+  name: string;
+  /** First residue (1-based, inclusive) in the unaligned protein. */
+  start: number;
+  /** Last residue (1-based, inclusive) in the unaligned protein. */
+  end: number;
+  /** Optional source label, surfaced in the tooltip. */
+  source?: string;
+}
+
+export interface HostData {
+  tree: Tree;
+  taxonomy?: Taxonomy;
+  msa?: MSA;
+  geneMetadata?: GeneMetadata;
+  nodeAnnotations?: NodeAnnotation[];
+  labelProviders?: LabelProvider[];
+  /**
+   * Optional per-leaf protein-domain hits, keyed by GeneId. Renders as thin
+   * coloured bars below each MSA leaf row, spanning the domain's residue
+   * range translated into MSA columns.
+   */
+  proteinDomains?: Record<GeneId, ProteinDomain[]>;
+}
+
+export interface ZoneRenderProps<S = unknown> {
+  visibleRows: VisibleRow[];
+  rowRange: RowRange;
+  hoveredNodeId: NodeId | null;
+  /**
+   * Closure of hovered node and its descendants. Empty set when nothing is
+   * hovered. Non-tree zones use this to highlight the rows whose leaves are
+   * within the hovered subtree.
+   */
+  hoveredSubtreeIds: ReadonlySet<NodeId>;
+  selectedNodeId: NodeId | null;
+  collapsedNodeIds: ReadonlySet<NodeId>;
+  prunedNodeIds: ReadonlySet<NodeId>;
+  swappedNodeIds: ReadonlySet<NodeId>;
+  /** Branch-compression overrides — see ViewState.compressedNodeIds. */
+  compressedNodeIds: ReadonlySet<NodeId>;
+  onHoverNode: (id: NodeId | null) => void;
+  onSelectNode: (id: NodeId) => void;
+  onClearSelection: () => void;
+  onToggleCollapsed: (id: NodeId) => void;
+  onTogglePruned: (id: NodeId) => void;
+  onToggleSwapped: (id: NodeId) => void;
+  /** Flip the auto-determined compression state for this node's branch. */
+  onToggleCompressed: (id: NodeId) => void;
+  /** Remove every descendant of `id` from collapsedNodeIds. */
+  onExpandSubtree: (id: NodeId) => void;
+  /**
+   * Designate `id` as the new node of interest. Swaps ancestors so the
+   * leaf sits at the top of the display; does not collapse any branches.
+   */
+  onMakeNodeOfInterest: (id: NodeId) => void;
+  /**
+   * Uncollapse any ancestor that hides a leaf whose taxonomyId matches
+   * the leaf at `id`. Pruned leaves are not touched.
+   */
+  onShowParalogs: (id: NodeId) => void;
+  /** Resolved id of the current node of interest (null until set). */
+  nodeOfInterestId: NodeId | null;
+  zoneState: S;
+  setZoneState: (next: S | ((prev: S) => S)) => void;
+  width: number;
+  bodyHeight: number;
+  bodyScrollLeft: number;
+  setBodyScrollLeft: (next: number | ((prev: number) => number)) => void;
+  data: HostData;
+}
+
+export interface ZoneDefinition<S = unknown> {
+  id: string;
+  displayName: string;
+  Header: ComponentType<ZoneRenderProps<S>>;
+  Body: ComponentType<ZoneRenderProps<S>>;
+  /**
+   * Initial fr-share for this zone. The chassis lays zones out as
+   * fractions of the container width — `defaultWidth: 30` for tree,
+   * `20` for labels, `50` for msa gives 30 % / 20 % / 50 %. Resizing
+   * adjusts these fr values without changing the total, so the
+   * component always fills its container.
+   */
+  defaultWidth: number;
+  /**
+   * Minimum pixel width below which the resize handle won't shrink
+   * this zone. Honoured by the grid via `minmax(<minWidth>px, <fr>fr)`,
+   * so if zones can't fit within the container they overflow into a
+   * horizontal scroll rather than getting squashed.
+   */
+  minWidth: number;
+  defaultZoneState: S;
+  isAvailable: (data: HostData) => boolean;
+}
+
+export interface TBrowseProps {
+  tree: Tree;
+  taxonomy?: Taxonomy;
+  msa?: MSA;
+  geneMetadata?: GeneMetadata;
+  nodeAnnotations?: NodeAnnotation[];
+  proteinDomains?: Record<GeneId, ProteinDomain[]>;
+  /**
+   * If provided, the initial view collapses every subtree except the path
+   * to this node and swaps siblings so the node sits at the top of the
+   * display. Resolved as a leaf `geneId` first, then as a node `id`. Has
+   * effect only when the chassis builds the initial viewState
+   * (uncontrolled mode); controlled hosts can call `computePivotState`
+   * themselves to bootstrap their viewState.
+   */
+  nodeOfInterest?: string;
+  zones: ZoneDefinition[];
+  labelProviders?: LabelProvider[];
+  viewState?: ViewState;
+  initialViewState?: Partial<ViewState>;
+  onViewStateChange?: (next: ViewState) => void;
+  theme?: 'light' | 'dark';
+  className?: string;
+  children?: ReactNode;
+}
