@@ -19,6 +19,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:playground": "vite build --mode playground",
+    "preview:playground": "vite preview --mode playground",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",

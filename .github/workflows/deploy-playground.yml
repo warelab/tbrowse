@@ -1,0 +1,60 @@
+# Build the TBrowse playground and publish it to GitHub Pages.
+#
+# Triggers:
+#   - push to `main` — every merge republishes the playground.
+#   - manual `workflow_dispatch` from the Actions tab. Pass `ref` when
+#     dispatching to deploy any branch / tag.
+#
+# One-time setup: in repo Settings → Pages, set "Source" to
+# "GitHub Actions". The first run of this workflow then provisions the
+# site at https://<owner>.github.io/<repo>/.
+
+name: Deploy playground to Pages
+
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time. Don't cancel in-flight runs.
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      # configure-pages exposes `base_path` so we don't have to hard-code
+      # `/tbrowse/` here (it'll match whatever Pages is configured for).
+      - id: pages
+        uses: actions/configure-pages@v5
+      - run: npm run build:playground
+        env:
+          # configure-pages emits "/<repo>" without a trailing slash; Vite
+          # wants one. Append manually.
+          PLAYGROUND_BASE: ${{ steps.pages.outputs.base_path }}/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-playground
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
