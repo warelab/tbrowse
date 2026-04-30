@@ -42,6 +42,7 @@ function TBrowseShell(props: TBrowseProps) {
     geneMetadata: props.geneMetadata,
     nodeAnnotations: props.nodeAnnotations,
     labelProviders: props.labelProviders,
+    proteinDomains: props.proteinDomains,
   };
 
   return (

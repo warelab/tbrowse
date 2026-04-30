@@ -67,7 +67,6 @@ const LabelsBody = ({
   hoveredSubtreeIds,
   selectedNodeId,
   onHoverNode,
-  onSelectNode,
 }: ZoneRenderProps<LabelsZoneState>) => {
   const allDefinedFields = useMemo(() => allFields(data), [data]);
 
@@ -120,7 +119,6 @@ const LabelsBody = ({
             key={r.nodeId}
             onMouseEnter={() => onHoverNode(r.nodeId)}
             onMouseLeave={() => onHoverNode(null)}
-            onClick={() => onSelectNode(r.nodeId)}
             style={{
               position: 'absolute',
               top: r.y,
@@ -142,7 +140,11 @@ const LabelsBody = ({
               fontStyle: isCollapsed ? 'italic' : 'normal',
               color: isCollapsed ? '#888' : '#222',
               borderBottom: '1px solid #f0f0f0',
-              cursor: 'pointer',
+              // Default text cursor + native selection — clicking does NOT
+              // trigger node selection in non-tree zones; the tree zone is
+              // the single source of truth for "selected node".
+              cursor: 'text',
+              userSelect: 'text',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',

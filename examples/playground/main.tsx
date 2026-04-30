@@ -30,6 +30,7 @@ import {
   sampleGeneMetadata,
   sampleGoProvider,
   sampleMSA,
+  sampleProteinDomains,
   sampleTaxonomy,
   sampleTree,
 } from './sampleTree';
@@ -151,6 +152,7 @@ function App() {
           taxonomy: sampleTaxonomy,
           geneMetadata: sampleGeneMetadata,
           msa: sampleMSA,
+          proteinDomains: sampleProteinDomains,
           labelProviders: [sampleGoProvider],
         }
       : {
@@ -158,6 +160,7 @@ function App() {
           taxonomy: ensemblData.taxonomy,
           geneMetadata: ensemblData.geneMetadata,
           msa: ensemblData.msa,
+          proteinDomains: undefined,
           labelProviders: undefined,
         };
 

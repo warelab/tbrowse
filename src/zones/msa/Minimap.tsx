@@ -77,13 +77,19 @@ export function Minimap({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, effectiveH);
 
+    // Snap each column's CSS-pixel boundaries with Math.round so adjacent
+    // fills abut on integer pixels. Without this, fractional colWidth
+    // (e.g. 1.5px) leaves anti-aliased seams between same-row columns —
+    // visible as faint vertical lines on plain/domain colour fills.
     const colWidth = width / totalCols;
-    const drawWidth = Math.max(colWidth, 0.5);
+    const xAt = (c: number) => Math.round(c * colWidth);
     for (let c = 0; c < totalCols; c++) {
       const color = colors[c];
       if (!color) continue;
       ctx.fillStyle = color;
-      ctx.fillRect(c * colWidth, 0, drawWidth, effectiveH);
+      const x0 = xAt(c);
+      const w = Math.max(1, xAt(c + 1) - x0);
+      ctx.fillRect(x0, 0, w, effectiveH);
     }
   }, [width, effectiveH, totalCols, colors]);
 

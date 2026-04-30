@@ -31,6 +31,7 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     geneMetadata: props.geneMetadata,
     nodeAnnotations: props.nodeAnnotations,
     labelProviders: props.labelProviders,
+    proteinDomains: props.proteinDomains,
   };
   const zoneStates: Record<string, unknown> = {};
   for (const z of props.zones) {

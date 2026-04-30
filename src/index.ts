@@ -41,6 +41,7 @@ export type {
   MSA,
   GeneMetadata,
   NodeAnnotation,
+  ProteinDomain,
   LabelProvider,
   ZoneViewState,
   SearchState,

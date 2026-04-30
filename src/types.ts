@@ -106,6 +106,26 @@ export interface RowRange {
   endIndex: number;
 }
 
+/**
+ * One protein-domain hit on a single leaf's protein sequence. Coordinates
+ * are 1-based, inclusive, in the UNALIGNED residue index (i.e. positions
+ * within the protein's amino-acid sequence — gaps in the MSA are not
+ * counted). The MSA zone translates these on the fly into aligned-column
+ * positions when it has access to the leaf's sequence in `msa.sequences`.
+ */
+export interface ProteinDomain {
+  /** Stable identifier (e.g. Pfam accession "PF00069"). Drives the color. */
+  id: string;
+  /** Human-readable name (e.g. "Protein kinase domain"). */
+  name: string;
+  /** First residue (1-based, inclusive) in the unaligned protein. */
+  start: number;
+  /** Last residue (1-based, inclusive) in the unaligned protein. */
+  end: number;
+  /** Optional source label, surfaced in the tooltip. */
+  source?: string;
+}
+
 export interface HostData {
   tree: Tree;
   taxonomy?: Taxonomy;
@@ -113,6 +133,12 @@ export interface HostData {
   geneMetadata?: GeneMetadata;
   nodeAnnotations?: NodeAnnotation[];
   labelProviders?: LabelProvider[];
+  /**
+   * Optional per-leaf protein-domain hits, keyed by GeneId. Renders as thin
+   * coloured bars below each MSA leaf row, spanning the domain's residue
+   * range translated into MSA columns.
+   */
+  proteinDomains?: Record<GeneId, ProteinDomain[]>;
 }
 
 export interface ZoneRenderProps<S = unknown> {
@@ -175,6 +201,7 @@ export interface TBrowseProps {
   msa?: MSA;
   geneMetadata?: GeneMetadata;
   nodeAnnotations?: NodeAnnotation[];
+  proteinDomains?: Record<GeneId, ProteinDomain[]>;
   /**
    * If provided, the initial view collapses every subtree except the path
    * to this node and swaps siblings so the node sits at the top of the

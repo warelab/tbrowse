@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildChildrenIndex, subtreeIdsOf } from '../../treeIndex';
-import type { GeneId, MSA, NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
+import type {
+  GeneId,
+  MSA,
+  NodeId,
+  ProteinDomain,
+  ZoneDefinition,
+  ZoneRenderProps,
+} from '../../types';
 import {
   applicableSchemes,
   defaultSchemeFor,
@@ -11,6 +18,12 @@ import { computeMSAMask, unmaskedMSA, type MSAMask } from './mask';
 import { MaskPanel } from './MaskPanel';
 import { Minimap } from './Minimap';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import {
+  buildResidueToColumn,
+  computeDominantDomainByCol,
+  domainColor,
+  domainColumnRange,
+} from './domains';
 
 export interface MSAZoneState {
   /** First visible-column (inclusive) of the viewport. */
@@ -191,7 +204,8 @@ const MSAHeader = ({
   ]);
   const totalVisible = mask?.visibleCols.length ?? 0;
   const vp = msa ? resolveViewport(zoneState, totalVisible) : null;
-  const headerScheme = msa ? getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet)) : null;
+  // (Header no longer reads the residue scheme — the minimap is always
+  // domain-coloured. The body keeps its own scheme for residue rendering.)
 
   // Per-original-column consensus residue across every active leaf. The
   // expensive part (counting residues across geneIds × cols) only re-runs
@@ -202,9 +216,20 @@ const MSAHeader = ({
     return computeConsensusArray([...activeGeneIds], msa.sequences, msa.length);
   }, [msa, activeGeneIds]);
 
+  // Per-original-column dominant domain id (used by the minimap to colour
+  // the consensus track regardless of which residue scheme the body is
+  // using). Re-runs only when the alignment, domain set, or active leaves
+  // change.
+  const dominantDomainByCol = useMemo(() => {
+    if (!msa) return null;
+    return computeDominantDomainByCol(msa, data.proteinDomains, activeGeneIds);
+  }, [msa, data.proteinDomains, activeGeneIds]);
+
   // Cheap O(visibleCols) projection: pick the residues for the currently
-  // visible columns and apply the active scheme. Re-runs on mask toggles
-  // and scheme changes, but never re-counts residues.
+  // visible columns and choose a colour. The minimap is intentionally
+  // "plain" — i.e. it always shows DOMAIN colours, never residue colours,
+  // so it acts as a domain-organisation summary alongside the body's
+  // residue rendering.
   const consensus = useMemo(() => {
     if (!consensusByCol || !mask) {
       return { residues: [] as (string | null)[], colors: [] as (string | null)[] };
@@ -212,12 +237,22 @@ const MSAHeader = ({
     const residues = new Array<string | null>(mask.visibleCols.length);
     const colors = new Array<string | null>(mask.visibleCols.length);
     for (let i = 0; i < mask.visibleCols.length; i++) {
-      const ch = consensusByCol[mask.visibleCols[i]] ?? null;
+      const oCol = mask.visibleCols[i];
+      const ch = consensusByCol[oCol] ?? null;
       residues[i] = ch;
-      colors[i] = ch ? (headerScheme?.color(ch) ?? '#888') : null;
+      const did = dominantDomainByCol?.[oCol] ?? null;
+      if (did) {
+        colors[i] = domainColor(did);
+      } else if (ch) {
+        // Non-gap consensus, no domain → neutral mid-grey so the minimap
+        // still reads as "alignment exists here".
+        colors[i] = '#cfd6df';
+      } else {
+        colors[i] = null;
+      }
     }
     return { residues, colors };
-  }, [consensusByCol, mask, headerScheme]);
+  }, [consensusByCol, mask, dominantDomainByCol]);
 
   const setViewport = useCallback(
     (start: number, end: number) =>
@@ -356,7 +391,6 @@ const MSABody = ({
   selectedNodeId,
   prunedNodeIds,
   onHoverNode,
-  onSelectNode,
 }: ZoneRenderProps<MSAZoneState>) => {
   const msa = data.msa;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -446,6 +480,156 @@ const MSABody = ({
     };
   }, [msa, leafGeneIdsByNode]);
 
+  // Per-original-column dominant domain id (used by the body's "Plain"
+  // colour scheme to colour each residue by its enclosing domain).
+  const dominantDomainByCol = useMemo(() => {
+    if (!msa) return null;
+    return computeDominantDomainByCol(msa, data.proteinDomains, activeGeneIds);
+  }, [msa, data.proteinDomains, activeGeneIds]);
+
+  // Lazily-built per-leaf residue → column lookup table. Reused across
+  // re-renders for as long as the MSA reference is stable, so toggling
+  // hovers / scrolling never re-walks a sequence.
+  const colByResidue = useMemo(() => {
+    const cache = new Map<GeneId, number[]>();
+    return (geneId: GeneId): number[] => {
+      const cached = cache.get(geneId);
+      if (cached) return cached;
+      const seq = msa?.sequences[geneId] ?? '';
+      const map = buildResidueToColumn(seq);
+      cache.set(geneId, map);
+      return map;
+    };
+  }, [msa]);
+
+  // Per-domain-hit bar segments, restricted to (a) currently visible rows
+  // and (b) the current viewport's visible-column window. A domain that
+  // straddles a masked region renders as multiple contiguous segments.
+  type DomainBar = {
+    key: string;
+    rowY: number;
+    rowH: number;
+    /** First and last visible-col indices for this segment (inclusive). */
+    startVCol: number;
+    endVCol: number;
+    id: string;
+    name: string;
+    source?: string;
+    nodeId: NodeId;
+  };
+  const domainBars = useMemo<DomainBar[]>(() => {
+    if (!msa || !data.proteinDomains || !mask) return [];
+    // original col → visible col index (only present when not masked).
+    const visibleByOriginal = new Map<number, number>();
+    for (let i = 0; i < mask.visibleCols.length; i++) {
+      visibleByOriginal.set(mask.visibleCols[i], i);
+    }
+    const startIdx = rowRange.startIndex;
+    const endIdx = Math.min(rowRange.endIndex, visibleRows.length);
+    const bars: DomainBar[] = [];
+    for (let i = startIdx; i < endIdx; i++) {
+      const r = visibleRows[i];
+      if (r.kind !== 'leaf') continue;
+      const node = data.tree.nodes[r.nodeId];
+      if (!node?.geneId) continue;
+      const domains = data.proteinDomains[node.geneId];
+      if (!domains?.length) continue;
+      const map = colByResidue(node.geneId);
+      for (const d of domains) {
+        const range = domainColumnRange(d, map);
+        if (!range) continue;
+        // Walk the original-col span and group contiguous visible cols.
+        let runStart = -1;
+        let runEnd = -1;
+        for (let oCol = range.startCol; oCol <= range.endCol; oCol++) {
+          const vCol = visibleByOriginal.get(oCol);
+          if (vCol === undefined) {
+            if (runStart >= 0) {
+              bars.push({
+                key: `${r.nodeId}:${d.id}:${runStart}`,
+                rowY: r.y,
+                rowH: r.height,
+                startVCol: runStart,
+                endVCol: runEnd,
+                id: d.id,
+                name: d.name,
+                source: d.source,
+                nodeId: r.nodeId,
+              });
+              runStart = -1;
+            }
+            continue;
+          }
+          if (runStart < 0) runStart = vCol;
+          runEnd = vCol;
+        }
+        if (runStart >= 0) {
+          bars.push({
+            key: `${r.nodeId}:${d.id}:${runStart}`,
+            rowY: r.y,
+            rowH: r.height,
+            startVCol: runStart,
+            endVCol: runEnd,
+            id: d.id,
+            name: d.name,
+            source: d.source,
+            nodeId: r.nodeId,
+          });
+        }
+      }
+    }
+    return bars;
+  }, [
+    msa,
+    mask,
+    data.proteinDomains,
+    data.tree,
+    visibleRows,
+    rowRange.startIndex,
+    rowRange.endIndex,
+    colByResidue,
+  ]);
+
+  // Tree-wide domain frequency: how many leaves carry at least one hit for
+  // each domain id, against the total leaf count of the entire tree. Used
+  // by the click tooltip to put each hit in context ("appears in 4/5
+  // leaves"). Computed once per (proteinDomains, tree) change.
+  const domainStats = useMemo(() => {
+    const freq = new Map<string, number>();
+    let totalLeaves = 0;
+    for (const node of Object.values(data.tree.nodes)) {
+      if (!node.isLeaf) continue;
+      totalLeaves++;
+      const hits = node.geneId ? data.proteinDomains?.[node.geneId] : undefined;
+      if (!hits || hits.length === 0) continue;
+      const seen = new Set<string>();
+      for (const h of hits) seen.add(h.id);
+      for (const id of seen) freq.set(id, (freq.get(id) ?? 0) + 1);
+    }
+    return { freq, totalLeaves };
+  }, [data.proteinDomains, data.tree]);
+
+  // Click-driven tooltip listing the domains overlapping (clickedRow,
+  // clickedColumn). Held as local UI state — not part of viewState — so
+  // closing it doesn't pollute the URL. Cleared by a click outside the
+  // body or pressing Escape.
+  type DomainTip = {
+    screenX: number;
+    screenY: number;
+    leafName: string;
+    geneId: GeneId;
+    domains: ProteinDomain[];
+  };
+  const [domainTip, setDomainTip] = useState<DomainTip | null>(null);
+  useEffect(() => {
+    if (!domainTip) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDomainTip(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [domainTip]);
+
   // Re-paint whenever the inputs that affect the canvas change.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -467,6 +651,17 @@ const MSABody = ({
     const residueWidth = innerWidth / vp.width;
     const scheme = getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet));
     const visibleCols = mask ? mask.visibleCols : null;
+    // "Plain" scheme means colour residues by the dominant domain at their
+    // column. The lookup below short-circuits to scheme.color for every
+    // other scheme so the hot loop pays no extra cost.
+    const usePlainDomainColors = scheme.id === 'plain' && dominantDomainByCol !== null;
+    const colorAt = (oCol: number, ch: string): string | null => {
+      if (usePlainDomainColors) {
+        const did = dominantDomainByCol![oCol];
+        return did ? domainColor(did) : null;
+      }
+      return scheme.color(ch);
+    };
 
     const renderText = residueWidth >= TEXT_RENDER_MIN_PX;
     // Above THREE_LETTER_MIN_PX, protein columns get the 3-letter abbreviation
@@ -518,7 +713,7 @@ const MSABody = ({
           if (oCol === undefined) continue;
           const ch = getCh(oCol);
           if (!ch || ch === '-') continue;
-          ctx.fillStyle = scheme.color(ch) ?? RESIDUE_COLOR;
+          ctx.fillStyle = colorAt(oCol, ch) ?? RESIDUE_COLOR;
           const x = PAD_X + (vCol - vp.start + 0.5) * residueWidth;
           const text = renderThreeLetter
             ? (AA_THREE_LETTER[ch.toUpperCase()] ?? ch)
@@ -526,14 +721,18 @@ const MSABody = ({
           ctx.fillText(text, x, rowYCenter);
         }
       } else {
+        // Snap each column's CSS-pixel boundaries so adjacent fills abut
+        // exactly. Avoids the sub-pixel seams that show as faint vertical
+        // lines under plain/domain colouring at small residueWidth.
         for (let vCol = vp.start; vCol < vp.end; vCol++) {
           const oCol = visibleCols ? visibleCols[vCol] : vCol;
           if (oCol === undefined) continue;
           const ch = getCh(oCol);
           if (!ch || ch === '-') continue;
-          ctx.fillStyle = scheme.color(ch) ?? RESIDUE_BG_COLOR;
-          const x = PAD_X + (vCol - vp.start) * residueWidth;
-          ctx.fillRect(x, r.y + 2, Math.max(residueWidth, 0.5), r.height - 4);
+          ctx.fillStyle = colorAt(oCol, ch) ?? RESIDUE_BG_COLOR;
+          const x0 = PAD_X + Math.round((vCol - vp.start) * residueWidth);
+          const x1 = PAD_X + Math.round((vCol - vp.start + 1) * residueWidth);
+          ctx.fillRect(x0, r.y + 2, Math.max(1, x1 - x0), r.height - 4);
         }
       }
       ctx.restore();
@@ -553,6 +752,7 @@ const MSABody = ({
     zoneState.colorSchemeId,
     data.tree,
     consensusByNode,
+    dominantDomainByCol,
     mask,
     totalVisible,
   ]);
@@ -640,8 +840,65 @@ const MSABody = ({
     });
   };
 
+  // Body click → if a leaf row + column intersection has any domain hits
+  // overlapping, open the domain tooltip. Otherwise no-op (in particular,
+  // does NOT call onSelectNode — node selection lives in the tree zone).
+  const onBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!msa || !mask || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    const vp = resolveViewport(zoneState, totalVisible);
+    const innerW = Math.max(1, width - 2 * PAD_X);
+    const residueW = innerW / vp.width;
+    const insideX = localX - PAD_X;
+    if (insideX < 0 || insideX > innerW) return;
+    const vCol = vp.start + Math.floor(insideX / residueW);
+    if (vCol < vp.start || vCol >= vp.end) return;
+    const oCol = mask.visibleCols[vCol];
+    if (oCol === undefined) return;
+
+    // Find which row contains localY. visibleRows are y-sorted with no
+    // overlaps, so a linear scan is fine — bounded by virtualization.
+    const startIdx = rowRange.startIndex;
+    const endIdx = Math.min(rowRange.endIndex, visibleRows.length);
+    let row: (typeof visibleRows)[number] | null = null;
+    for (let i = startIdx; i < endIdx; i++) {
+      const r = visibleRows[i];
+      if (localY >= r.y && localY < r.y + r.height) {
+        row = r;
+        break;
+      }
+    }
+    if (!row || row.kind !== 'leaf') return;
+    const node = data.tree.nodes[row.nodeId];
+    if (!node?.geneId) return;
+    const hits = data.proteinDomains?.[node.geneId];
+    if (!hits || hits.length === 0) return;
+    const map = colByResidue(node.geneId);
+    const overlapping = hits.filter((d) => {
+      const r = domainColumnRange(d, map);
+      return r !== null && oCol >= r.startCol && oCol <= r.endCol;
+    });
+    if (overlapping.length === 0) return;
+
+    setDomainTip({
+      screenX: e.clientX,
+      screenY: e.clientY,
+      leafName:
+        (data.geneMetadata?.[node.geneId] as { displayName?: string } | undefined)
+          ?.displayName ?? node.geneId,
+      geneId: node.geneId,
+      domains: overlapping,
+    });
+  };
+
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      ref={containerRef}
+      onClick={onBodyClick}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       <canvas
         ref={canvasRef}
         style={{
@@ -662,14 +919,15 @@ const MSABody = ({
             key={r.nodeId}
             onMouseEnter={() => onHoverNode(r.nodeId)}
             onMouseLeave={() => onHoverNode(null)}
-            onClick={() => onSelectNode(r.nodeId)}
             style={{
               position: 'absolute',
               top: r.y,
               left: 0,
               right: 0,
               height: r.height,
-              cursor: 'pointer',
+              // No click-to-select in MSA — clicks are handled at the body
+              // level and either open the domain tooltip or do nothing.
+              cursor: 'default',
               background: isSelected
                 ? 'rgba(40, 120, 220, 0.12)'
                 : isExactHover
@@ -684,6 +942,49 @@ const MSABody = ({
           />
         );
       })}
+      {/* Domain bars: thin coloured strips at the bottom of each leaf
+          row showing protein domains in the current viewport. The parent
+          SVG has pointerEvents:none so events still reach the row hit
+          overlays for non-bar pixels; each rect re-enables pointer events
+          so its <title> can serve as a hover tooltip. */}
+      {domainBars.length > 0 && vpForOverlay && (
+        <svg
+          width={width}
+          height={totalHeight}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        >
+          {domainBars.map((b) => {
+            const x1 = PAD_X + (b.startVCol - vpForOverlay.start) * overlayResidueWidth;
+            const x2 = PAD_X + (b.endVCol - vpForOverlay.start + 1) * overlayResidueWidth;
+            // Skip bars that fall entirely outside the visible viewport.
+            if (x2 <= PAD_X || x1 >= PAD_X + innerWidthForOverlay) return null;
+            const xClipped1 = Math.max(PAD_X, x1);
+            const xClipped2 = Math.min(PAD_X + innerWidthForOverlay, x2);
+            const w = Math.max(1, xClipped2 - xClipped1);
+            return (
+              // Bars are passive visual markers; click handling is at the
+              // body level so any click in the row + column intersection
+              // (whether on the bar or just on its row pixels) opens the
+              // domain tooltip.
+              <rect
+                key={b.key}
+                x={xClipped1}
+                y={b.rowY + b.rowH - 3}
+                width={w}
+                height={2}
+                fill={domainColor(b.id)}
+                pointerEvents="none"
+              />
+            );
+          })}
+        </svg>
+      )}
       {mask && mask.runs.length > 0 && vpForOverlay && (
         <svg
           width={width}
@@ -777,9 +1078,144 @@ const MSABody = ({
           })}
         </svg>
       )}
+      {domainTip && (
+        <DomainTooltip
+          tip={domainTip}
+          stats={domainStats}
+          onClose={() => setDomainTip(null)}
+        />
+      )}
     </div>
   );
 };
+
+/**
+ * Compact floating tooltip listing every domain that overlaps the clicked
+ * (leaf, column) intersection, with each hit's tree-wide frequency. Closed
+ * on outside click or Escape (Escape handled by the parent body).
+ */
+function DomainTooltip({
+  tip,
+  stats,
+  onClose,
+}: {
+  tip: {
+    screenX: number;
+    screenY: number;
+    leafName: string;
+    geneId: GeneId;
+    domains: ProteinDomain[];
+  };
+  stats: { freq: Map<string, number>; totalLeaves: number };
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      onClose();
+    };
+    // Defer to skip the click that opened us.
+    const t = setTimeout(() => document.addEventListener('click', onDocClick), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('click', onDocClick);
+    };
+  }, [onClose]);
+
+  // Clamp into the viewport so a click near the right/bottom edge doesn't
+  // push the tooltip off-screen.
+  const margin = 8;
+  const estW = 280;
+  const estH = 24 + tip.domains.length * 36;
+  const left = Math.min(tip.screenX + 12, window.innerWidth - estW - margin);
+  const top = Math.min(tip.screenY + 12, window.innerHeight - estH - margin);
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed',
+        left,
+        top,
+        zIndex: 1000,
+        background: 'white',
+        border: '1px solid #d0d0d0',
+        borderRadius: 6,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+        padding: '8px 10px',
+        fontSize: 12,
+        color: '#222',
+        maxWidth: 320,
+        minWidth: 180,
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          marginBottom: 6,
+          gap: 8,
+        }}
+      >
+        <div style={{ fontWeight: 600 }}>{tip.leafName}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#888',
+            fontSize: 14,
+            cursor: 'pointer',
+            padding: 0,
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {tip.domains.map((d) => {
+          const seenIn = stats.freq.get(d.id) ?? 0;
+          const total = stats.totalLeaves;
+          const pct = total > 0 ? Math.round((seenIn / total) * 100) : 0;
+          return (
+            <div
+              key={d.id}
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 10,
+                  height: 10,
+                  borderRadius: 2,
+                  background: domainColor(d.id),
+                  flex: '0 0 auto',
+                }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>{d.name}</div>
+                <div style={{ color: '#777', fontSize: 11 }}>
+                  {d.id}
+                  {d.source ? ` · ${d.source}` : ''} · residues {d.start}–{d.end}
+                </div>
+                <div style={{ color: '#555', fontSize: 11 }}>
+                  in {seenIn} / {total} leaves ({pct}%)
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export const msaZone: ZoneDefinition<MSAZoneState> = {
   id: 'msa',

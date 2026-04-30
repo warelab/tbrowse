@@ -1,4 +1,12 @@
-import type { GeneMetadata, LabelProvider, MSA, Taxonomy, Tree, TreeNode } from 'tbrowse';
+import type {
+  GeneMetadata,
+  LabelProvider,
+  MSA,
+  ProteinDomain,
+  Taxonomy,
+  Tree,
+  TreeNode,
+} from 'tbrowse';
 
 export const sampleTree: Tree = {
   rootId: 'n0',
@@ -48,6 +56,35 @@ export const sampleMSA: MSA = {
     ENSRNOG00000001:    'MEDSQSDMSI-ELPLSQETFSDLWKLLPPNNVLSTLPSSDSIEELFLPRSDIDQWLSEDR',
     ENSDARG00000001:    'MAQEPQSDLSIEPPLSQETFSELWNLLSPDSIPSSCSMHEALL------------ESVN',
   },
+};
+
+// Hand-crafted protein domain hits, in 1-based UNALIGNED residue
+// coordinates. Real Pfam hits would come from InterPro / Ensembl;
+// these mimic the p53 transactivation + DNA-binding regions across
+// the family, with the human/chimp pair perfectly conserved and the
+// non-mammalian leaves missing one of the hits.
+export const sampleProteinDomains: Record<string, ProteinDomain[]> = {
+  ENSG00000000001: [
+    { id: 'PF08563', name: 'p53 transactivation', start: 6, end: 30, source: 'Pfam' },
+    { id: 'PF00870', name: 'p53 DNA-binding domain', start: 35, end: 58, source: 'Pfam' },
+  ],
+  ENSPTRG00000001: [
+    { id: 'PF08563', name: 'p53 transactivation', start: 6, end: 30, source: 'Pfam' },
+    { id: 'PF00870', name: 'p53 DNA-binding domain', start: 35, end: 58, source: 'Pfam' },
+  ],
+  ENSMUSG00000001: [
+    { id: 'PF08563', name: 'p53 transactivation', start: 9, end: 32, source: 'Pfam' },
+    { id: 'PF00870', name: 'p53 DNA-binding domain', start: 38, end: 58, source: 'Pfam' },
+  ],
+  ENSRNOG00000001: [
+    { id: 'PF08563', name: 'p53 transactivation', start: 4, end: 28, source: 'Pfam' },
+    { id: 'PF00870', name: 'p53 DNA-binding domain', start: 33, end: 56, source: 'Pfam' },
+  ],
+  ENSDARG00000001: [
+    // Zebrafish loses the C-terminal DNA-binding hit (sample MSA truncates
+    // here) — useful for visually checking the per-leaf layout.
+    { id: 'PF08563', name: 'p53 transactivation', start: 5, end: 29, source: 'Pfam' },
+  ],
 };
 
 // Sample label provider that simulates an async fetch (~600ms latency).
