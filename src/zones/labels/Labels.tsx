@@ -203,7 +203,7 @@ export const labelsZone: ZoneDefinition<LabelsZoneState> = {
   displayName: 'Labels',
   Header: LabelsHeader,
   Body: LabelsBody,
-  defaultWidth: 220,
+  defaultWidth: 20,
   minWidth: 100,
   defaultZoneState: DEFAULT_STATE,
   isAvailable: (data) => Boolean(data.tree),

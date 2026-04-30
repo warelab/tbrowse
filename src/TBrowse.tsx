@@ -10,13 +10,26 @@ export function TBrowse(props: TBrowseProps) {
   const onChange = props.onViewStateChange;
   const isControlled = propViewState !== undefined;
 
-  useEffect(() => {
-    if (isControlled && propViewState) {
-      store.setState({ viewState: propViewState });
-    }
-  }, [isControlled, propViewState, store]);
-
   const lastEmitted = useRef(store.getState().viewState);
+
+  // Synchronously mirror a controlled `viewState` prop into the store
+  // DURING render. Doing this in a useEffect would defer the sync by one
+  // commit — long enough that the host can swap in a new tree + matching
+  // pivot view state in a single batch and have the chassis paint once
+  // with the new tree against the OLD viewState (no pivot, all leaves
+  // briefly visible) before the effect fires the second render. Setting
+  // store state during render is safe for Zustand because subscribers
+  // use useSyncExternalStore — they pick up the latest snapshot when
+  // they (re)render later in this pass.
+  if (
+    isControlled &&
+    propViewState !== undefined &&
+    store.getState().viewState !== propViewState
+  ) {
+    lastEmitted.current = propViewState;
+    store.setState({ viewState: propViewState });
+  }
+
   useEffect(() => {
     if (!onChange) return;
     return store.subscribe((state) => {

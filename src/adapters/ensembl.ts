@@ -1,7 +1,9 @@
 import type {
+  GeneId,
   GeneMetadata,
   MSA,
   NodeId,
+  ProteinDomain,
   Taxonomy,
   Tree,
   TreeNode,
@@ -25,6 +27,14 @@ interface EnsemblNode {
   sequence?: {
     mol_seq?: { is_aligned?: number | boolean; seq?: string };
     name?: string;
+    /** Genetree responses with sequence=protein expose the translation
+     *  (ENSP) accession here. The shape varies — sometimes a string,
+     *  sometimes a single object, sometimes an array of {accession,
+     *  source}. extractProteinId() handles all three. */
+    id?:
+      | string
+      | { accession?: string; source?: string }
+      | ReadonlyArray<{ accession?: string; source?: string }>;
   };
   children?: EnsemblNode[];
 }
@@ -51,6 +61,14 @@ export interface FromEnsemblResult {
   taxonomy: Taxonomy;
   msa?: MSA;
   geneMetadata: GeneMetadata;
+  /**
+   * GeneId → translation (ENSP) accession, when the gene-tree response
+   * carried it. Hosts use this to fan out to
+   * `/overlap/translation/{ENSP}?feature=protein_feature` and feed the
+   * results into `fromEnsemblProteinFeatures`. Missing entries simply
+   * mean we couldn't resolve a protein id for that leaf — skip those.
+   */
+  proteinIdByGeneId: Record<GeneId, string>;
 }
 
 /**
@@ -78,6 +96,7 @@ export function fromEnsemblGeneTree(
   const taxonomy: Taxonomy = {};
   const sequences: Record<string, string> = {};
   const geneMetadata: GeneMetadata = {};
+  const proteinIdByGeneId: Record<GeneId, string> = {};
   let nextId = 0;
 
   const walk = (en: EnsemblNode, parentId: NodeId | null): NodeId => {
@@ -119,6 +138,8 @@ export function fromEnsemblGeneTree(
         const meta: Record<string, unknown> = {};
         if (en.sequence?.name) meta.displayName = en.sequence.name;
         if (Object.keys(meta).length > 0) geneMetadata[accession] = meta;
+        const proteinId = extractProteinId(en.sequence);
+        if (proteinId) proteinIdByGeneId[accession] = proteinId;
       }
     }
 
@@ -145,7 +166,102 @@ export function fromEnsemblGeneTree(
     msa = { alphabet, length, sequences };
   }
 
-  return { tree: { rootId, nodes }, taxonomy, msa, geneMetadata };
+  return { tree: { rootId, nodes }, taxonomy, msa, geneMetadata, proteinIdByGeneId };
+}
+
+/**
+ * Resolve the translation (ENSP) accession from a genetree leaf's
+ * `sequence` block. The Ensembl shape varies — `sequence.id` can be a
+ * string, an object, or an array of {accession, source} entries (with
+ * Ensembl's own assignment usually being the one we want). When all of
+ * those are absent, fall back to `sequence.name` if it looks like an
+ * Ensembl protein accession.
+ */
+function extractProteinId(seq: EnsemblNode['sequence']): string | null {
+  if (!seq) return null;
+  const sid: unknown = seq.id;
+  if (Array.isArray(sid)) {
+    type Entry = { accession?: string; source?: string };
+    const arr = sid as ReadonlyArray<Entry>;
+    const ensembl = arr.find(
+      (e) =>
+        e &&
+        typeof e === 'object' &&
+        typeof e.accession === 'string' &&
+        (e.source ?? '').toLowerCase().includes('ensembl'),
+    );
+    const pick = ensembl ?? arr.find((e) => e && typeof e.accession === 'string');
+    if (pick?.accession) return pick.accession;
+  } else if (typeof sid === 'string' && sid !== '') {
+    return sid;
+  } else if (sid && typeof sid === 'object') {
+    const obj = sid as { accession?: string };
+    if (typeof obj.accession === 'string' && obj.accession !== '') return obj.accession;
+  }
+  if (typeof seq.name === 'string' && /^ENS\w*P\d+/i.test(seq.name)) return seq.name;
+  return null;
+}
+
+// ─── Protein-feature (domain) endpoint ────────────────────────────────────────
+
+export interface FromEnsemblProteinFeaturesOptions {
+  /**
+   * Restrict to specific feature sources (Ensembl's `type` field —
+   * case-sensitive: `"Pfam"`, `"Smart"`, `"SuperFamily"`, `"PANTHER"`,
+   * `"Gene3D"`, `"Prints"`, `"PIRSF"`, `"Tmhmm"`, `"Signalp"`, ...).
+   * Pass `undefined` or an empty list to keep every source.
+   */
+  sources?: ReadonlyArray<string>;
+}
+
+interface EnsemblProteinFeatureRow {
+  id?: string;
+  description?: string;
+  type?: string;
+  start?: number;
+  end?: number;
+  interpro?: string;
+}
+
+/**
+ * Convert an Ensembl `/overlap/translation/{ENSP}?feature=protein_feature`
+ * response into TBrowse's ProteinDomain[] for that single protein. Pure;
+ * the caller does the network fetch and assembles the per-GeneId dict.
+ *
+ * Rows missing required fields (`id`, numeric `start`/`end`) are skipped
+ * silently — Ensembl occasionally returns sparse hits that aren't useful.
+ *
+ * Docs: https://rest.ensembl.org/documentation/info/overlap_translation
+ */
+export function fromEnsemblProteinFeatures(
+  json: unknown,
+  options: FromEnsemblProteinFeaturesOptions = {},
+): ProteinDomain[] {
+  if (!Array.isArray(json)) {
+    throw new Error(
+      'fromEnsemblProteinFeatures: expected an array of protein-feature rows',
+    );
+  }
+  const allow =
+    options.sources && options.sources.length > 0
+      ? new Set(options.sources)
+      : null;
+  const out: ProteinDomain[] = [];
+  for (const raw of json as EnsemblProteinFeatureRow[]) {
+    if (!raw || typeof raw !== 'object') continue;
+    if (typeof raw.id !== 'string' || raw.id === '') continue;
+    if (typeof raw.start !== 'number' || typeof raw.end !== 'number') continue;
+    if (allow && !allow.has(raw.type ?? '')) continue;
+    const domain: ProteinDomain = {
+      id: raw.id,
+      name: raw.description ?? raw.id,
+      start: raw.start,
+      end: raw.end,
+    };
+    if (typeof raw.type === 'string' && raw.type !== '') domain.source = raw.type;
+    out.push(domain);
+  }
+  return out;
 }
 
 function detectAlphabet(sequences: string[]): MSA['alphabet'] {

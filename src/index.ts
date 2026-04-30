@@ -1,9 +1,18 @@
 export { TBrowse } from './TBrowse';
 export {
   fromEnsemblGeneTree,
+  fromEnsemblProteinFeatures,
   type FromEnsemblOptions,
   type FromEnsemblResult,
+  type FromEnsemblProteinFeaturesOptions,
 } from './adapters/ensembl';
+export {
+  fromGrameneGene,
+  fromGrameneGenetree,
+  type FromGrameneGeneResult,
+  type FromGrameneGenetreeOptions,
+  type FromGrameneGenetreeResult,
+} from './adapters/gramene';
 export { computePivotState, type PivotState } from './pivot';
 export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
 export { computeRowRange } from './layout/rowRange';

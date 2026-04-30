@@ -75,6 +75,15 @@ export interface ViewState {
   prunedNodeIds: NodeId[];
   /** Internal nodes whose children are rendered in reversed order. */
   swappedNodeIds: NodeId[];
+  /**
+   * Per-node *override* set for branch-length compression. The Tree zone
+   * auto-compresses outlier-long branches (anything past a multiple of
+   * the median); a node id appearing here flips the compression state of
+   * its incoming branch — a normally-uncompressed branch becomes
+   * compressed and vice versa, so users can pin specific branches either
+   * way regardless of the auto rule.
+   */
+  compressedNodeIds: NodeId[];
   /** The leaf id designated as "node of interest". */
   nodeOfInterestId: NodeId | null;
   zones: ZoneViewState[];
@@ -155,12 +164,16 @@ export interface ZoneRenderProps<S = unknown> {
   collapsedNodeIds: ReadonlySet<NodeId>;
   prunedNodeIds: ReadonlySet<NodeId>;
   swappedNodeIds: ReadonlySet<NodeId>;
+  /** Branch-compression overrides — see ViewState.compressedNodeIds. */
+  compressedNodeIds: ReadonlySet<NodeId>;
   onHoverNode: (id: NodeId | null) => void;
   onSelectNode: (id: NodeId) => void;
   onClearSelection: () => void;
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
   onToggleSwapped: (id: NodeId) => void;
+  /** Flip the auto-determined compression state for this node's branch. */
+  onToggleCompressed: (id: NodeId) => void;
   /** Remove every descendant of `id` from collapsedNodeIds. */
   onExpandSubtree: (id: NodeId) => void;
   /**
@@ -189,7 +202,20 @@ export interface ZoneDefinition<S = unknown> {
   displayName: string;
   Header: ComponentType<ZoneRenderProps<S>>;
   Body: ComponentType<ZoneRenderProps<S>>;
+  /**
+   * Initial fr-share for this zone. The chassis lays zones out as
+   * fractions of the container width — `defaultWidth: 30` for tree,
+   * `20` for labels, `50` for msa gives 30 % / 20 % / 50 %. Resizing
+   * adjusts these fr values without changing the total, so the
+   * component always fills its container.
+   */
   defaultWidth: number;
+  /**
+   * Minimum pixel width below which the resize handle won't shrink
+   * this zone. Honoured by the grid via `minmax(<minWidth>px, <fr>fr)`,
+   * so if zones can't fit within the container they overflow into a
+   * horizontal scroll rather than getting squashed.
+   */
   minWidth: number;
   defaultZoneState: S;
   isAvailable: (data: HostData) => boolean;

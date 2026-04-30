@@ -9,7 +9,14 @@ import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 // room inside the SVG. (The stub is what users hover/click to interact with
 // the root node, since the root's own branch is zero-length.)
 const LEFT_PAD = 16;
-const RIGHT_PAD = 6;
+// RIGHT_PAD must be ≥ COLLAPSED_TRIANGLE_WIDTH so that when a collapsed-
+// summary node ends up at the deepest visible depth (i.e. lands at
+// drawingLeftX + drawingWidth) its triangle, which extends
+// COLLAPSED_TRIANGLE_WIDTH to the right of the apex, doesn't overflow the
+// zone's `overflow: hidden` clip and get cut off. Adds a few extra px of
+// breathing room so the triangle's base doesn't sit flush against the
+// labels-zone divider.
+const RIGHT_PAD = 24;
 
 const BRANCH_COLOR = '#444';
 const BRANCH_WIDTH = 1.5;
@@ -160,6 +167,7 @@ const TreeBody = ({
   collapsedNodeIds,
   prunedNodeIds,
   swappedNodeIds,
+  compressedNodeIds,
   nodeOfInterestId,
   onHoverNode,
   onSelectNode,
@@ -167,6 +175,7 @@ const TreeBody = ({
   onToggleCollapsed,
   onTogglePruned,
   onToggleSwapped,
+  onToggleCompressed,
   onExpandSubtree,
   onMakeNodeOfInterest,
   onShowParalogs,
@@ -176,7 +185,46 @@ const TreeBody = ({
   const drawingWidth = Math.max(0, width - LEFT_PAD - RIGHT_PAD);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const layout = useMemo(
+  // Auto-compression: branches whose distance is more than 5× the median
+  // are flagged for visual shortening so a single outlier doesn't squash
+  // the rest of the tree. The user can override per-branch via the
+  // tooltip; the override flips whatever the auto rule decided
+  // (XOR semantics). The actual shortening happens later, in pixel space,
+  // post-layout.
+  const autoCompressed = useMemo(() => {
+    const distances: number[] = [];
+    for (const n of Object.values(data.tree.nodes)) {
+      if (n.parentId !== null && n.distance > 0) distances.push(n.distance);
+    }
+    if (distances.length < 5) return new Set<NodeId>();
+    const sorted = [...distances].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (median <= 0) return new Set<NodeId>();
+    const threshold = median * 5;
+    const out = new Set<NodeId>();
+    for (const n of Object.values(data.tree.nodes)) {
+      if (n.parentId !== null && n.distance > threshold) out.add(n.id);
+    }
+    return out;
+  }, [data.tree]);
+
+  // Effective compression set = auto-detected XOR per-node overrides.
+  const effectiveCompressed = useMemo(() => {
+    const out = new Set<NodeId>(autoCompressed);
+    for (const id of compressedNodeIds) {
+      if (out.has(id)) out.delete(id);
+      else out.add(id);
+    }
+    return out;
+  }, [autoCompressed, compressedNodeIds]);
+
+  // For the tooltip's "Compress / Uncompress branch" label we also need
+  // to know whether a single node is currently compressed. Local helper.
+  const isCompressed = (id: NodeId) => effectiveCompressed.has(id);
+
+  // Raw layout (no compression). Pixel positions come from branch-length
+  // depth × xScale where xScale = drawingWidth / maxEndDepth.
+  const rawLayout = useMemo(
     () =>
       computeTreeLayout({
         tree: data.tree,
@@ -186,6 +234,66 @@ const TreeBody = ({
       }),
     [data.tree, visibleRows, drawingWidth],
   );
+
+  // Compression in pixel space. Each compressed branch is first shortened
+  // to at most `0.1 × drawingWidth` pixels (never lengthened); descendants
+  // shift left by the same amount so their relative geometry is preserved.
+  // After compression, the layout is RESCALED so the rightmost visible
+  // end-node still lands at `drawingLeftX + drawingWidth` — otherwise the
+  // tree would leave whitespace on the right, and the leaf-extension
+  // dashes would stretch across the gap to bridge the labels zone. The
+  // 0.1 cap therefore acts as a *relative* shortening guideline rather
+  // than a hard pixel limit.
+  const layout = useMemo(() => {
+    if (effectiveCompressed.size === 0 || drawingWidth <= 0) return rawLayout;
+    const maxBranchPx = drawingWidth * 0.1;
+    const byIdRaw = new Map(rawLayout.nodes.map((n) => [n.nodeId, n]));
+    const childrenIdx = new Map<NodeId, NodeId[]>();
+    for (const n of rawLayout.nodes) {
+      if (n.parentId === null) continue;
+      const arr = childrenIdx.get(n.parentId);
+      if (arr) arr.push(n.nodeId);
+      else childrenIdx.set(n.parentId, [n.nodeId]);
+    }
+    const newX = new Map<NodeId, number>();
+    const queue: NodeId[] = [];
+    if (rawLayout.rootId) {
+      newX.set(rawLayout.rootId, byIdRaw.get(rawLayout.rootId)!.x);
+      queue.push(rawLayout.rootId);
+    }
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const parentRawX = byIdRaw.get(id)!.x;
+      const parentNewX = newX.get(id)!;
+      for (const childId of childrenIdx.get(id) ?? []) {
+        const child = byIdRaw.get(childId)!;
+        const rawBranchPx = child.x - parentRawX;
+        const branchPx = effectiveCompressed.has(childId)
+          ? Math.min(rawBranchPx, maxBranchPx)
+          : rawBranchPx;
+        newX.set(childId, parentNewX + branchPx);
+        queue.push(childId);
+      }
+    }
+    // Rescale so the rightmost VISIBLE END (leaf or collapsed summary)
+    // sits at the right edge of the drawing area, the same invariant
+    // computeTreeLayout enforces for the raw layout.
+    let maxEndX = LEFT_PAD;
+    for (const n of rawLayout.nodes) {
+      if (!n.isVisibleEnd) continue;
+      const adj = newX.get(n.nodeId) ?? n.x;
+      if (adj > maxEndX) maxEndX = adj;
+    }
+    const span = maxEndX - LEFT_PAD;
+    const scale = span > 0 ? drawingWidth / span : 1;
+    return {
+      rootId: rawLayout.rootId,
+      nodes: rawLayout.nodes.map((n) => {
+        const adj = newX.get(n.nodeId) ?? n.x;
+        return { ...n, x: LEFT_PAD + (adj - LEFT_PAD) * scale };
+      }),
+    };
+  }, [rawLayout, effectiveCompressed, drawingWidth]);
 
   const ancestorsHighlight = useMemo<ReadonlySet<NodeId>>(() => {
     if (hoveredNodeId === null) return new Set();
@@ -549,6 +657,45 @@ const TreeBody = ({
             );
           })}
         </g>
+        {/* Branch-compression glyphs. Two short diagonal slashes ("//") at
+            the midpoint of each compressed horizontal segment, signalling
+            that the rendered length is shorter than the actual branch
+            length. Drawn after the branches so they overlay the line. */}
+        <g pointerEvents="none">
+          {layout.nodes.map((child) => {
+            if (child.parentId === null) return null;
+            if (!effectiveCompressed.has(child.nodeId)) return null;
+            const parent = byId.get(child.parentId);
+            if (!parent) return null;
+            if (!yInRange(child.y)) return null;
+            const opacity = opacityById.get(child.nodeId) ?? 1;
+            const childX = parent.x + (child.x - parent.x) * opacity;
+            const midX = (parent.x + childX) / 2;
+            const hl = isHighlighted(child.nodeId);
+            const stroke = hl ? HIGHLIGHT_COLOR : BRANCH_COLOR;
+            // Two diagonal slashes 3px apart, ±3px tall.
+            return (
+              <g key={`bc-${child.nodeId}`} opacity={opacity}>
+                <line
+                  x1={midX - 3}
+                  y1={child.y + 3}
+                  x2={midX}
+                  y2={child.y - 3}
+                  stroke={stroke}
+                  strokeWidth={1.2}
+                />
+                <line
+                  x1={midX}
+                  y1={child.y + 3}
+                  x2={midX + 3}
+                  y2={child.y - 3}
+                  stroke={stroke}
+                  strokeWidth={1.2}
+                />
+              </g>
+            );
+          })}
+        </g>
         {/* Leaf extensions. Tracked to the leaf's interpolated x so the
             extension visibly anchors to where the branch tip currently is.
             For collapsed-summary nodes the extension starts past the
@@ -757,6 +904,7 @@ const TreeBody = ({
           data={data}
           isCollapsed={collapsedNodeIds.has(selectedNodeId)}
           isPruned={prunedNodeIds.has(selectedNodeId)}
+          isCompressed={isCompressed(selectedNodeId)}
           isNodeOfInterest={nodeOfInterestId === selectedNodeId}
           subtreeLeafCount={selectedSubtreeLeafCount}
           hasCollapsedDescendants={selectedHasCollapsedDescendants}
@@ -765,6 +913,7 @@ const TreeBody = ({
           onToggleCollapsed={onToggleCollapsed}
           onTogglePruned={onTogglePruned}
           onToggleSwapped={onToggleSwapped}
+          onToggleCompressed={onToggleCompressed}
           onExpandSubtree={onExpandSubtree}
           onMakeNodeOfInterest={onMakeNodeOfInterest}
           onShowParalogs={onShowParalogs}
@@ -1064,7 +1213,7 @@ export const treeZone: ZoneDefinition<TreeZoneState> = {
   displayName: 'Tree',
   Header: TreeHeader,
   Body: TreeBody,
-  defaultWidth: 280,
+  defaultWidth: 30,
   minWidth: 120,
   defaultZoneState: { prunedNodeStyle: DEFAULT_PRUNED_STYLE },
   isAvailable: (data) => Boolean(data.tree),

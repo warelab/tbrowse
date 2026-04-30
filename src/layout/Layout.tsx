@@ -68,6 +68,10 @@ export function Layout({ data, zones }: LayoutProps) {
     () => new Set(viewState.swappedNodeIds ?? []),
     [viewState.swappedNodeIds],
   );
+  const compressedNodeIds = useMemo(
+    () => new Set(viewState.compressedNodeIds ?? []),
+    [viewState.compressedNodeIds],
+  );
 
   const targetVisibleRows = useMemo(
     () =>
@@ -175,6 +179,7 @@ export function Layout({ data, zones }: LayoutProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
 
   // Per-zone horizontal scroll position (transient, not in viewState).
   const [scrollLefts, setScrollLefts] = useState<Record<string, number>>({});
@@ -186,7 +191,9 @@ export function Layout({ data, zones }: LayoutProps) {
     const el = outerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
-      setViewportHeight(entries[0].contentRect.height);
+      const r = entries[0].contentRect;
+      setViewportHeight(r.height);
+      setViewportWidth(r.width);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -253,6 +260,18 @@ export function Layout({ data, zones }: LayoutProps) {
         return idx >= 0
           ? { ...vs, swappedNodeIds: swapped.filter((x) => x !== id) }
           : { ...vs, swappedNodeIds: [...swapped, id] };
+      }),
+    [setViewState],
+  );
+
+  const onToggleCompressed = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const cur = vs.compressedNodeIds ?? [];
+        const idx = cur.indexOf(id);
+        return idx >= 0
+          ? { ...vs, compressedNodeIds: cur.filter((x) => x !== id) }
+          : { ...vs, compressedNodeIds: [...cur, id] };
       }),
     [setViewState],
   );
@@ -338,7 +357,17 @@ export function Layout({ data, zones }: LayoutProps) {
     [],
   );
 
-  const gridTemplateColumns = visibleZones.map((z) => `${z.width}px`).join(' ');
+  // Fill the container: zone widths act as fr-shares of the viewport.
+  // Each column is `minmax(<minWidth>px, <fr>fr)` so the grid can't shrink
+  // a zone below its declared minWidth (would force horizontal overflow).
+  const sumZoneFr = visibleZones.reduce((sum, z) => sum + z.width, 0);
+  const gridTemplateColumns = visibleZones
+    .map((z) => {
+      const def = zoneById.get(z.id);
+      const minPx = def?.minWidth ?? 50;
+      return `minmax(${minPx}px, ${z.width}fr)`;
+    })
+    .join(' ');
 
   const renderProps = (zoneId: string, width: number, def: ZoneDefinition): ZoneRenderProps => {
     const stored = viewState.zoneStates[zoneId];
@@ -351,12 +380,14 @@ export function Layout({ data, zones }: LayoutProps) {
       collapsedNodeIds,
       prunedNodeIds,
       swappedNodeIds,
+      compressedNodeIds,
       onHoverNode,
       onSelectNode,
       onClearSelection,
       onToggleCollapsed,
       onTogglePruned,
       onToggleSwapped,
+      onToggleCompressed,
       onExpandSubtree,
       onMakeNodeOfInterest,
       onShowParalogs,
@@ -402,15 +433,25 @@ export function Layout({ data, zones }: LayoutProps) {
           gridTemplateRows: `${HEADER_HEIGHT}px auto`,
           gridTemplateColumns: gridTemplateColumns || '1fr',
           height: HEADER_HEIGHT + totalContentHeight,
-          minWidth: 'min-content',
           position: 'relative',
           cursor: dragState ? 'grabbing' : undefined,
         }}
       >
-        {visibleZones.map((zoneVS) => {
+        {visibleZones.map((zoneVS, vIdx) => {
           const def = zoneById.get(zoneVS.id)!;
-          const props = renderProps(zoneVS.id, zoneVS.width, def);
+          // Compute the rendered pixel width from the fr-share so zone
+          // bodies (which still measure in pixels for canvas sizing etc.)
+          // get the right number rather than the raw fr value.
+          const renderedWidth =
+            sumZoneFr > 0 && viewportWidth > 0
+              ? (zoneVS.width / sumZoneFr) * viewportWidth
+              : zoneVS.width;
+          const props = renderProps(zoneVS.id, renderedWidth, def);
           const isDragging = dragState?.zoneId === zoneVS.id;
+          const nextZoneVS = visibleZones[vIdx + 1];
+          const nextMinWidth = nextZoneVS
+            ? (zoneById.get(nextZoneVS.id)?.minWidth ?? 50)
+            : 0;
           return (
             <div
               key={`h-${zoneVS.id}`}
@@ -452,17 +493,28 @@ export function Layout({ data, zones }: LayoutProps) {
                   setDragState={setDragState}
                 />
               </div>
-              <ResizeHandle
-                zoneId={zoneVS.id}
-                currentWidth={zoneVS.width}
-                minWidth={def.minWidth}
-              />
+              {nextZoneVS && (
+                <ResizeHandle
+                  zoneId={zoneVS.id}
+                  nextZoneId={nextZoneVS.id}
+                  currentFr={zoneVS.width}
+                  nextFr={nextZoneVS.width}
+                  sumFr={sumZoneFr}
+                  containerWidth={viewportWidth}
+                  minWidth={def.minWidth}
+                  nextMinWidth={nextMinWidth}
+                />
+              )}
             </div>
           );
         })}
         {visibleZones.map((zoneVS) => {
           const def = zoneById.get(zoneVS.id)!;
-          const props = renderProps(zoneVS.id, zoneVS.width, def);
+          const renderedWidth =
+            sumZoneFr > 0 && viewportWidth > 0
+              ? (zoneVS.width / sumZoneFr) * viewportWidth
+              : zoneVS.width;
+          const props = renderProps(zoneVS.id, renderedWidth, def);
           return (
             <div
               key={`b-${zoneVS.id}`}

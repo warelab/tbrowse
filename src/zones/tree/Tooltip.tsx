@@ -17,6 +17,9 @@ export interface TooltipProps {
   data: HostData;
   isCollapsed: boolean;
   isPruned: boolean;
+  /** Effective branch-compression state for this node's incoming branch
+   *  (auto-detection XOR per-node override). */
+  isCompressed: boolean;
   isNodeOfInterest: boolean;
   subtreeLeafCount: number;
   hasCollapsedDescendants: boolean;
@@ -27,6 +30,7 @@ export interface TooltipProps {
   onToggleCollapsed: (id: NodeId) => void;
   onTogglePruned: (id: NodeId) => void;
   onToggleSwapped: (id: NodeId) => void;
+  onToggleCompressed: (id: NodeId) => void;
   onExpandSubtree: (id: NodeId) => void;
   onMakeNodeOfInterest: (id: NodeId) => void;
   onShowParalogs: (id: NodeId) => void;
@@ -39,6 +43,7 @@ export function Tooltip({
   data,
   isCollapsed,
   isPruned,
+  isCompressed,
   isNodeOfInterest,
   subtreeLeafCount,
   hasCollapsedDescendants,
@@ -47,6 +52,7 @@ export function Tooltip({
   onToggleCollapsed,
   onTogglePruned,
   onToggleSwapped,
+  onToggleCompressed,
   onExpandSubtree,
   onMakeNodeOfInterest,
   onShowParalogs,
@@ -262,6 +268,23 @@ export function Tooltip({
             }
             onClick={() => {
               onTogglePruned(layoutNode.nodeId);
+              onClose();
+            }}
+          />
+        )}
+        {/* Branch-compression toggle. Hidden on the root since it has no
+            incoming branch. The label flips with the current effective
+            state so the button always reads as the action it'll take. */}
+        {layoutNode.nodeId !== data.tree.rootId && (
+          <ActionButton
+            label={isCompressed ? 'Uncompress branch' : 'Compress branch'}
+            title={
+              isCompressed
+                ? 'Restore this branch to its full length'
+                : 'Render this branch at the auto-compression length'
+            }
+            onClick={() => {
+              onToggleCompressed(layoutNode.nodeId);
               onClose();
             }}
           />

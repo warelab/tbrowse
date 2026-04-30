@@ -102,8 +102,11 @@ export function computeDominantDomainByCol(
  * other accession) always renders in the same colour across leaves and
  * sessions. Hue is the only varied channel; saturation and lightness are
  * tuned for legibility on the MSA's pale grey background.
+ *
+ * Pass `alpha` (0..1) to fade the colour; the minimap uses this to encode
+ * per-column alignment coverage (low coverage → faint domain bar).
  */
-export function domainColor(id: string): string {
+export function domainColor(id: string, alpha = 1): string {
   // FNV-1a-ish 32-bit hash; deterministic and dependency-free.
   let h = 2166136261 >>> 0;
   for (let i = 0; i < id.length; i++) {
@@ -111,5 +114,7 @@ export function domainColor(id: string): string {
     h = Math.imul(h, 16777619) >>> 0;
   }
   const hue = h % 360;
-  return `hsl(${hue} 65% 45%)`;
+  return alpha < 1
+    ? `hsl(${hue} 65% 45% / ${alpha})`
+    : `hsl(${hue} 65% 45%)`;
 }
