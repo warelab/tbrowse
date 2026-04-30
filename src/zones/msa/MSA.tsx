@@ -19,11 +19,17 @@ export interface MSAZoneState {
   /** Optional. Falls back to defaultSchemeFor(alphabet) when undefined. */
   colorSchemeId?: ColorSchemeId;
   /** Mask parameters. When undefined, defaults are used. */
-  mask?: { enabled: boolean; minCoverage: number; padding: number };
+  mask?: {
+    enabled: boolean;
+    minCoverage: number;
+    padding: number;
+    /** Original-column start indices of mask runs the user has expanded. */
+    expandedRuns?: number[];
+  };
 }
 
 const DEFAULT_STATE: MSAZoneState = { viewportStart: 0, viewportEnd: 0 };
-const DEFAULT_MASK = { enabled: true, minCoverage: 1, padding: 5 };
+const DEFAULT_MASK = { enabled: true, minCoverage: 1, padding: 0, expandedRuns: [] };
 
 const PAD_X = 4;
 const TEXT_RENDER_MIN_PX = 7;
@@ -109,12 +115,29 @@ const MSAHeader = ({
     () => (msa ? computeActiveGeneIds(data.tree, msa, prunedNodeIds) : new Set<GeneId>()),
     [msa, data.tree, prunedNodeIds],
   );
+  const expandedRunStarts = useMemo(
+    () => new Set(maskParams.expandedRuns ?? []),
+    [maskParams.expandedRuns],
+  );
   const mask = useMemo<MSAMask | null>(() => {
     if (!msa) return null;
     return maskParams.enabled
-      ? computeMSAMask(msa, activeGeneIds, maskParams.minCoverage, maskParams.padding)
+      ? computeMSAMask(
+          msa,
+          activeGeneIds,
+          maskParams.minCoverage,
+          maskParams.padding,
+          expandedRunStarts,
+        )
       : unmaskedMSA(msa);
-  }, [msa, activeGeneIds, maskParams.enabled, maskParams.minCoverage, maskParams.padding]);
+  }, [
+    msa,
+    activeGeneIds,
+    maskParams.enabled,
+    maskParams.minCoverage,
+    maskParams.padding,
+    expandedRunStarts,
+  ]);
   const totalVisible = mask?.visibleCols.length ?? 0;
   const vp = msa ? resolveViewport(zoneState, totalVisible) : null;
 
@@ -260,12 +283,29 @@ const MSABody = ({
     [msa, data.tree, prunedNodeIds],
   );
   const maskParams = zoneState.mask ?? DEFAULT_MASK;
+  const expandedRunStarts = useMemo(
+    () => new Set(maskParams.expandedRuns ?? []),
+    [maskParams.expandedRuns],
+  );
   const mask = useMemo<MSAMask | null>(() => {
     if (!msa) return null;
     return maskParams.enabled
-      ? computeMSAMask(msa, activeGeneIds, maskParams.minCoverage, maskParams.padding)
+      ? computeMSAMask(
+          msa,
+          activeGeneIds,
+          maskParams.minCoverage,
+          maskParams.padding,
+          expandedRunStarts,
+        )
       : unmaskedMSA(msa);
-  }, [msa, activeGeneIds, maskParams.enabled, maskParams.minCoverage, maskParams.padding]);
+  }, [
+    msa,
+    activeGeneIds,
+    maskParams.enabled,
+    maskParams.minCoverage,
+    maskParams.padding,
+    expandedRunStarts,
+  ]);
   const totalVisible = mask?.visibleCols.length ?? 0;
 
   // Pre-compute leaf gene-id sets per collapsed-summary node, restricted to
@@ -377,29 +417,8 @@ const MSABody = ({
       ctx.restore();
     }
     ctx.globalAlpha = 1;
-
-    // Triangle markers for hidden runs that fall inside the viewport. Rendered
-    // at the very top of the canvas (y 0..6) so they sit above the first row;
-    // canvas y=0 is the top of the body, which is just under the sticky header.
-    if (mask && mask.hiddenRuns.length > 0 && visibleCols) {
-      ctx.fillStyle = '#888';
-      ctx.beginPath();
-      // Draw a small downward triangle wherever two adjacent visible columns
-      // (within the viewport) flank a hidden run in the original alignment.
-      for (let vCol = vp.start; vCol + 1 < vp.end; vCol++) {
-        const oCol = visibleCols[vCol];
-        const nextOCol = visibleCols[vCol + 1];
-        if (oCol === undefined || nextOCol === undefined) continue;
-        if (nextOCol > oCol + 1) {
-          const x = PAD_X + (vCol - vp.start + 1) * residueWidth;
-          ctx.moveTo(x - 3.5, 0);
-          ctx.lineTo(x + 3.5, 0);
-          ctx.lineTo(x, 5.5);
-          ctx.closePath();
-        }
-      }
-      ctx.fill();
-    }
+    // Mask-run markers are rendered as an SVG overlay outside this paint
+    // pass so they can be interactive (hover tooltip + click to toggle).
   }, [
     msa,
     visibleRows,
@@ -473,6 +492,31 @@ const MSABody = ({
 
   // Render row-aligned hit overlays (for hover/select) on top of the canvas.
   const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
+
+  // Mask-run markers as an interactive SVG overlay above the body. Each run
+  // gets a downward triangle when collapsed, or a downward trapezoid (top
+  // edge spanning the run width) when expanded. Click toggles. Title shows
+  // the original-column range and run length.
+  const vpForOverlay = msa ? resolveViewport(zoneState, totalVisible) : null;
+  const innerWidthForOverlay = Math.max(1, width - 2 * PAD_X);
+  const overlayResidueWidth =
+    vpForOverlay && vpForOverlay.width > 0
+      ? innerWidthForOverlay / vpForOverlay.width
+      : 0;
+
+  const toggleRun = (start: number) => {
+    setZoneState((s) => {
+      const params = s.mask ?? DEFAULT_MASK;
+      const cur = new Set(params.expandedRuns ?? []);
+      if (cur.has(start)) cur.delete(start);
+      else cur.add(start);
+      return {
+        ...s,
+        mask: { ...params, expandedRuns: [...cur].sort((a, b) => a - b) },
+      };
+    });
+  };
+
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <canvas
@@ -517,6 +561,99 @@ const MSABody = ({
           />
         );
       })}
+      {mask && mask.runs.length > 0 && vpForOverlay && (
+        <svg
+          width={width}
+          height={8}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            overflow: 'visible',
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        >
+          {mask.runs.map((run) => {
+            const cols = run.end - run.start + 1;
+            // Marker visibility: a closed run sits between visibleCols[visibleAt-1]
+            // and visibleCols[visibleAt]; an expanded run spans visibleCols
+            // [visibleAt .. visibleAt+cols-1]. Skip if entirely outside viewport.
+            const runVStart = run.visibleAt;
+            const runVEnd = run.expanded ? run.visibleAt + cols : run.visibleAt;
+            if (runVEnd < vpForOverlay.start || runVStart > vpForOverlay.end) return null;
+
+            const colXAt = (vCol: number) =>
+              PAD_X + (vCol - vpForOverlay.start) * overlayResidueWidth;
+
+            const fill = run.expanded ? 'rgba(40, 120, 220, 0.85)' : '#888';
+            const stroke = run.expanded ? '#1d5fb1' : '#666';
+            const handlers = {
+              style: { pointerEvents: 'auto' as const, cursor: 'pointer' },
+              onClick: (e: React.MouseEvent) => {
+                e.stopPropagation();
+                toggleRun(run.start);
+              },
+            };
+            const title = (
+              <title>
+                {run.expanded
+                  ? `Showing ${cols} masked column${cols === 1 ? '' : 's'} (${run.start + 1}–${run.end + 1}). Click to hide.`
+                  : `${cols} column${cols === 1 ? '' : 's'} hidden (${run.start + 1}–${run.end + 1}). Click to show.`}
+              </title>
+            );
+
+            if (!run.expanded) {
+              const x = colXAt(run.visibleAt);
+              return (
+                <polygon
+                  key={`runmarker-${run.start}`}
+                  points={`${x - 3.5},0 ${x + 3.5},0 ${x},6`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={0.5}
+                  {...handlers}
+                >
+                  {title}
+                </polygon>
+              );
+            }
+
+            // Expanded: split the original isosceles triangle in half vertically
+            // and slide the halves out to flank a rectangle that fills the run
+            // width. Combined silhouette is a trapezoid (top L-3.5..R+3.5,
+            // bottom L..R) but it's three pieces.
+            const L = colXAt(run.visibleAt);
+            const R = colXAt(run.visibleAt + cols);
+            return (
+              <g key={`runmarker-${run.start}`} {...handlers}>
+                <polygon
+                  points={`${L - 3.5},0 ${L},0 ${L},6`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={0.5}
+                />
+                <rect
+                  x={L}
+                  y={0}
+                  width={Math.max(0, R - L)}
+                  height={6}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={0.5}
+                />
+                <polygon
+                  points={`${R},0 ${R + 3.5},0 ${R},6`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={0.5}
+                />
+                {title}
+              </g>
+            );
+          })}
+        </svg>
+      )}
     </div>
   );
 };

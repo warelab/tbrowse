@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { HostData, NodeId, TreeNode } from '../../types';
 import type { TreeLayoutNode } from './layout';
@@ -49,6 +49,14 @@ export function Tooltip({
 }: TooltipProps) {
   const screenPos = useTrackedScreenPos(svgRef, layoutNode.x, layoutNode.y);
 
+  // User drag offset (relative to the anchor) and a measured size of the
+  // tooltip element. These let us clamp the tooltip into the viewport even
+  // when the anchor is near the bottom of the screen, and let the user
+  // reposition by dragging the header.
+  const [dragOffset, setDragOffset] = useState({ dx: 0, dy: 0 });
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
   // Esc to close
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -58,7 +66,50 @@ export function Tooltip({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Measure tooltip dimensions after every render. Conditionally update so
+  // we don't loop on identical sizes.
+  useLayoutEffect(() => {
+    const el = tooltipRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (Math.abs(rect.width - size.w) > 0.5 || Math.abs(rect.height - size.h) > 0.5) {
+      setSize({ w: rect.width, h: rect.height });
+    }
+  });
+
+  const onDragStart = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, label')) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startDX = dragOffset.dx;
+    const startDY = dragOffset.dy;
+    const onMove = (ev: PointerEvent) => {
+      setDragOffset({
+        dx: startDX + (ev.clientX - startX),
+        dy: startDY + (ev.clientY - startY),
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   if (!screenPos) return null;
+
+  // Compute final on-screen position: anchor + drag, clamped to viewport.
+  const margin = 8;
+  const w = size.w || 220;
+  const h = size.h || 100;
+  const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const viewportH = typeof window !== 'undefined' ? window.innerHeight : 768;
+  const rawX = screenPos.x + 10 + dragOffset.dx;
+  const rawY = screenPos.y - 8 + dragOffset.dy;
+  const finalX = Math.max(margin, Math.min(viewportW - w - margin, rawX));
+  const finalY = Math.max(margin, Math.min(viewportH - h - margin, rawY));
 
   const tax = treeNode.taxonomyId !== undefined ? data.taxonomy?.[treeNode.taxonomyId] : undefined;
 
@@ -71,11 +122,12 @@ export function Tooltip({
 
   return createPortal(
     <div
+      ref={tooltipRef}
       className="tbrowse-tooltip"
       style={{
         position: 'fixed',
-        left: screenPos.x + 10,
-        top: screenPos.y - 8,
+        left: finalX,
+        top: finalY,
         minWidth: 200,
         maxWidth: 320,
         background: 'white',
@@ -90,7 +142,19 @@ export function Tooltip({
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+      <div
+        onPointerDown={onDragStart}
+        title="Drag to reposition"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
+          marginBottom: 6,
+          cursor: 'move',
+          userSelect: 'none',
+          touchAction: 'none',
+        }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13 }}>
             {tax?.scientificName ?? treeNode.geneId ?? layoutNode.nodeId}
