@@ -34,6 +34,12 @@ export interface TooltipProps {
   onExpandSubtree: (id: NodeId) => void;
   onMakeNodeOfInterest: (id: NodeId) => void;
   onShowParalogs: (id: NodeId) => void;
+  onReroot: (id: NodeId) => void;
+  onRegrowOthers: (id: NodeId) => void;
+  /** True when at least one sibling-branch top on the path from this
+   *  node to the root is currently in prunedNodeIds. Drives the
+   *  "Prune others" / "Regrow others" toggle label. */
+  othersArePruned: boolean;
 }
 
 export function Tooltip({
@@ -56,6 +62,9 @@ export function Tooltip({
   onExpandSubtree,
   onMakeNodeOfInterest,
   onShowParalogs,
+  onReroot,
+  onRegrowOthers,
+  othersArePruned,
 }: TooltipProps) {
   const screenPos = useTrackedScreenPos(svgRef, layoutNode.x, layoutNode.y);
 
@@ -191,103 +200,128 @@ export function Tooltip({
           ×
         </button>
       </div>
-      <InfoRow label="Node id" value={layoutNode.nodeId} mono />
-      {treeNode.geneId && <InfoRow label="Gene id" value={treeNode.geneId} mono />}
       {treeNode.eventType && <InfoRow label="Event" value={treeNode.eventType} />}
-      {treeNode.bootstrap !== undefined && (
-        <InfoRow label="Bootstrap" value={String(treeNode.bootstrap)} />
-      )}
+      {isInternal && <InfoRow label="Leaves" value={String(subtreeLeafCount)} />}
       {treeNode.parentId !== null && (
         <InfoRow label="Distance" value={treeNode.distance.toFixed(4)} />
       )}
-      {isInternal && <InfoRow label="Leaves" value={String(subtreeLeafCount)} />}
+      {treeNode.bootstrap !== undefined && (
+        <InfoRow label="Bootstrap" value={String(treeNode.bootstrap)} />
+      )}
+      <InfoRow label="Node id" value={layoutNode.nodeId} mono />
+      {treeNode.geneId && <InfoRow label="Gene id" value={treeNode.geneId} mono />}
       <div
         style={{
           marginTop: 8,
           paddingTop: 8,
           borderTop: '1px solid #eee',
           display: 'flex',
+          flexDirection: 'column',
           gap: 6,
-          flexWrap: 'wrap',
         }}
       >
-        {canCollapseExpand && (
-          <ActionButton
-            label={isCollapsed ? 'Expand' : 'Collapse'}
-            onClick={() => {
-              onToggleCollapsed(layoutNode.nodeId);
-              onClose();
-            }}
-          />
+        {/* Row 1 — non-destructive structural actions. Hidden entirely
+            on pruned nodes: the only sensible action then is to regrow
+            the branch (row 2). */}
+        {!isPruned && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {canCollapseExpand && (
+              <ActionButton
+                label={isCollapsed ? 'Expand' : 'Collapse'}
+                onClick={() => {
+                  onToggleCollapsed(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+            {isInternal && !isCollapsed && hasCollapsedDescendants && (
+              <ActionButton
+                label="Expand all"
+                onClick={() => {
+                  onExpandSubtree(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+            {isInternal && !isCollapsed && (
+              <ActionButton
+                label="Swap children"
+                onClick={() => {
+                  onToggleSwapped(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+            {canMakeNodeOfInterest && (
+              <ActionButton
+                label="Make node of interest"
+                onClick={() => {
+                  onMakeNodeOfInterest(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+            {canShowParalogs && (
+              <ActionButton
+                label="Show paralogs"
+                onClick={() => {
+                  onShowParalogs(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+            {layoutNode.nodeId !== data.tree.rootId && (
+              <ActionButton
+                label={isCompressed ? 'Uncompress branch' : 'Compress branch'}
+                title={
+                  isCompressed
+                    ? 'Restore this branch to its full length'
+                    : 'Render this branch at the auto-compression length'
+                }
+                onClick={() => {
+                  onToggleCompressed(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+          </div>
         )}
-        {isInternal && !isPruned && !isCollapsed && hasCollapsedDescendants && (
-          <ActionButton
-            label="Expand all"
-            onClick={() => {
-              onExpandSubtree(layoutNode.nodeId);
-              onClose();
-            }}
-          />
-        )}
-        {isInternal && !isPruned && !isCollapsed && (
-          <ActionButton
-            label="Swap children"
-            onClick={() => {
-              onToggleSwapped(layoutNode.nodeId);
-              onClose();
-            }}
-          />
-        )}
-        {canMakeNodeOfInterest && (
-          <ActionButton
-            label="Make node of interest"
-            onClick={() => {
-              onMakeNodeOfInterest(layoutNode.nodeId);
-              onClose();
-            }}
-          />
-        )}
-        {canShowParalogs && (
-          <ActionButton
-            label="Show paralogs"
-            onClick={() => {
-              onShowParalogs(layoutNode.nodeId);
-              onClose();
-            }}
-          />
-        )}
+        {/* Row 2 — prune actions. The lone affordance for pruned nodes
+            is "Regrow branch"; everything else is gated behind being
+            visible. */}
         {layoutNode.nodeId !== data.tree.rootId && (
-          <ActionButton
-            label={isPruned ? 'Regrow' : 'Prune'}
-            color={isPruned ? COLOR_PRIMARY : COLOR_DANGER}
-            disabled={!isPruned && pruneWouldEmptyTree}
-            title={
-              !isPruned && pruneWouldEmptyTree
-                ? 'Pruning this node would leave nothing visible'
-                : undefined
-            }
-            onClick={() => {
-              onTogglePruned(layoutNode.nodeId);
-              onClose();
-            }}
-          />
-        )}
-        {/* Branch-compression toggle. Hidden on the root since it has no
-            incoming branch. The label flips with the current effective
-            state so the button always reads as the action it'll take. */}
-        {layoutNode.nodeId !== data.tree.rootId && (
-          <ActionButton
-            label={isCompressed ? 'Uncompress branch' : 'Compress branch'}
-            title={
-              isCompressed
-                ? 'Restore this branch to its full length'
-                : 'Render this branch at the auto-compression length'
-            }
-            onClick={() => {
-              onToggleCompressed(layoutNode.nodeId);
-              onClose();
-            }}
-          />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <ActionButton
+              label={isPruned ? 'Regrow branch' : 'Prune branch'}
+              color={isPruned ? COLOR_PRIMARY : COLOR_DANGER}
+              disabled={!isPruned && pruneWouldEmptyTree}
+              title={
+                !isPruned && pruneWouldEmptyTree
+                  ? 'Pruning this node would leave nothing visible'
+                  : undefined
+              }
+              onClick={() => {
+                onTogglePruned(layoutNode.nodeId);
+                onClose();
+              }}
+            />
+            {!isPruned && (
+              <ActionButton
+                label={othersArePruned ? 'Regrow others' : 'Prune others'}
+                color={othersArePruned ? COLOR_PRIMARY : COLOR_DANGER}
+                title={
+                  othersArePruned
+                    ? 'Restore the sibling branches between this node and the root'
+                    : 'Prune every sibling branch between this node and the root'
+                }
+                onClick={() => {
+                  if (othersArePruned) onRegrowOthers(layoutNode.nodeId);
+                  else onReroot(layoutNode.nodeId);
+                  onClose();
+                }}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>,

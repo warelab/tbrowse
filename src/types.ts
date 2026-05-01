@@ -194,6 +194,21 @@ export interface ZoneRenderProps<S = unknown> {
    * the leaf at `id`. Pruned leaves are not touched.
    */
   onShowParalogs: (id: NodeId) => void;
+  /**
+   * Prune every sibling branch on the path from `id` up to the root —
+   * i.e. for each ancestor of `id`, every child that's not on the path
+   * is added to prunedNodeIds. Any path-node currently collapsed is
+   * uncollapsed so the rerooted lineage is fully visible. Existing
+   * unrelated prunes are preserved.
+   */
+  onReroot: (id: NodeId) => void;
+  /**
+   * Inverse of `onReroot`: remove from prunedNodeIds any sibling branch
+   * on the path from `id` up to the root. Deeper manual prunes inside
+   * those subtrees are NOT touched, so a Prune-others / Regrow-others
+   * round trip leaves the tree state where it started.
+   */
+  onRegrowOthers: (id: NodeId) => void;
   /** Resolved id of the current node of interest (null until set). */
   nodeOfInterestId: NodeId | null;
   zoneState: S;

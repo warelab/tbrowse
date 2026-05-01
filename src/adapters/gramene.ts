@@ -34,6 +34,10 @@ interface GrameneNode {
   gene_stable_id?: string;
   protein_stable_id?: string;
   gene_description?: string;
+  /** Human-friendly gene name when present (e.g. "DCL1"). Surfaced as
+   *  `displayName` on geneMetadata, matching the convention the Labels
+   *  zone uses to render a leaf's primary label. */
+  gene_display_label?: string;
   sequence?: string;
   cigar?: string;
   domains?: Array<GrameneLeafDomain>;
@@ -143,6 +147,10 @@ export function fromGrameneGenetree(
           sequences[accession] = aligned;
         }
         const meta: Record<string, unknown> = {};
+        // Prefer the curated short label ("DCL1") for the leaf's primary
+        // display name; fall back to the gene's stable id so labels are
+        // never empty.
+        if (gn.gene_display_label) meta.displayName = gn.gene_display_label;
         if (gn.gene_description) meta.description = gn.gene_description;
         if (gn.protein_stable_id) meta.proteinId = gn.protein_stable_id;
         if (Object.keys(meta).length > 0) geneMetadata[accession] = meta;

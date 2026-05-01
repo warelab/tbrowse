@@ -303,6 +303,69 @@ export function Layout({ data, zones }: LayoutProps) {
     [setViewState, data.tree],
   );
 
+  const onReroot = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        // Build the path from id up to the root.
+        const path = new Set<NodeId>();
+        let cur: NodeId | null = id;
+        while (cur !== null) {
+          path.add(cur);
+          cur = data.tree.nodes[cur]?.parentId ?? null;
+        }
+        // Path of length 1 means id IS the root — nothing to prune.
+        if (path.size <= 1) return vs;
+        // Walk ANCESTORS of id (parent, grandparent, ..., root) and at
+        // each level prune the children that aren't on the path toward
+        // id. Skip id itself — its descendants must remain visible.
+        const pruned = new Set(vs.prunedNodeIds);
+        for (const ancestorId of path) {
+          if (ancestorId === id) continue;
+          const kids = childrenIndex.get(ancestorId);
+          if (!kids) continue;
+          for (const k of kids) {
+            if (!path.has(k)) pruned.add(k);
+          }
+        }
+        // Make sure no path-node is collapsed; otherwise the rerooted
+        // lineage would be invisible inside its own collapse.
+        const collapsedNext = vs.collapsedNodeIds.filter((cid) => !path.has(cid));
+        return {
+          ...vs,
+          prunedNodeIds: [...pruned],
+          collapsedNodeIds: collapsedNext,
+        };
+      }),
+    [setViewState, data.tree, childrenIndex],
+  );
+
+  const onRegrowOthers = useCallback(
+    (id: NodeId) =>
+      setViewState((vs) => {
+        const path = new Set<NodeId>();
+        let cur: NodeId | null = id;
+        while (cur !== null) {
+          path.add(cur);
+          cur = data.tree.nodes[cur]?.parentId ?? null;
+        }
+        if (path.size <= 1) return vs;
+        // Top-level sibling-branch ids that Prune-others would have added.
+        const siblingTops = new Set<NodeId>();
+        for (const ancestorId of path) {
+          if (ancestorId === id) continue;
+          const kids = childrenIndex.get(ancestorId);
+          if (!kids) continue;
+          for (const k of kids) {
+            if (!path.has(k)) siblingTops.add(k);
+          }
+        }
+        const next = vs.prunedNodeIds.filter((p) => !siblingTops.has(p));
+        if (next.length === vs.prunedNodeIds.length) return vs;
+        return { ...vs, prunedNodeIds: next };
+      }),
+    [setViewState, data.tree, childrenIndex],
+  );
+
   const onShowParalogs = useCallback(
     (id: NodeId) =>
       setViewState((vs) => {
@@ -391,6 +454,8 @@ export function Layout({ data, zones }: LayoutProps) {
       onExpandSubtree,
       onMakeNodeOfInterest,
       onShowParalogs,
+      onReroot,
+      onRegrowOthers,
       nodeOfInterestId: viewState.nodeOfInterestId ?? null,
       zoneState: stored === undefined ? def.defaultZoneState : stored,
       setZoneState: (next) => setZoneState(zoneId, def.defaultZoneState, next as unknown),

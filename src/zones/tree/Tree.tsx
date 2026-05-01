@@ -179,6 +179,8 @@ const TreeBody = ({
   onExpandSubtree,
   onMakeNodeOfInterest,
   onShowParalogs,
+  onReroot,
+  onRegrowOthers,
   zoneState,
 }: ZoneRenderProps<TreeZoneState>) => {
   const prunedNodeStyle = zoneState.prunedNodeStyle ?? DEFAULT_PRUNED_STYLE;
@@ -512,6 +514,30 @@ const TreeBody = ({
     }
     return false;
   }, [selectedNodeId, data.tree, collapsedNodeIds, fullChildrenIndex]);
+
+  // For the tooltip's "Prune others / Regrow others" toggle: are any of
+  // the sibling-branch top-level nodes between the selected node and the
+  // root currently pruned? Determines which label the button shows.
+  const selectedOthersArePruned = useMemo(() => {
+    if (selectedNodeId === null) return false;
+    if (prunedNodeIds.size === 0) return false;
+    const path = new Set<NodeId>();
+    let cur: NodeId | null = selectedNodeId;
+    while (cur !== null) {
+      path.add(cur);
+      cur = data.tree.nodes[cur]?.parentId ?? null;
+    }
+    if (path.size <= 1) return false;
+    for (const ancestorId of path) {
+      if (ancestorId === selectedNodeId) continue;
+      const kids = fullChildrenIndex.get(ancestorId);
+      if (!kids) continue;
+      for (const k of kids) {
+        if (!path.has(k) && prunedNodeIds.has(k)) return true;
+      }
+    }
+    return false;
+  }, [selectedNodeId, data.tree, fullChildrenIndex, prunedNodeIds]);
 
   if (layout.nodes.length === 0) return null;
 
@@ -917,6 +943,9 @@ const TreeBody = ({
           onExpandSubtree={onExpandSubtree}
           onMakeNodeOfInterest={onMakeNodeOfInterest}
           onShowParalogs={onShowParalogs}
+          onReroot={onReroot}
+          onRegrowOthers={onRegrowOthers}
+          othersArePruned={selectedOthersArePruned}
         />
       )}
     </>

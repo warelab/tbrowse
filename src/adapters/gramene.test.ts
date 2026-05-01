@@ -45,7 +45,8 @@ describe('fromGrameneGenetree', () => {
           system_name: 'arabidopsis_thaliana',
           gene_stable_id: 'AT1G01040',
           protein_stable_id: 'AT1G01040.1',
-          gene_description: 'DCL1',
+          gene_description: 'Dicer-like protein 1',
+          gene_display_label: 'DCL1',
           sequence: 'MKLV',
           cigar: '2M1D2M',
           exon_junctions: [2, 3, 0, -1, 'bad' as unknown as number, 2],
@@ -129,6 +130,16 @@ describe('fromGrameneGenetree', () => {
       AT1G01040: 'AT1G01040.1',
       Zm00001eb000010: 'Zm00001eb000010_T001',
     });
+  });
+
+  it('uses gene_display_label as displayName on geneMetadata', () => {
+    const { geneMetadata } = fromGrameneGenetree(sample);
+    expect(geneMetadata['AT1G01040']).toMatchObject({
+      displayName: 'DCL1',
+      description: 'Dicer-like protein 1',
+    });
+    // Leaves without gene_display_label simply omit displayName.
+    expect(geneMetadata['Zm00001eb000010']).not.toHaveProperty('displayName');
   });
 
   it('captures exon junctions keyed by gene id, dropping bad entries', () => {
