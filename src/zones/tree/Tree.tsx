@@ -36,6 +36,9 @@ const HIT_STROKE_WIDTH = 12;
 const SPECIATION_COLOR = 'var(--tbrowse-text-muted)';
 const DUPLICATION_COLOR = 'var(--tbrowse-danger)';
 const NODE_GLYPH_RADIUS = 3.5;
+/** Slightly smaller than the internal-node glyph so leaves read as
+ *  terminal "ticks" rather than competing with the speciation circles. */
+const LEAF_GLYPH_RADIUS = 2.5;
 const NODE_GLYPH_SQUARE = 7;
 // Bootstrap (0..100) maps to opacity multiplier in [BOOTSTRAP_MIN, 1].
 // Lets low-confidence branches fade to ~40% without disappearing entirely.
@@ -835,6 +838,35 @@ const TreeBody = ({
                 opacity={finalOpacity}
               >
                 <title>{`${treeNode.eventType ?? 'speciation'}${treeNode.bootstrap !== undefined ? ` · bootstrap ${treeNode.bootstrap}` : ''}`}</title>
+              </circle>
+            );
+          })}
+        </g>
+        {/* Leaf-node glyphs. Small filled circle in the branch colour at
+            each visible leaf's branch tip, tracking the same interpolated
+            x as the leaf-extension start so it slides smoothly during
+            collapse / expand / prune / regrow animations. */}
+        <g pointerEvents="none">
+          {layout.nodes.map((n) => {
+            if (!n.isLeaf) return null;
+            if (n.isCollapsedSummary) return null;
+            if (!yInRange(n.y)) return null;
+            const treeNode = data.tree.nodes[n.nodeId];
+            if (!treeNode) return null;
+            const opacity = opacityById.get(n.nodeId) ?? 1;
+            const parent = n.parentId !== null ? byId.get(n.parentId) : null;
+            const tipX = parent ? parent.x + (n.x - parent.x) * opacity : n.x;
+            const finalOpacity = opacity * bootstrapFactor(n.nodeId);
+            return (
+              <circle
+                key={`l-${n.nodeId}`}
+                cx={tipX}
+                cy={n.y}
+                r={LEAF_GLYPH_RADIUS}
+                fill={BRANCH_COLOR}
+                opacity={finalOpacity}
+              >
+                <title>{treeNode.geneId ?? n.nodeId}</title>
               </circle>
             );
           })}
