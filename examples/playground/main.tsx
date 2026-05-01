@@ -300,6 +300,7 @@ function App() {
           geneMetadata: grameneData.geneMetadata,
           msa: grameneData.msa,
           proteinDomains: grameneData.proteinDomains,
+          exonJunctions: grameneData.exonJunctions,
           labelProviders: undefined,
         }
       : dataSource === 'ensembl' && ensemblData

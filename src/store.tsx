@@ -33,6 +33,7 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     nodeAnnotations: props.nodeAnnotations,
     labelProviders: props.labelProviders,
     proteinDomains: props.proteinDomains,
+    exonJunctions: props.exonJunctions,
   };
   const zoneStates: Record<string, unknown> = {};
   for (const z of props.zones) {

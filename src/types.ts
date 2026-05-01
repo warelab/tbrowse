@@ -148,6 +148,14 @@ export interface HostData {
    * range translated into MSA columns.
    */
   proteinDomains?: Record<GeneId, ProteinDomain[]>;
+  /**
+   * Optional per-leaf splice-junction positions, keyed by GeneId. Each
+   * value is an array of 1-based UNALIGNED residue positions; the MSA
+   * zone draws a thin vertical mark immediately to the right of that
+   * residue's MSA column on the leaf's row. Gramene gene-tree leaves
+   * carry these as `exon_junctions`.
+   */
+  exonJunctions?: Record<GeneId, number[]>;
 }
 
 export interface ZoneRenderProps<S = unknown> {
@@ -228,6 +236,7 @@ export interface TBrowseProps {
   geneMetadata?: GeneMetadata;
   nodeAnnotations?: NodeAnnotation[];
   proteinDomains?: Record<GeneId, ProteinDomain[]>;
+  exonJunctions?: Record<GeneId, number[]>;
   /**
    * If provided, the initial view collapses every subtree except the path
    * to this node and swaps siblings so the node sits at the top of the

@@ -48,6 +48,7 @@ describe('fromGrameneGenetree', () => {
           gene_description: 'DCL1',
           sequence: 'MKLV',
           cigar: '2M1D2M',
+          exon_junctions: [2, 3, 0, -1, 'bad' as unknown as number, 2],
           domains: [
             {
               id: 'IPR000999',
@@ -128,6 +129,13 @@ describe('fromGrameneGenetree', () => {
       AT1G01040: 'AT1G01040.1',
       Zm00001eb000010: 'Zm00001eb000010_T001',
     });
+  });
+
+  it('captures exon junctions keyed by gene id, dropping bad entries', () => {
+    const { exonJunctions } = fromGrameneGenetree(sample);
+    // The sample includes 0, -1, a non-numeric entry, and a duplicate
+    // for AT1G01040 — only the positive numbers survive, deduped.
+    expect(exonJunctions).toEqual({ AT1G01040: [2, 3] });
   });
 
   it('builds the taxonomy table from internal + leaf nodes', () => {

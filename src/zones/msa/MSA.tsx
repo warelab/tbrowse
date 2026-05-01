@@ -794,6 +794,90 @@ const MSABody = ({
     domainStatsByNode,
   ]);
 
+  // Splice-junction marks: a thin vertical line at a fractional position
+  // within an MSA column, per visible leaf row.
+  //
+  // Junction values are 1-based residue (amino-acid) positions and may be
+  // fractional. Integer J lands at the right edge of residue J's column
+  // (e.g. 2.0 = between residues 2 and 3). Fractional J represents a
+  // junction WITHIN a codon at fraction `J - floor(J)` through residue
+  // `floor(J)+1`'s column — host code can divide CDS-nucleotide
+  // coordinates by 3 (e.g. nt 6/7/8 → 2.000 / 2.333 / 2.666) to pinpoint
+  // the within-codon offset of an intron boundary.
+  //
+  // Translation through the leaf's colByResidue map handles MSA gaps.
+  // Junctions whose target column is masked are skipped silently — no
+  // usable position to anchor against.
+  type JunctionMark = {
+    key: string;
+    rowY: number;
+    rowH: number;
+    /** Visible-col index of the residue whose column the junction sits in. */
+    vCol: number;
+    /** Fraction across the column (0 = left edge, 1 = right edge). */
+    withinFrac: number;
+  };
+  const junctionMarks = useMemo<JunctionMark[]>(() => {
+    if (!msa || !mask || !data.exonJunctions) return [];
+    const visibleByOriginal = new Map<number, number>();
+    for (let i = 0; i < mask.visibleCols.length; i++) {
+      visibleByOriginal.set(mask.visibleCols[i], i);
+    }
+    const out: JunctionMark[] = [];
+    const startIdx = rowRange.startIndex;
+    const endIdx = Math.min(rowRange.endIndex, visibleRows.length);
+    for (let i = startIdx; i < endIdx; i++) {
+      const r = visibleRows[i];
+      if (r.kind !== 'leaf') continue;
+      const node = data.tree.nodes[r.nodeId];
+      if (!node?.geneId) continue;
+      const junctions = data.exonJunctions[node.geneId];
+      if (!junctions || junctions.length === 0) continue;
+      const map = colByResidue(node.geneId);
+      const lastResidue = map.length - 1;
+      if (lastResidue <= 0) continue;
+      for (const j of junctions) {
+        if (!Number.isFinite(j) || j <= 0) continue;
+        const intPart = Math.floor(j);
+        const frac = j - intPart;
+        let residueIdx: number;
+        let withinFrac: number;
+        if (frac === 0) {
+          // Boundary at right edge of residue `intPart`.
+          if (intPart < 1 || intPart > lastResidue) continue;
+          residueIdx = intPart;
+          withinFrac = 1;
+        } else {
+          // Inside residue `intPart + 1`'s codon, `frac` fraction in.
+          const nextRes = intPart + 1;
+          if (nextRes < 1 || nextRes > lastResidue) continue;
+          residueIdx = nextRes;
+          withinFrac = frac;
+        }
+        const oCol = map[residueIdx];
+        const vCol = visibleByOriginal.get(oCol);
+        if (vCol === undefined) continue;
+        out.push({
+          key: `${r.nodeId}:${j}`,
+          rowY: r.y,
+          rowH: r.height,
+          vCol,
+          withinFrac,
+        });
+      }
+    }
+    return out;
+  }, [
+    msa,
+    mask,
+    data.exonJunctions,
+    data.tree,
+    visibleRows,
+    rowRange.startIndex,
+    rowRange.endIndex,
+    colByResidue,
+  ]);
+
   // Tree-wide domain frequency: how many leaves carry at least one hit for
   // each domain id, against the total leaf count of the entire tree. Used
   // by the click tooltip to put each hit in context ("appears in 4/5
@@ -1285,6 +1369,40 @@ const MSABody = ({
                 height={2}
                 fill={domainColor(b.id, b.alpha)}
                 pointerEvents="none"
+              />
+            );
+          })}
+        </svg>
+      )}
+      {/* Splice-junction marks: thin vertical line at the right edge of
+          the junction column, full row height. Drawn AFTER domain bars
+          so the bar's colour shows through underneath the line. */}
+      {junctionMarks.length > 0 && vpForOverlay && (
+        <svg
+          width={width}
+          height={totalHeight}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+          }}
+        >
+          {junctionMarks.map((m) => {
+            const x =
+              PAD_X +
+              (m.vCol - vpForOverlay.start + m.withinFrac) * overlayResidueWidth;
+            if (x <= PAD_X || x >= PAD_X + innerWidthForOverlay) return null;
+            return (
+              <line
+                key={m.key}
+                x1={x}
+                y1={m.rowY}
+                x2={x}
+                y2={m.rowY + m.rowH}
+                stroke="red"
+                strokeWidth={1}
+                strokeOpacity={0.55}
               />
             );
           })}

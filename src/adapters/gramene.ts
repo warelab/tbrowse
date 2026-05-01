@@ -37,6 +37,9 @@ interface GrameneNode {
   sequence?: string;
   cigar?: string;
   domains?: Array<GrameneLeafDomain>;
+  /** 1-based unaligned residue positions where one exon ends and the
+   *  next begins (per leaf). Surfaced unchanged via `exonJunctions`. */
+  exon_junctions?: number[];
 }
 
 interface GrameneLeafDomain {
@@ -65,6 +68,9 @@ export interface FromGrameneGenetreeResult {
   geneMetadata: GeneMetadata;
   /** Per-leaf protein-domain hits, ready to drop into HostData.proteinDomains. */
   proteinDomains: Record<GeneId, ProteinDomain[]>;
+  /** Per-leaf splice-junction positions (1-based unaligned residue),
+   *  ready to drop into HostData.exonJunctions. */
+  exonJunctions: Record<GeneId, number[]>;
   /** GeneId → translation accession (for parity with the Ensembl adapter). */
   proteinIdByGeneId: Record<GeneId, string>;
 }
@@ -93,6 +99,7 @@ export function fromGrameneGenetree(
   const sequences: Record<string, string> = {};
   const geneMetadata: GeneMetadata = {};
   const proteinDomains: Record<GeneId, ProteinDomain[]> = {};
+  const exonJunctions: Record<GeneId, number[]> = {};
   const proteinIdByGeneId: Record<GeneId, string> = {};
   let nextId = 0;
 
@@ -140,6 +147,18 @@ export function fromGrameneGenetree(
         if (gn.protein_stable_id) meta.proteinId = gn.protein_stable_id;
         if (Object.keys(meta).length > 0) geneMetadata[accession] = meta;
         if (gn.protein_stable_id) proteinIdByGeneId[accession] = gn.protein_stable_id;
+        if (gn.exon_junctions && gn.exon_junctions.length > 0) {
+          // Filter to positive numbers and de-duplicate, defensively.
+          const seen = new Set<number>();
+          const clean: number[] = [];
+          for (const j of gn.exon_junctions) {
+            if (typeof j !== 'number' || !Number.isFinite(j) || j <= 0) continue;
+            if (seen.has(j)) continue;
+            seen.add(j);
+            clean.push(j);
+          }
+          if (clean.length > 0) exonJunctions[accession] = clean;
+        }
         if (gn.domains && gn.domains.length > 0) {
           const hits: ProteinDomain[] = [];
           for (const d of gn.domains) {
@@ -186,6 +205,7 @@ export function fromGrameneGenetree(
     msa,
     geneMetadata,
     proteinDomains,
+    exonJunctions,
     proteinIdByGeneId,
   };
 }
