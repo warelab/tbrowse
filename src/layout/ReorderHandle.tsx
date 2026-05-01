@@ -112,7 +112,7 @@ export function ReorderHandle({
         cursor: 'grab',
         userSelect: 'none',
         touchAction: 'none',
-        color: '#999',
+        color: 'var(--tbrowse-text-subtle)',
         flexShrink: 0,
       }}
     >

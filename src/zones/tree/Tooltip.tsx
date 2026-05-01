@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTBrowseStore } from '../../store';
 import type { HostData, NodeId, TreeNode } from '../../types';
 import type { TreeLayoutNode } from './layout';
 
-const COLOR_PRIMARY = '#2878dc';
-const COLOR_DANGER = '#c0392b';
-const COLOR_MUTED = '#666';
+const COLOR_PRIMARY = 'var(--tbrowse-accent)';
+const COLOR_DANGER = 'var(--tbrowse-danger)';
+const COLOR_MUTED = 'var(--tbrowse-text-muted)';
 
 export interface TooltipProps {
   /** SVG element the layout coordinates are relative to. */
@@ -85,6 +86,12 @@ export function Tooltip({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Read the active theme from the store. The portal renders into
+  // document.body, escaping the chassis's `.tbrowse-root` ancestor, so
+  // we wrap the portal contents in a div with the theme classes so the
+  // CSS custom properties resolve.
+  const theme = useTBrowseStore((s) => s.theme);
+
   // Measure tooltip dimensions after every render. Conditionally update so
   // we don't loop on identical sizes.
   useLayoutEffect(() => {
@@ -134,12 +141,25 @@ export function Tooltip({
 
   const isInternal = !treeNode.isLeaf;
   const isLeaf = treeNode.isLeaf;
+  // For leaves: pull a human-friendly gene name (e.g. "DCL1") from the
+  // host's geneMetadata, the same field the Labels zone reads. Defensive
+  // about shape since geneMetadata values are typed as `unknown`.
+  const geneDisplayName = (() => {
+    if (!isLeaf || !treeNode.geneId) return null;
+    const meta = data.geneMetadata?.[treeNode.geneId] as
+      | { displayName?: unknown }
+      | undefined;
+    if (!meta || typeof meta.displayName !== 'string' || meta.displayName === '')
+      return null;
+    return meta.displayName;
+  })();
   const canCollapseExpand = isInternal && !isPruned;
   const canShowParalogs =
     isLeaf && isNodeOfInterest && treeNode.taxonomyId !== undefined && !isPruned;
   const canMakeNodeOfInterest = isLeaf && !isNodeOfInterest && !isPruned;
 
   return createPortal(
+    <div className={`tbrowse-root tbrowse-theme-${theme}`}>
     <div
       ref={tooltipRef}
       className="tbrowse-tooltip"
@@ -149,14 +169,14 @@ export function Tooltip({
         top: finalY,
         minWidth: 200,
         maxWidth: 320,
-        background: 'white',
-        border: '1px solid #ccc',
+        background: 'var(--tbrowse-bg-elevated)',
+        border: '1px solid var(--tbrowse-border)',
         borderRadius: 6,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+        boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
         padding: '8px 10px',
         fontSize: 12,
         lineHeight: 1.45,
-        color: '#222',
+        color: 'var(--tbrowse-text)',
         zIndex: 1000,
       }}
       onClick={(e) => e.stopPropagation()}
@@ -200,21 +220,39 @@ export function Tooltip({
           ×
         </button>
       </div>
-      {treeNode.eventType && <InfoRow label="Event" value={treeNode.eventType} />}
-      {isInternal && <InfoRow label="Leaves" value={String(subtreeLeafCount)} />}
-      {treeNode.parentId !== null && (
-        <InfoRow label="Distance" value={treeNode.distance.toFixed(4)} />
+      {isLeaf ? (
+        <>
+          {treeNode.geneId && (
+            <InfoRow label="Gene id" value={treeNode.geneId} mono />
+          )}
+          {geneDisplayName && (
+            <InfoRow label="Gene name" value={geneDisplayName} />
+          )}
+          {treeNode.parentId !== null && (
+            <InfoRow label="Distance" value={treeNode.distance.toFixed(4)} />
+          )}
+          <InfoRow label="Node id" value={layoutNode.nodeId} mono />
+        </>
+      ) : (
+        <>
+          {treeNode.eventType && (
+            <InfoRow label="Event" value={treeNode.eventType} />
+          )}
+          <InfoRow label="Leaves" value={String(subtreeLeafCount)} />
+          {treeNode.parentId !== null && (
+            <InfoRow label="Distance" value={treeNode.distance.toFixed(4)} />
+          )}
+          {treeNode.bootstrap !== undefined && (
+            <InfoRow label="Bootstrap" value={String(treeNode.bootstrap)} />
+          )}
+          <InfoRow label="Node id" value={layoutNode.nodeId} mono />
+        </>
       )}
-      {treeNode.bootstrap !== undefined && (
-        <InfoRow label="Bootstrap" value={String(treeNode.bootstrap)} />
-      )}
-      <InfoRow label="Node id" value={layoutNode.nodeId} mono />
-      {treeNode.geneId && <InfoRow label="Gene id" value={treeNode.geneId} mono />}
       <div
         style={{
           marginTop: 8,
           paddingTop: 8,
-          borderTop: '1px solid #eee',
+          borderTop: '1px solid var(--tbrowse-border-soft)',
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
@@ -324,6 +362,7 @@ export function Tooltip({
           </div>
         )}
       </div>
+    </div>
     </div>,
     document.body,
   );
@@ -348,7 +387,7 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 function ActionButton({
   label,
   onClick,
-  color = '#333',
+  color = 'var(--tbrowse-text)',
   disabled = false,
   title,
 }: {
@@ -366,7 +405,7 @@ function ActionButton({
       disabled={disabled}
       title={title}
       style={{
-        background: 'white',
+        background: 'var(--tbrowse-bg-input)',
         border: `1px solid ${effectiveColor}`,
         color: effectiveColor,
         borderRadius: 4,

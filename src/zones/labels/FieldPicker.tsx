@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTBrowseStore } from '../../store';
 import type { LabelField } from './fields';
 
 interface FieldPickerProps {
@@ -12,6 +13,9 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // Read theme from the store so the portaled popover can re-attach
+  // the `tbrowse-theme-*` class and resolve our CSS variables.
+  const theme = useTBrowseStore((s) => s.theme);
 
   const visibleSet = new Set(visibleFields);
 
@@ -64,9 +68,9 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
           fontSize: 11,
           padding: '2px 8px',
           borderRadius: 3,
-          border: '1px solid #ccc',
-          background: open ? '#e6f0fb' : 'white',
-          color: '#333',
+          border: '1px solid var(--tbrowse-border)',
+          background: open ? 'var(--tbrowse-accent-soft)' : 'var(--tbrowse-bg-input)',
+          color: 'var(--tbrowse-text)',
           cursor: 'pointer',
         }}
       >
@@ -75,16 +79,18 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
       {open &&
         pos &&
         createPortal(
+          <div className={`tbrowse-root tbrowse-theme-${theme}`}>
           <div
             className="tbrowse-fieldpicker"
             style={{
               position: 'fixed',
               left: pos.x,
               top: pos.y,
-              background: 'white',
-              border: '1px solid #ccc',
+              background: 'var(--tbrowse-bg-elevated)',
+              border: '1px solid var(--tbrowse-border)',
+              color: 'var(--tbrowse-text)',
               borderRadius: 6,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+              boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
               padding: '6px 0',
               zIndex: 1000,
               minWidth: 200,
@@ -96,13 +102,14 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
                 <div
                   style={{
                     height: 1,
-                    background: '#eee',
+                    background: 'var(--tbrowse-border-soft)',
                     margin: '4px 0',
                   }}
                 />
                 {renderGroup('External', fields.filter((f) => f.kind === 'provider'), visibleSet, toggleField)}
               </>
             )}
+          </div>
           </div>,
           document.body,
         )}
@@ -125,7 +132,7 @@ function renderGroup(
           fontSize: 10,
           textTransform: 'uppercase',
           letterSpacing: 0.5,
-          color: '#999',
+          color: 'var(--tbrowse-text-subtle)',
           fontWeight: 600,
         }}
       >

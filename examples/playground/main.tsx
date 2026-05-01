@@ -103,6 +103,8 @@ function App() {
     error?: string;
   }>({ state: 'idle' });
 
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
   const applyEnsemblViewState = (data: FromEnsemblResult) => {
     const pivot = computePivotState(data.tree, ENSEMBL_GENE_OF_INTEREST);
     const initial = buildInitialViewState(zoneIds);
@@ -338,8 +340,27 @@ function App() {
     : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <div className="panel" style={{ padding: 12, borderBottom: '1px solid #ddd' }}>
+    <div
+      // Wrap in tbrowse-root + tbrowse-theme-* so the toolbar and panel
+      // pick up the same CSS vars TBrowse uses, and the page background
+      // flips with the theme toggle.
+      className={`tbrowse-root tbrowse-theme-${theme}`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: 'var(--tbrowse-bg)',
+        color: 'var(--tbrowse-text)',
+      }}
+    >
+      <div
+        className="panel"
+        style={{
+          padding: 12,
+          borderBottom: '1px solid var(--tbrowse-divider)',
+          background: 'var(--tbrowse-bg-strip)',
+        }}
+      >
         <strong style={{ marginRight: 12 }}>tbrowse playground</strong>
         <span style={{ marginRight: 12, color: '#666', fontSize: 12 }}>data:</span>
         <button
@@ -416,6 +437,17 @@ function App() {
           )}
         </span>
         <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
+          theme:&nbsp;
+          <button
+            type="button"
+            onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+            style={{ fontSize: 12 }}
+          >
+            {theme === 'light' ? '☀ light' : '☾ dark'}
+          </button>
+        </span>
+        <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
           pruned-mark:&nbsp;
           <select
             value={prunedStyle}
@@ -460,6 +492,7 @@ function App() {
           zones={zones}
           viewState={viewState}
           onViewStateChange={setViewState}
+          theme={theme}
         />
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTBrowseStore } from '../../store';
 
 export interface MaskParams {
   enabled: boolean;
@@ -27,6 +28,9 @@ export function MaskPanel({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // Theme class needs to be reapplied on the portal wrapper so the
+  // CSS custom properties resolve outside the chassis subtree.
+  const theme = useTBrowseStore((s) => s.theme);
 
   const togglePanel = () => {
     if (!open && buttonRef.current) {
@@ -69,9 +73,13 @@ export function MaskPanel({
           fontSize: 11,
           padding: '1px 6px',
           borderRadius: 3,
-          border: `1px solid ${active ? '#2878dc' : '#ccc'}`,
-          background: open ? '#e6f0fb' : active ? '#f4f8fd' : 'white',
-          color: active ? '#1d5fb1' : '#333',
+          border: `1px solid ${active ? 'var(--tbrowse-accent)' : 'var(--tbrowse-border)'}`,
+          background: open
+            ? 'var(--tbrowse-accent-soft)'
+            : active
+              ? 'var(--tbrowse-accent-soft)'
+              : 'var(--tbrowse-bg-input)',
+          color: active ? 'var(--tbrowse-accent-strong)' : 'var(--tbrowse-text)',
           cursor: 'pointer',
           fontFamily: 'inherit',
         }}
@@ -81,21 +89,22 @@ export function MaskPanel({
       {open &&
         pos &&
         createPortal(
+          <div className={`tbrowse-root tbrowse-theme-${theme}`}>
           <div
             className="tbrowse-msa-mask-panel"
             style={{
               position: 'fixed',
               left: pos.x,
               top: pos.y,
-              background: 'white',
-              border: '1px solid #ccc',
+              background: 'var(--tbrowse-bg-elevated)',
+              border: '1px solid var(--tbrowse-border)',
               borderRadius: 6,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+              boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
               padding: '10px 12px',
               zIndex: 1000,
               minWidth: 240,
               fontSize: 12,
-              color: '#222',
+              color: 'var(--tbrowse-text)',
               fontFamily: 'inherit',
             }}
           >
@@ -104,7 +113,7 @@ export function MaskPanel({
                 fontSize: 10,
                 textTransform: 'uppercase',
                 letterSpacing: 0.5,
-                color: '#888',
+                color: 'var(--tbrowse-text-subtle)',
                 fontWeight: 600,
                 marginBottom: 8,
               }}
@@ -131,7 +140,7 @@ export function MaskPanel({
 
             <div style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ color: '#666' }}>Min coverage</span>
+                <span style={{ color: 'var(--tbrowse-text-muted)' }}>Min coverage</span>
                 <input
                   type="number"
                   min={0}
@@ -145,9 +154,9 @@ export function MaskPanel({
                   }}
                   style={{ width: 60, fontSize: 12, padding: '1px 4px' }}
                 />
-                <span style={{ color: '#999' }}>/ {maxCoverage} leaves</span>
+                <span style={{ color: 'var(--tbrowse-text-subtle)' }}>/ {maxCoverage} leaves</span>
               </div>
-              <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>
+              <div style={{ color: 'var(--tbrowse-text-muted)', fontSize: 11, marginTop: 2 }}>
                 Drop a column unless at least this many active leaves have a
                 non-gap residue there.
               </div>
@@ -155,7 +164,7 @@ export function MaskPanel({
 
             <div style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ color: '#666' }}>Padding</span>
+                <span style={{ color: 'var(--tbrowse-text-muted)' }}>Padding</span>
                 <input
                   type="number"
                   min={0}
@@ -168,9 +177,9 @@ export function MaskPanel({
                   }}
                   style={{ width: 60, fontSize: 12, padding: '1px 4px' }}
                 />
-                <span style={{ color: '#999' }}>cols</span>
+                <span style={{ color: 'var(--tbrowse-text-subtle)' }}>cols</span>
               </div>
-              <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>
+              <div style={{ color: 'var(--tbrowse-text-muted)', fontSize: 11, marginTop: 2 }}>
                 Keep this many columns flanking each covered region so brief
                 low-coverage runs don't break a contiguous block.
               </div>
@@ -180,8 +189,8 @@ export function MaskPanel({
               style={{
                 marginTop: 10,
                 paddingTop: 8,
-                borderTop: '1px solid #eee',
-                color: '#666',
+                borderTop: '1px solid var(--tbrowse-border-soft)',
+                color: 'var(--tbrowse-text-muted)',
                 fontSize: 11,
               }}
             >
@@ -189,6 +198,7 @@ export function MaskPanel({
                 ? `Hiding ${hiddenCols} of ${totalCols} columns.`
                 : `All ${totalCols} columns visible.`}
             </div>
+          </div>
           </div>,
           document.body,
         )}

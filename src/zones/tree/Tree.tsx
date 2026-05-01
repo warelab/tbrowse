@@ -18,17 +18,23 @@ const LEFT_PAD = 16;
 // labels-zone divider.
 const RIGHT_PAD = 24;
 
-const BRANCH_COLOR = '#444';
+// Theme-aware colour values: SVG presentation attributes accept var()
+// references the same way `style` does, so we string them as
+// `var(--name)` here and they re-evaluate when the theme class flips on
+// the root.
+const BRANCH_COLOR = 'var(--tbrowse-branch)';
 const BRANCH_WIDTH = 1.5;
-const HIGHLIGHT_COLOR = '#2878dc';
+const HIGHLIGHT_COLOR = 'var(--tbrowse-accent)';
 const HIGHLIGHT_WIDTH = 2.5;
-const EXTENSION_COLOR = '#bbb';
-const EXTENSION_HIGHLIGHT_COLOR = '#2878dc';
+const EXTENSION_COLOR = 'var(--tbrowse-leaf-extension)';
+const EXTENSION_HIGHLIGHT_COLOR = 'var(--tbrowse-accent)';
+// Selection amber stays fixed — it reads on both themes and is meant to
+// be unambiguous.
 const SELECT_COLOR = '#f59e0b';
 const SELECT_RADIUS = 5;
 const HIT_STROKE_WIDTH = 12;
-const SPECIATION_COLOR = '#777';
-const DUPLICATION_COLOR = '#c0392b';
+const SPECIATION_COLOR = 'var(--tbrowse-text-muted)';
+const DUPLICATION_COLOR = 'var(--tbrowse-danger)';
 const NODE_GLYPH_RADIUS = 3.5;
 const NODE_GLYPH_SQUARE = 7;
 // Bootstrap (0..100) maps to opacity multiplier in [BOOTSTRAP_MIN, 1].
@@ -40,8 +46,8 @@ const COLLAPSED_TRIANGLE_WIDTH = 18;
 const ROOT_STUB_LEN = 10;
 const COLLAPSED_TRIANGLE_MIN_H = 8;
 const COLLAPSED_TRIANGLE_MAX_H = 22;
-const COLLAPSED_TRIANGLE_FILL = 'rgba(100, 110, 120, 0.20)';
-const COLLAPSED_TRIANGLE_STROKE = '#666';
+const COLLAPSED_TRIANGLE_FILL = 'rgba(128, 128, 140, 0.22)';
+const COLLAPSED_TRIANGLE_STROKE = 'var(--tbrowse-text-muted)';
 
 function collapsedTriangleHeight(leafCount: number): number {
   // Logarithmic so a 2-leaf and a 1000-leaf collapsed subtree are
@@ -89,7 +95,7 @@ const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneStat
         flexDirection: 'column',
         gap: 4,
         fontSize: 13,
-        color: '#333',
+        color: 'var(--tbrowse-text)',
       }}
     >
       <div
@@ -103,7 +109,7 @@ const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneStat
         }}
       >
         <span style={{ fontWeight: 600 }}>Tree</span>
-        <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{width}px</span>
+        <span style={{ fontWeight: 400, color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>{width}px</span>
       </div>
       {/* Second row: live readout of the hovered node. */}
       <div
@@ -115,14 +121,14 @@ const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneStat
           alignItems: 'center',
           gap: 8,
           fontSize: 11,
-          color: '#555',
+          color: 'var(--tbrowse-text-muted)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}
         title={hoveredInfo ?? ''}
       >
-        {hoveredInfo ?? <span style={{ color: '#aaa' }}>hover a node…</span>}
+        {hoveredInfo ?? <span style={{ color: 'var(--tbrowse-text-subtle)' }}>hover a node…</span>}
       </div>
     </div>
   );

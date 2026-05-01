@@ -43,12 +43,13 @@ export function ChromeStrip({ zones, data }: ChromeStripProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        borderBottom: '1px solid #ddd',
-        background: '#fafafa',
+        borderBottom: '1px solid var(--tbrowse-divider)',
+        background: 'var(--tbrowse-bg-strip)',
+        color: 'var(--tbrowse-text)',
         fontSize: 11,
       }}
     >
-      <span style={{ color: '#666', marginRight: 4 }}>Zones:</span>
+      <span style={{ color: 'var(--tbrowse-text-muted)', marginRight: 4 }}>Zones:</span>
       {zones.map((def) => {
         const visible = visibleById[def.id] ?? false;
         const available = def.isAvailable(data);
@@ -64,9 +65,13 @@ export function ChromeStrip({ zones, data }: ChromeStripProps) {
               padding: '2px 8px',
               lineHeight: 1.4,
               borderRadius: 3,
-              border: '1px solid ' + (visible ? '#2878dc' : '#ccc'),
-              background: visible ? '#e6f0fb' : 'white',
-              color: available ? (visible ? '#1d5fb1' : '#333') : '#999',
+              border: `1px solid ${visible ? 'var(--tbrowse-accent)' : 'var(--tbrowse-border)'}`,
+              background: visible ? 'var(--tbrowse-accent-soft)' : 'var(--tbrowse-bg-input)',
+              color: available
+                ? visible
+                  ? 'var(--tbrowse-accent-strong)'
+                  : 'var(--tbrowse-text)'
+                : 'var(--tbrowse-text-subtle)',
               cursor: available ? 'pointer' : 'not-allowed',
             }}
           >

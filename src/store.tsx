@@ -6,8 +6,16 @@ import type { NodeId, TBrowseProps, ViewState } from './types';
 export interface TBrowseState {
   viewState: ViewState;
   hoveredNodeId: NodeId | null;
+  /**
+   * Active visual theme. Mirrored from the host's `theme` prop on every
+   * render. Read by components that render outside the chassis DOM
+   * subtree (portaled tooltips / popovers) so they can reattach the
+   * `tbrowse-theme-*` class and pick up the CSS custom properties.
+   */
+  theme: 'light' | 'dark';
   setHoveredNodeId: (id: NodeId | null) => void;
   setViewState: (next: ViewState | ((prev: ViewState) => ViewState)) => void;
+  setTheme: (theme: 'light' | 'dark') => void;
 }
 
 export type TBrowseStore = StoreApi<TBrowseState>;
@@ -72,11 +80,13 @@ export function createTBrowseStore(props: TBrowseProps): TBrowseStore {
   return createStore<TBrowseState>((set) => ({
     viewState: initial,
     hoveredNodeId: null,
+    theme: props.theme ?? 'light',
     setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
     setViewState: (next) =>
       set((s) => ({
         viewState: typeof next === 'function' ? next(s.viewState) : next,
       })),
+    setTheme: (theme) => set({ theme }),
   }));
 }
 

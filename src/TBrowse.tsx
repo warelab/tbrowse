@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { createTBrowseStore, TBrowseStoreProvider } from './store';
 import { Layout } from './layout/Layout';
+import { ensureThemeStylesInjected } from './theme';
 import type { HostData, TBrowseProps } from './types';
+
+// Inject the theme stylesheet once, at module load. Idempotent and
+// SSR-safe; the helper no-ops when there's no document.
+ensureThemeStylesInjected();
 
 export function TBrowse(props: TBrowseProps) {
   const store = useMemo(() => createTBrowseStore(props), []);
@@ -28,6 +33,14 @@ export function TBrowse(props: TBrowseProps) {
   ) {
     lastEmitted.current = propViewState;
     store.setState({ viewState: propViewState });
+  }
+
+  // Mirror the theme prop into the store so portaled tooltips/popovers,
+  // which render outside the chassis DOM subtree, can re-apply the
+  // `tbrowse-theme-*` class on their wrappers and pick up the CSS vars.
+  const propTheme = props.theme ?? 'light';
+  if (store.getState().theme !== propTheme) {
+    store.setState({ theme: propTheme });
   }
 
   useEffect(() => {

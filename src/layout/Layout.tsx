@@ -475,7 +475,8 @@ export function Layout({ data, zones }: LayoutProps) {
         flexDirection: 'column',
         width: '100%',
         height: '100%',
-        background: 'white',
+        background: 'var(--tbrowse-bg)',
+        color: 'var(--tbrowse-text)',
       }}
     >
       <ChromeStrip zones={zones} data={data} />
@@ -525,9 +526,9 @@ export function Layout({ data, zones }: LayoutProps) {
                 position: 'sticky',
                 top: 0,
                 height: HEADER_HEIGHT,
-                background: '#f7f7f7',
-                borderBottom: '1px solid #ddd',
-                borderRight: '1px solid #eee',
+                background: 'var(--tbrowse-bg-alt)',
+                borderBottom: '1px solid var(--tbrowse-divider)',
+                borderRight: '1px solid var(--tbrowse-border-soft)',
                 zIndex: 1,
                 overflow: 'hidden',
                 display: 'flex',
@@ -586,7 +587,7 @@ export function Layout({ data, zones }: LayoutProps) {
               className="tbrowse-zone-body"
               style={{
                 position: 'relative',
-                borderRight: '1px solid #eee',
+                borderRight: '1px solid var(--tbrowse-border-soft)',
                 overflow: 'hidden',
               }}
             >
@@ -626,7 +627,7 @@ function ReorderInsertionIndicator({
         left: x - 1,
         width: 2,
         height: '100%',
-        background: '#2878dc',
+        background: 'var(--tbrowse-accent)',
         pointerEvents: 'none',
         zIndex: 2,
       }}

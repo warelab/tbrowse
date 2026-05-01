@@ -30,7 +30,7 @@ const LabelsHeader = ({
         flexDirection: 'column',
         gap: 4,
         fontSize: 13,
-        color: '#333',
+        color: 'var(--tbrowse-text)',
       }}
     >
       <div
@@ -130,16 +130,16 @@ const LabelsBody = ({
               display: 'flex',
               alignItems: 'center',
               background: isSelected
-                ? 'rgba(40, 120, 220, 0.15)'
+                ? 'var(--tbrowse-row-select-bg)'
                 : isExactHover
-                  ? 'rgba(40, 120, 220, 0.08)'
+                  ? 'var(--tbrowse-row-hover-bg)'
                   : isInHoveredSubtree
-                    ? 'rgba(40, 120, 220, 0.04)'
+                    ? 'var(--tbrowse-row-subtree-bg)'
                     : 'transparent',
               fontWeight: isInHoveredSubtree ? 600 : 400,
               fontStyle: isCollapsed ? 'italic' : 'normal',
-              color: isCollapsed ? '#888' : '#222',
-              borderBottom: '1px solid #f0f0f0',
+              color: isCollapsed ? 'var(--tbrowse-text-muted)' : 'var(--tbrowse-text)',
+              borderBottom: '1px solid var(--tbrowse-border-row)',
               // Default text cursor + native selection — clicking does NOT
               // trigger node selection in non-tree zones; the tree zone is
               // the single source of truth for "selected node".

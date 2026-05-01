@@ -347,7 +347,7 @@ const MSAHeader = ({
         position: 'relative',
         height: '100%',
         fontSize: 13,
-        color: '#333',
+        color: 'var(--tbrowse-text)',
       }}
     >
       <div
@@ -366,11 +366,11 @@ const MSAHeader = ({
         <span style={{ fontWeight: 600 }}>MSA</span>
         {msa && vp && (
           <>
-            <span style={{ fontWeight: 400, color: '#888', fontSize: 11 }}>{msa.alphabet}</span>
+            <span style={{ fontWeight: 400, color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>{msa.alphabet}</span>
             <span
               style={{
                 fontWeight: 400,
-                color: '#888',
+                color: 'var(--tbrowse-text-muted)',
                 fontSize: 11,
                 whiteSpace: 'nowrap',
               }}
@@ -397,9 +397,9 @@ const MSAHeader = ({
               style={{
                 fontSize: 11,
                 padding: '2px 6px',
-                border: '1px solid #c0c0c0',
-                background: 'white',
-                color: '#333',
+                border: '1px solid var(--tbrowse-border)',
+                background: 'var(--tbrowse-bg-input)',
+                color: 'var(--tbrowse-text)',
                 borderRadius: 3,
                 cursor: 'pointer',
                 fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
@@ -469,10 +469,10 @@ function SchemeSelect({
       style={{
         fontSize: 11,
         padding: '1px 4px',
-        border: '1px solid #ccc',
+        border: '1px solid var(--tbrowse-border)',
         borderRadius: 3,
-        background: 'white',
-        color: '#333',
+        background: 'var(--tbrowse-bg-input)',
+        color: 'var(--tbrowse-text)',
         cursor: 'pointer',
       }}
       title="Color scheme"
@@ -1137,7 +1137,7 @@ const MSABody = ({
 
   if (!msa) {
     return (
-      <div style={{ padding: '8px 10px', fontSize: 12, color: '#888' }}>
+      <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--tbrowse-text-muted)' }}>
         No alignment provided
       </div>
     );
@@ -1315,13 +1315,13 @@ const MSABody = ({
               // level and either open the domain tooltip or do nothing.
               cursor: 'default',
               background: isSelected
-                ? 'rgba(40, 120, 220, 0.12)'
+                ? 'var(--tbrowse-row-select-bg)'
                 : isExactHover
-                  ? 'rgba(40, 120, 220, 0.06)'
+                  ? 'var(--tbrowse-row-hover-bg)'
                   : isInHoveredSubtree
-                    ? 'rgba(40, 120, 220, 0.03)'
+                    ? 'var(--tbrowse-row-subtree-bg)'
                     : 'transparent',
-              borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
+              borderBottom: '1px solid var(--tbrowse-border-row)',
               opacity: r.opacity ?? 1,
               transform: `translateX(${-32 * (1 - (r.opacity ?? 1))}px)`,
             }}
@@ -1572,13 +1572,13 @@ function DomainTooltip({
         left,
         top,
         zIndex: 1000,
-        background: 'white',
-        border: '1px solid #d0d0d0',
+        background: 'var(--tbrowse-bg-elevated)',
+        border: '1px solid var(--tbrowse-border)',
         borderRadius: 6,
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+        boxShadow: '0 4px 12px var(--tbrowse-tooltip-shadow)',
         padding: '8px 10px',
         fontSize: 12,
-        color: '#222',
+        color: 'var(--tbrowse-text)',
         maxWidth: 320,
         minWidth: 180,
       }}
@@ -1601,7 +1601,7 @@ function DomainTooltip({
           style={{
             background: 'none',
             border: 'none',
-            color: '#888',
+            color: 'var(--tbrowse-text-muted)',
             fontSize: 14,
             cursor: 'pointer',
             padding: 0,
@@ -1638,17 +1638,17 @@ function DomainTooltip({
               />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 500 }}>{d.name}</div>
-                <div style={{ color: '#777', fontSize: 11 }}>
+                <div style={{ color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>
                   {d.id}
                   {d.source ? ` · ${d.source}` : ''}
                   {!isSubtree && ` · residues ${d.start}–${d.end}`}
                 </div>
                 {isSubtree && (
-                  <div style={{ color: '#555', fontSize: 11 }}>
+                  <div style={{ color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>
                     in {subtreeCount} / {tip.subtreeTotal} subtree leaves ({subPct}%)
                   </div>
                 )}
-                <div style={{ color: '#555', fontSize: 11 }}>
+                <div style={{ color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>
                   tree-wide: {seenIn} / {total} leaves ({pct}%)
                 </div>
               </div>

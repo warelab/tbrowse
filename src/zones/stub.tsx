@@ -21,12 +21,12 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
         alignItems: 'center',
         gap: 10,
         fontSize: 13,
-        color: '#333',
+        color: 'var(--tbrowse-text)',
         position: 'relative',
       }}
     >
       <span style={{ fontWeight: 600 }}>{opts.displayName}</span>
-      <span style={{ fontWeight: 400, color: '#888' }}>{width}px</span>
+      <span style={{ fontWeight: 400, color: 'var(--tbrowse-text-muted)' }}>{width}px</span>
       {contentWidth !== undefined && (
         <ViewportIndicator
           contentWidth={contentWidth}
@@ -91,14 +91,14 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
                   alignItems: 'center',
                   gap: 16,
                   background: isSelected
-                    ? 'rgba(40, 120, 220, 0.15)'
+                    ? 'var(--tbrowse-row-select-bg)'
                     : isExactHover
-                      ? 'rgba(40, 120, 220, 0.08)'
+                      ? 'var(--tbrowse-row-hover-bg)'
                       : isInHoveredSubtree
-                        ? 'rgba(40, 120, 220, 0.04)'
+                        ? 'var(--tbrowse-row-subtree-bg)'
                         : 'transparent',
                   fontWeight: isInHoveredSubtree ? 600 : 400,
-                  borderBottom: '1px solid #f0f0f0',
+                  borderBottom: '1px solid var(--tbrowse-border-row)',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   opacity: r.opacity ?? 1,
@@ -107,7 +107,7 @@ export function createStubZone(opts: StubZoneOptions): ZoneDefinition<Record<str
               >
                 <span>{r.kind === 'leaf' ? r.nodeId : `${r.nodeId} (collapsed, ${r.leafCount})`}</span>
                 {contentWidth !== undefined && (
-                  <span style={{ color: '#aaa', fontFamily: 'monospace', fontSize: 11 }}>
+                  <span style={{ color: 'var(--tbrowse-text-subtle)', fontFamily: 'monospace', fontSize: 11 }}>
                     {/* repeated content to make rows visibly wide */}
                     {Array.from({ length: 24 }, (_, i) => `col${i}`).join(' · ')}
                   </span>
@@ -154,7 +154,7 @@ function ViewportIndicator({
         marginLeft: 'auto',
         width: trackWidth,
         height: 8,
-        background: '#e0e0e0',
+        background: 'var(--tbrowse-border-soft)',
         borderRadius: 4,
         position: 'relative',
       }}
@@ -166,7 +166,7 @@ function ViewportIndicator({
           top: 0,
           width: indicatorWidth,
           height: '100%',
-          background: '#2878dc',
+          background: 'var(--tbrowse-accent)',
           borderRadius: 4,
         }}
       />

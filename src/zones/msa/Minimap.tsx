@@ -180,7 +180,7 @@ export function Minimap({
         // box) is not clipped at full-zoom, where the rect spans the entire
         // consensus track.
         overflow: 'visible',
-        background: '#f0f2f4',
+        background: 'var(--tbrowse-bg-alt)',
       }}
     >
       <canvas ref={canvasRef} style={{ display: 'block', pointerEvents: 'none' }} />
