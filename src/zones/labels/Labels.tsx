@@ -67,6 +67,7 @@ const LabelsBody = ({
   hoveredSubtreeIds,
   selectedNodeId,
   onHoverNode,
+  onSelectNode,
 }: ZoneRenderProps<LabelsZoneState>) => {
   const allDefinedFields = useMemo(() => allFields(data), [data]);
 
@@ -119,6 +120,14 @@ const LabelsBody = ({
             key={r.nodeId}
             onMouseEnter={() => onHoverNode(r.nodeId)}
             onMouseLeave={() => onHoverNode(null)}
+            // Click selects the row's node so the tree zone opens its
+            // tooltip. We bail when the user has actually highlighted
+            // text (drag-select) so copying labels still works.
+            onClick={() => {
+              const sel = window.getSelection();
+              if (sel && sel.toString().length > 0) return;
+              onSelectNode(r.nodeId);
+            }}
             style={{
               position: 'absolute',
               top: r.y,
@@ -140,10 +149,10 @@ const LabelsBody = ({
               fontStyle: isCollapsed ? 'italic' : 'normal',
               color: isCollapsed ? 'var(--tbrowse-text-muted)' : 'var(--tbrowse-text)',
               borderBottom: '1px solid var(--tbrowse-border-row)',
-              // Default text cursor + native selection — clicking does NOT
-              // trigger node selection in non-tree zones; the tree zone is
-              // the single source of truth for "selected node".
-              cursor: 'text',
+              cursor: 'pointer',
+              // Allow drag-selection of text for copy/paste even though
+              // the row is clickable (the click handler ignores clicks
+              // that produced a non-empty selection).
               userSelect: 'text',
               whiteSpace: 'nowrap',
               overflow: 'hidden',

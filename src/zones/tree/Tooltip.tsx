@@ -77,13 +77,30 @@ export function Tooltip({
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
-  // Esc to close
+  // Esc to close.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Outside click → close. Registered on `mousedown` so it fires before
+  // any subsequent click handlers — useful if the same gesture should
+  // also re-open the tooltip on a different node (the tree's own click
+  // handlers then run and re-set the selection in the same React batch).
+  // The handler can't fire for the click that ORIGINALLY opened the
+  // tooltip because the effect doesn't subscribe until after the
+  // tooltip has mounted.
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (!tooltipRef.current) return;
+      if (tooltipRef.current.contains(e.target as Node)) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
   }, [onClose]);
 
   // Read the active theme from the store. The portal renders into
