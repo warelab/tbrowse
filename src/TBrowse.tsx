@@ -70,6 +70,7 @@ function TBrowseShell(props: TBrowseProps) {
     labelProviders: props.labelProviders,
     proteinDomains: props.proteinDomains,
     exonJunctions: props.exonJunctions,
+    neighborhood: props.neighborhood,
   };
 
   return (

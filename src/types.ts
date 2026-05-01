@@ -122,6 +122,40 @@ export interface RowRange {
  * counted). The MSA zone translates these on the fly into aligned-column
  * positions when it has access to the leaf's sequence in `msa.sequences`.
  */
+/**
+ * One gene in a leaf's genomic neighborhood (used by the
+ * neighborhood-conservation zone). Coordinates are absolute on the
+ * genome; `strand` drives arrow direction; `geneTree` is the family
+ * identifier — neighbours sharing a `geneTree` value get the same
+ * colour, and undefined means "no family / non-protein-coding".
+ */
+export interface NeighborhoodGene {
+  id: GeneId;
+  name?: string;
+  description?: string;
+  /** 1 = forward strand, -1 = reverse. Anything else is normalised to 1. */
+  strand: 1 | -1;
+  start: number;
+  end: number;
+  /** Chromosome / scaffold name (e.g. "1", "Chr3", "scaffold_42"). */
+  region?: string;
+  biotype?: string;
+  /** Gene-tree (family) accession; same value across genes ⇒ same colour. */
+  geneTree?: string;
+}
+
+/**
+ * Per-leaf genomic-context window. `center` is the leaf gene itself;
+ * `upstream` and `downstream` are up to ten flanking genes each, in
+ * genomic order (leftmost first), so renderers can lay them out
+ * directly without re-sorting.
+ */
+export interface Neighborhood {
+  center: NeighborhoodGene;
+  upstream: NeighborhoodGene[];
+  downstream: NeighborhoodGene[];
+}
+
 export interface ProteinDomain {
   /** Stable identifier (e.g. Pfam accession "PF00069"). Drives the color. */
   id: string;
@@ -156,6 +190,12 @@ export interface HostData {
    * carry these as `exon_junctions`.
    */
   exonJunctions?: Record<GeneId, number[]>;
+  /**
+   * Optional per-leaf genomic neighbourhoods. Drives the
+   * neighborhood-conservation zone — each leaf's row shows its centre
+   * gene plus up to 10 upstream + 10 downstream flanking genes.
+   */
+  neighborhood?: Record<GeneId, Neighborhood>;
 }
 
 export interface ZoneRenderProps<S = unknown> {
@@ -252,6 +292,12 @@ export interface TBrowseProps {
   nodeAnnotations?: NodeAnnotation[];
   proteinDomains?: Record<GeneId, ProteinDomain[]>;
   exonJunctions?: Record<GeneId, number[]>;
+  /**
+   * Optional per-leaf genomic neighbourhoods. Drives the
+   * neighborhood-conservation zone — each leaf's row shows its centre
+   * gene plus up to 10 upstream + 10 downstream flanking genes.
+   */
+  neighborhood?: Record<GeneId, Neighborhood>;
   /**
    * If provided, the initial view collapses every subtree except the path
    * to this node and swaps siblings so the node sits at the top of the

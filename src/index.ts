@@ -9,6 +9,7 @@ export {
 export {
   fromGrameneGene,
   fromGrameneGenetree,
+  fromGrameneNeighborhood,
   type FromGrameneGeneResult,
   type FromGrameneGenetreeOptions,
   type FromGrameneGenetreeResult,
@@ -24,6 +25,10 @@ export {
 } from './zones/tree/Tree';
 export { labelsZone, type LabelsZoneState } from './zones/labels/Labels';
 export { msaZone, type MSAZoneState } from './zones/msa/MSA';
+export {
+  neighborhoodZone,
+  type NeighborhoodZoneState,
+} from './zones/neighborhood/Neighborhood';
 export {
   COLOR_SCHEMES,
   defaultSchemeFor,
@@ -51,6 +56,8 @@ export type {
   GeneMetadata,
   NodeAnnotation,
   ProteinDomain,
+  Neighborhood,
+  NeighborhoodGene,
   LabelProvider,
   ZoneViewState,
   SearchState,

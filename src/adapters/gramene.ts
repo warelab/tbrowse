@@ -2,6 +2,8 @@ import type {
   GeneId,
   GeneMetadata,
   MSA,
+  Neighborhood,
+  NeighborhoodGene,
   NodeId,
   ProteinDomain,
   Taxonomy,
@@ -285,4 +287,107 @@ export function fromGrameneGene(json: unknown): FromGrameneGeneResult {
     systemName: doc.system_name ?? null,
     description: doc.description ?? null,
   };
+}
+
+// ─── Neighbourhood (Solr graph) endpoint ──────────────────────────────────────
+
+/**
+ * Subset of the Gramene `/search` doc shape relevant to neighbourhood
+ * rendering. The host fetches via the documented graph query
+ * (`{!graph from=compara_neighbors_10 to=compara_idx_multi
+ * maxDepth=1}gene_tree:<id>`) which returns every gene within ±10 of any
+ * leaf in the tree, plus the leaves themselves.
+ */
+interface GrameneNeighborhoodDoc {
+  id?: string;
+  name?: string;
+  description?: string;
+  /** Genome strand: 1 = forward, -1 = reverse. */
+  strand?: number;
+  start?: number;
+  end?: number;
+  biotype?: string;
+  /** Gene-tree (family) accession. */
+  gene_tree?: string;
+  /** Position within the species' chromosome — the ordering key for
+   *  identifying flanking genes. */
+  gene_idx?: number;
+  region?: string;
+  system_name?: string;
+}
+
+interface GrameneSearchResponse {
+  response?: { docs?: GrameneNeighborhoodDoc[] };
+}
+
+/**
+ * Convert a Gramene `/search` graph-query response into per-gene
+ * neighbourhood windows.
+ *
+ * The response carries every gene within ±10 of any leaf in the source
+ * tree (3601 docs for a moderately-sized tree). We index by
+ * `(system_name, region) → sorted-by-gene_idx`, then for every gene we
+ * emit a `Neighborhood` whose `upstream`/`downstream` arrays are at
+ * most 10 genes long, sliced from that sorted index.
+ *
+ * Pure: callers do the network fetch, hand us the JSON.
+ */
+export function fromGrameneNeighborhood(
+  json: unknown,
+): Record<GeneId, Neighborhood> {
+  const docs = (json as GrameneSearchResponse | null)?.response?.docs;
+  if (!Array.isArray(docs)) return {};
+
+  // Group by (system_name, region) — only docs with a usable gene_idx
+  // can participate in neighbour ordering.
+  const groups = new Map<string, GrameneNeighborhoodDoc[]>();
+  for (const doc of docs) {
+    if (typeof doc.id !== 'string' || doc.id === '') continue;
+    if (typeof doc.gene_idx !== 'number' || !Number.isFinite(doc.gene_idx)) continue;
+    if (typeof doc.region !== 'string' || doc.region === '') continue;
+    if (typeof doc.system_name !== 'string' || doc.system_name === '') continue;
+    const key = `${doc.system_name}\t${doc.region}`;
+    let arr = groups.get(key);
+    if (!arr) {
+      arr = [];
+      groups.set(key, arr);
+    }
+    arr.push(doc);
+  }
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => (a.gene_idx ?? 0) - (b.gene_idx ?? 0));
+  }
+
+  const toGene = (d: GrameneNeighborhoodDoc): NeighborhoodGene => {
+    const gene: NeighborhoodGene = {
+      id: d.id!,
+      strand: d.strand === -1 ? -1 : 1,
+      start: typeof d.start === 'number' ? d.start : 0,
+      end: typeof d.end === 'number' ? d.end : 0,
+    };
+    if (d.name) gene.name = d.name;
+    // Some non-coding entries serialise an empty description as the
+    // literal string '""'; strip those.
+    if (d.description && d.description !== '""') gene.description = d.description;
+    if (d.region) gene.region = d.region;
+    if (d.biotype) gene.biotype = d.biotype;
+    if (d.gene_tree) gene.geneTree = d.gene_tree;
+    return gene;
+  };
+
+  const FLANK = 10;
+  const out: Record<GeneId, Neighborhood> = {};
+  for (const arr of groups.values()) {
+    for (let i = 0; i < arr.length; i++) {
+      const center = arr[i];
+      const lo = Math.max(0, i - FLANK);
+      const hi = Math.min(arr.length, i + FLANK + 1);
+      out[center.id!] = {
+        center: toGene(center),
+        upstream: arr.slice(lo, i).map(toGene),
+        downstream: arr.slice(i + 1, hi).map(toGene),
+      };
+    }
+  }
+  return out;
 }

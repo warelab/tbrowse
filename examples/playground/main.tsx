@@ -7,11 +7,14 @@ import {
   fromEnsemblProteinFeatures,
   fromGrameneGene,
   fromGrameneGenetree,
+  fromGrameneNeighborhood,
   labelsZone,
   msaZone,
+  neighborhoodZone,
   treeZone,
   type FromEnsemblResult,
   type FromGrameneGenetreeResult,
+  type Neighborhood,
   type PrunedNodeStyle,
   type ProteinDomain,
   type ViewState,
@@ -47,9 +50,10 @@ const ENSEMBL_URL = `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${
 // fractions of the container so this gives tree 30 % / labels 20 % /
 // MSA 50 %.
 const INITIAL_ZONE_FR: Record<string, number> = {
-  tree: 30,
-  labels: 20,
-  msa: 50,
+  tree: 22,
+  labels: 12,
+  msa: 36,
+  neighborhood: 30,
 };
 
 function buildInitialViewState(zoneIds: string[]): ViewState {
@@ -72,11 +76,14 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
 
 type DataSource = 'sample' | 'ensembl' | 'gramene';
 
-const GRAMENE_DEFAULT_GENE = 'AT1G01040';
+const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
 const GRAMENE_BASE = 'https://data.gramene.org/v69';
 
 function App() {
-  const zones = useMemo(() => [treeZone, labelsZone, msaZone], []);
+  const zones = useMemo(
+    () => [treeZone, labelsZone, msaZone, neighborhoodZone],
+    [],
+  );
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
   const [tree, setTree] = useState(sampleTree);
@@ -98,6 +105,9 @@ function App() {
 
   const [grameneGeneInput, setGrameneGeneInput] = useState(GRAMENE_DEFAULT_GENE);
   const [grameneData, setGrameneData] = useState<FromGrameneGenetreeResult | null>(null);
+  const [grameneNeighborhood, setGrameneNeighborhood] = useState<
+    Record<string, Neighborhood> | null
+  >(null);
   const [grameneStatus, setGrameneStatus] = useState<{
     state: 'idle' | 'loading' | 'error';
     error?: string;
@@ -207,6 +217,41 @@ function App() {
    * with residue ranges, so there's no fan-out — one HTTP call beyond the
    * gene lookup is enough.
    */
+  /**
+   * Fetch +/-10 flanking genes around every leaf in the named tree via
+   * the Gramene Solr graph query, then convert via
+   * `fromGrameneNeighborhood` and stash on state. Errors are logged
+   * and otherwise non-fatal — the rest of the view still works without
+   * neighbourhood data.
+   */
+  const loadGrameneNeighborhood = async (treeId: string) => {
+    try {
+      const url = new URL(`${GRAMENE_BASE}/search`);
+      url.searchParams.set(
+        'fl',
+        'id,name,gene_tree,gene_idx,region,start,end,strand,biotype,system_name,description',
+      );
+      url.searchParams.set(
+        'fq',
+        `{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1}gene_tree:${treeId}`,
+      );
+      url.searchParams.set('rows', '100000');
+      url.searchParams.set('start', '0');
+      const res = await fetch(url.toString(), {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} on /search`);
+      const json = (await res.json()) as unknown;
+      const map = fromGrameneNeighborhood(json);
+      setGrameneNeighborhood(map);
+    } catch (err) {
+      // Non-fatal: surface to the console so the user can debug, but
+      // keep the rest of the playground working.
+      // eslint-disable-next-line no-console
+      console.warn('Neighborhood fetch failed:', err);
+    }
+  };
+
   const loadGramene = async (geneId: string) => {
     setGrameneStatus({ state: 'loading' });
     try {
@@ -228,6 +273,10 @@ function App() {
       const treeJson = (await treeRes.json()) as unknown;
       const data = fromGrameneGenetree(treeJson);
       setGrameneData(data);
+      // Reset any cached neighborhood from a previous tree, then kick
+      // off the (potentially large) Solr graph fetch in the background.
+      setGrameneNeighborhood(null);
+      void loadGrameneNeighborhood(gene.geneTreeId);
       setDataSource('gramene');
       // Center on the originating gene so the user lands looking at it.
       const initial = buildInitialViewState(zoneIds);
@@ -303,6 +352,7 @@ function App() {
           msa: grameneData.msa,
           proteinDomains: grameneData.proteinDomains,
           exonJunctions: grameneData.exonJunctions,
+          neighborhood: grameneNeighborhood ?? undefined,
           labelProviders: undefined,
         }
       : dataSource === 'ensembl' && ensemblData
