@@ -6,9 +6,9 @@ Embeddable React component for visualizing phylogenetic trees with pluggable dat
 
 ## Status
 
-Library rewrite on the `rewrite` branch. The previous nwb / React 16 / Redux-Toolkit implementation is preserved at commit `b017a74` on `master`; the half-finished migration to React 18 + grid layout is parked on `wip/grid-migration`.
+`2.0.0` is a complete rewrite of the original component on a fresh React 18 / TypeScript / Zustand stack. The 1.x line on npm (`tbrowse@1.0.x`) is the previous nwb / React 16 / Redux-Toolkit implementation, preserved at commit `b017a74` for archival reference. The 2.0 API is **not backwards-compatible** with 1.x.
 
-This rewrite is functionally complete for v1: chassis, three real zones (Tree / Labels / MSA), an Ensembl REST adapter, animated transitions, and a `nodeOfInterest` pivot.
+The rewrite is functionally complete: chassis, four built-in zones (Tree / Labels / MSA / Neighborhood), Ensembl REST and Gramene adapters, animated transitions, branch-length compression, gene-family coloring, protein-domain annotations, splice-junction marks, and a `nodeOfInterest` pivot. See [CHANGELOG.md](./CHANGELOG.md) for the migration summary.
 
 ## Quick start
 

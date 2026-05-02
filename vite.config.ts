@@ -32,7 +32,12 @@ export default defineConfig(({ command, mode }) => {
           fileName: (format) => `tbrowse.${format === 'es' ? 'js' : 'cjs'}`,
         },
         rollupOptions: {
-          external: ['react', 'react-dom', 'react/jsx-runtime'],
+          // Externalise every runtime dependency so consumers'
+          // bundlers resolve them from their own node_modules. React
+          // and react-dom are peer deps; zustand is a hard dep listed
+          // in `dependencies`, so npm install pulls it in
+          // automatically.
+          external: ['react', 'react-dom', 'react/jsx-runtime', 'zustand'],
         },
       },
     };
