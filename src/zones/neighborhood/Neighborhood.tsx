@@ -82,34 +82,256 @@ function isEdgeTerminal(id: GeneId): boolean {
   return id === EDGE_TERMINAL_LEFT_ID || id === EDGE_TERMINAL_RIGHT_ID;
 }
 
-/** Stable FNV-1a-ish hash → CSS HSL colour for a gene-family id, so the
- *  same `gene_tree` value always renders the same colour across rows
- *  and sessions. The centre family is overridden separately so it
- *  reads as green regardless of the hash. */
-function familyColor(geneTree: string, alpha = 1): string {
+/** Hue assigned to the centre gene's family — green sits in the middle
+ *  of the rainbow gradient and reads as "this is the family of
+ *  interest". */
+const CENTER_FAMILY_HUE = 130;
+/** Upstream-side rainbow endpoint, pushed past blue into violet so the
+ *  upstream gradient covers the full cyan → blue → violet arc. The
+ *  closest-to-centre upstream family gets a hue near
+ *  `CENTER_FAMILY_HUE`; the farthest upstream family gets a hue near
+ *  this value. */
+const UPSTREAM_FAR_HUE = 290;
+/** Downstream-side rainbow endpoint, pushed past orange/red into dark
+ *  red. Expressed as a negative hue so the linear interpolation walks
+ *  green → yellow → orange → red → dark red along the short arc; the
+ *  result is normalised back into [0, 360) before storage. */
+const DOWNSTREAM_FAR_HUE = -10;
+
+/** Normalise a hue to [0, 360). Hues are computed in unwrapped space
+ *  (which can go negative or past 360) so a linear interpolation along
+ *  the rainbow short arc stays monotonic. */
+function normHue(h: number): number {
+  return ((h % 360) + 360) % 360;
+}
+
+/**
+ * Build a stable family-colour palette: gene_tree id → hue in [0, 360).
+ *
+ * 1. The centre family of the node-of-interest's neighbourhood is
+ *    pinned to green (`CENTER_FAMILY_HUE`).
+ * 2. Other families in that neighbourhood are walked in genomic
+ *    order and assigned hues distributed across a rainbow gradient
+ *    that flows blue → green (upstream) and green → orange/red
+ *    (downstream), so adjacent genes get adjacent colours.
+ * 3. Every remaining family across all rows is then processed in
+ *    DESCENDING order of total occurrence count. For each, we look
+ *    at the family's first appearance in any neighbourhood and
+ *    interpolate between its already-coloured flanking neighbours'
+ *    hues, so the new colour fits naturally into the gradient
+ *    established by the existing palette. If neither flank is yet
+ *    coloured, fall back to a stable hash so the colour at least
+ *    stays consistent across renders.
+ */
+/** Stable hash → hue used as a last-resort fallback when a family
+ *  has no coloured flanking gene to interpolate from. */
+function hashFamilyHue(family: string): number {
   let h = 2166136261 >>> 0;
-  for (let i = 0; i < geneTree.length; i++) {
-    h ^= geneTree.charCodeAt(i);
+  for (let i = 0; i < family.length; i++) {
+    h ^= family.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
-  const hue = h % 360;
+  return h % 360;
+}
+
+export function buildFamilyPalette(
+  neighborhoods: Record<GeneId, Neighborhood> | undefined,
+  noiGeneId: GeneId | undefined,
+): Map<string, number> {
+  const palette = new Map<string, number>();
+  if (!neighborhoods) return palette;
+
+  // Step 1 — centre of NoI's neighbourhood.
+  const noiNh = noiGeneId ? neighborhoods[noiGeneId] : undefined;
+  const centerFamily = noiNh?.center.geneTree;
+  if (centerFamily) palette.set(centerFamily, CENTER_FAMILY_HUE);
+
+  // Step 2 — rainbow distribution for NoI's other families. Walk
+  // leftmost upstream → closest-to-centre upstream → closest-to-centre
+  // downstream → rightmost downstream. Dedupe with a Set (O(1)
+  // lookup) instead of array.includes (O(n)).
+  if (noiNh) {
+    const seen = new Set<string>();
+    if (centerFamily) seen.add(centerFamily);
+    const upstream: string[] = [];
+    for (const g of noiNh.upstream) {
+      const t = g.geneTree;
+      if (t && !seen.has(t)) {
+        upstream.push(t);
+        seen.add(t);
+      }
+    }
+    const downstream: string[] = [];
+    for (const g of noiNh.downstream) {
+      const t = g.geneTree;
+      if (t && !seen.has(t)) {
+        downstream.push(t);
+        seen.add(t);
+      }
+    }
+    const upN = upstream.length;
+    for (let i = 0; i < upN; i++) {
+      const t = (i + 1) / (upN + 1);
+      const hue =
+        UPSTREAM_FAR_HUE - t * (UPSTREAM_FAR_HUE - CENTER_FAMILY_HUE);
+      palette.set(upstream[i], normHue(hue));
+    }
+    const downN = downstream.length;
+    for (let i = 0; i < downN; i++) {
+      const t = (i + 1) / (downN + 1);
+      const hue =
+        CENTER_FAMILY_HUE - t * (CENTER_FAMILY_HUE - DOWNSTREAM_FAR_HUE);
+      palette.set(downstream[i], normHue(hue));
+    }
+  }
+
+  // Step 3 — single pass over every row to (a) build a genomic-ordered
+  // gene list per row, (b) tally frequencies of every still-uncoloured
+  // family, and (c) record the FIRST occurrence of each such family
+  // (`{ list, idx }`) so the interpolation pass can scan that row's
+  // flanks directly without re-iterating the entire neighbourhood
+  // collection.
+  const frequency = new Map<string, number>();
+  type Occurrence = { list: NeighborhoodGene[]; idx: number };
+  const firstOccurrence = new Map<string, Occurrence>();
+  // Allow a small fallback: if the FIRST occurrence has no coloured
+  // flank in either direction, try one more occurrence before giving
+  // up. Two occurrences cover virtually all useful cases without
+  // blowing up to the O(N) worst case the previous code had.
+  const secondOccurrence = new Map<string, Occurrence>();
+
+  for (const id in neighborhoods) {
+    const nh = neighborhoods[id];
+    // Build the ordered list once per row (not once per family).
+    const list: NeighborhoodGene[] = new Array(
+      nh.upstream.length + 1 + nh.downstream.length,
+    );
+    let k = 0;
+    for (const g of nh.upstream) list[k++] = g;
+    list[k++] = nh.center;
+    for (const g of nh.downstream) list[k++] = g;
+
+    for (let i = 0; i < list.length; i++) {
+      const family = list[i].geneTree;
+      if (!family || palette.has(family)) continue;
+      frequency.set(family, (frequency.get(family) ?? 0) + 1);
+      if (!firstOccurrence.has(family)) {
+        firstOccurrence.set(family, { list, idx: i });
+      } else if (!secondOccurrence.has(family)) {
+        secondOccurrence.set(family, { list, idx: i });
+      }
+    }
+  }
+
+  // Sort remaining families by descending frequency, ties broken
+  // alphabetically so the assignment order is deterministic across
+  // sessions.
+  const remaining = [...frequency.keys()].sort((a, b) => {
+    const da = frequency.get(b)! - frequency.get(a)!;
+    return da !== 0 ? da : a < b ? -1 : 1;
+  });
+
+  for (const family of remaining) {
+    let hue: number | undefined;
+    const occA = firstOccurrence.get(family);
+    if (occA) hue = resolveHueFromFlanks(family, occA, palette);
+    if (hue === undefined) {
+      const occB = secondOccurrence.get(family);
+      if (occB) hue = resolveHueFromFlanks(family, occB, palette);
+    }
+    palette.set(family, hue ?? hashFamilyHue(family));
+  }
+  return palette;
+}
+
+function resolveHueFromFlanks(
+  family: string,
+  occ: { list: NeighborhoodGene[]; idx: number },
+  palette: Map<string, number>,
+): number | undefined {
+  const { list, idx } = occ;
+  let leftHue: number | undefined;
+  let rightHue: number | undefined;
+  // Combined `get`-and-test avoids the double hash lookup that
+  // `has` + `get` would do; matters for tight inner loops.
+  for (let j = idx - 1; j >= 0; j--) {
+    const t = list[j].geneTree;
+    if (!t || t === family) continue;
+    const h = palette.get(t);
+    if (h !== undefined) {
+      leftHue = h;
+      break;
+    }
+  }
+  for (let j = idx + 1; j < list.length; j++) {
+    const t = list[j].geneTree;
+    if (!t || t === family) continue;
+    const h = palette.get(t);
+    if (h !== undefined) {
+      rightHue = h;
+      break;
+    }
+  }
+  if (leftHue !== undefined && rightHue !== undefined) {
+    return circularMidHue(leftHue, rightHue);
+  }
+  if (leftHue !== undefined) return (leftHue + 30) % 360;
+  if (rightHue !== undefined) return (rightHue + 330) % 360;
+  return undefined;
+}
+
+function circularMidHue(h1: number, h2: number): number {
+  let d = h2 - h1;
+  if (d > 180) d -= 360;
+  else if (d < -180) d += 360;
+  return (h1 + d / 2 + 360) % 360;
+}
+
+/** Render a gene-family colour by looking up the family's hue in the
+ *  precomputed palette. Falls back to a hash so unknown families still
+ *  get a stable colour (shouldn't normally happen). */
+function familyColor(
+  geneTree: string,
+  palette: Map<string, number>,
+  alpha = 1,
+): string {
+  let hue = palette.get(geneTree);
+  if (hue === undefined) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < geneTree.length; i++) {
+      h ^= geneTree.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    hue = h % 360;
+  }
   return alpha < 1
     ? `hsl(${hue} 65% 50% / ${alpha})`
     : `hsl(${hue} 65% 50%)`;
 }
 
+const GAP_DASH_CODE = 45; // '-'
+const GAP_DOT_CODE = 46; // '.'
+
 /** Pairwise %identity between two aligned sequences, ignoring columns
- *  where either side is a gap. Result in [0, 1]. */
+ *  where either side is a gap. Result in [0, 1]. Uses `charCodeAt`
+ *  rather than string indexing so the inner loop stays in integer
+ *  comparison space — matters because this runs N times (once per
+ *  leaf) every time the user changes the node of interest. */
 function pairwiseIdentity(a: string | undefined, b: string | undefined): number {
   if (!a || !b) return 0;
   const len = Math.min(a.length, b.length);
   let n = 0;
   let match = 0;
   for (let i = 0; i < len; i++) {
-    const ca = a[i];
-    const cb = b[i];
-    if (!ca || !cb) continue;
-    if (ca === '-' || ca === '.' || cb === '-' || cb === '.') continue;
+    const ca = a.charCodeAt(i);
+    const cb = b.charCodeAt(i);
+    if (
+      ca === GAP_DASH_CODE ||
+      ca === GAP_DOT_CODE ||
+      cb === GAP_DASH_CODE ||
+      cb === GAP_DOT_CODE
+    )
+      continue;
     n++;
     if (ca === cb) match++;
   }
@@ -593,23 +815,54 @@ const NeighborhoodBody = ({
   zoneState,
   setZoneState,
 }: ZoneRenderProps<NeighborhoodZoneState>) => {
-  // Pairwise identity to the node-of-interest's MSA row, computed once
-  // per (msa, NoI) change. Drives the centre-cell colour ramp.
-  const similarityToNoI = useMemo(() => {
+  // Pairwise identity to the node-of-interest's MSA row — computed
+  // LAZILY rather than eagerly across the whole tree. The previous
+  // version walked every leaf and called `pairwiseIdentity` for each
+  // on every NoI change, which scales as O(N_leaves × MSA length)
+  // even though only the few visible centre rows actually need it.
+  // Now we capture the NoI's sequence once and expose a function
+  // that computes-and-caches similarity per leaf on demand. The
+  // cache lives in a Map that is recreated whenever (msa, NoI)
+  // changes, so correctness is preserved.
+  const noiSeq = useMemo<string | null>(() => {
     if (!data.msa || !nodeOfInterestId) return null;
     const noiNode = data.tree.nodes[nodeOfInterestId];
-    if (!noiNode || !noiNode.geneId) return null;
-    const noiSeq = data.msa.sequences[noiNode.geneId];
-    if (!noiSeq) return null;
-    const out = new Map<GeneId, number>();
-    for (const node of Object.values(data.tree.nodes)) {
-      if (!node.isLeaf || !node.geneId) continue;
-      const seq = data.msa.sequences[node.geneId];
-      if (!seq) continue;
-      out.set(node.geneId, pairwiseIdentity(noiSeq, seq));
-    }
-    return out;
-  }, [data.msa, data.tree, nodeOfInterestId]);
+    if (!noiNode?.geneId) return null;
+    return data.msa.sequences[noiNode.geneId] ?? null;
+  }, [data.msa, data.tree.nodes, nodeOfInterestId]);
+  const similarityCache = useMemo(
+    () => new Map<GeneId, number>(),
+    [data.msa, noiSeq],
+  );
+  const getSimilarity = (geneId: GeneId | undefined): number => {
+    if (!geneId || !noiSeq || !data.msa) return 0;
+    const cached = similarityCache.get(geneId);
+    if (cached !== undefined) return cached;
+    const seq = data.msa.sequences[geneId];
+    const sim = seq ? pairwiseIdentity(noiSeq, seq) : 0;
+    similarityCache.set(geneId, sim);
+    return sim;
+  };
+
+  // Resolve the node of interest to its gene id so the palette
+  // dependency is on the gene id directly. When the user picks a
+  // different node of interest, this memo emits a new gene id, which
+  // in turn invalidates the palette memo and the whole family-colour
+  // assignment is rebuilt around the new centre.
+  const noiGeneId = useMemo<GeneId | undefined>(() => {
+    if (!nodeOfInterestId) return undefined;
+    return data.tree.nodes[nodeOfInterestId]?.geneId;
+  }, [data.tree.nodes, nodeOfInterestId]);
+
+  // Family-colour palette: green for the centre family of the NoI's
+  // neighbourhood, rainbow-distributed for its other families,
+  // descending-frequency interpolation for everything else. Computed
+  // once per (data, NoI) pair and shared across every row, so picking
+  // a different node of interest reassigns colours globally.
+  const familyPalette = useMemo(
+    () => buildFamilyPalette(data.neighborhood, noiGeneId),
+    [data.neighborhood, noiGeneId],
+  );
 
   const flippedSet = useMemo(
     () => new Set(zoneState.flippedNodeIds ?? []),
@@ -643,6 +896,12 @@ const NeighborhoodBody = ({
     identity?: number;
   };
   const [geneTip, setGeneTip] = useState<GeneTip | null>(null);
+  // Hovering any gene with a `geneTree` highlights every other gene
+  // that shares that family — a cross-row border so the user can
+  // visually trace conserved synteny. Edge-marker rectangles and
+  // family-less genes don't participate. The state is local because
+  // it's a transient UI signal, not part of view state.
+  const [hoveredFamily, setHoveredFamily] = useState<string | null>(null);
   useEffect(() => {
     if (!geneTip) return;
     const onKey = (e: KeyboardEvent) => {
@@ -849,9 +1108,9 @@ const NeighborhoodBody = ({
                 );
               }
               const fill = a.isCenter
-                ? centerColor(similarityToNoI?.get(a.gene.id) ?? 0)
+                ? centerColor(getSimilarity(a.gene.id))
                 : a.gene.geneTree
-                  ? familyColor(a.gene.geneTree)
+                  ? familyColor(a.gene.geneTree, familyPalette)
                   : NO_FAMILY_COLOR;
               // Half-height + lane split applies only to genes that
               // overlap an opposite-strand neighbour. Everything else
@@ -860,14 +1119,29 @@ const NeighborhoodBody = ({
               const sameAsCenter = a.gene.strand === nh.center.strand;
               const aY = isHalf ? (sameAsCenter ? topY : bottomY) : arrowY;
               const aH = isHalf ? halfH : arrowH;
+              // Highlight every gene whose family matches the
+              // currently-hovered family, including the hovered gene
+              // itself. Family-less genes never participate.
+              const isFamilyHighlighted =
+                hoveredFamily !== null && a.gene.geneTree === hoveredFamily;
               return (
                 <polygon
                   key={`${r.nodeId}-${i}-${a.gene.id}`}
                   points={arrowPoints(a.x, aY, a.width, aH, a.strand)}
                   fill={fill}
-                  stroke="var(--tbrowse-bg)"
-                  strokeWidth={0.5}
+                  stroke={
+                    isFamilyHighlighted
+                      ? 'var(--tbrowse-accent)'
+                      : 'var(--tbrowse-bg)'
+                  }
+                  strokeWidth={isFamilyHighlighted ? 1.75 : 0.5}
                   style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => {
+                    if (a.gene.geneTree) setHoveredFamily(a.gene.geneTree);
+                  }}
+                  onMouseLeave={() => {
+                    if (a.gene.geneTree) setHoveredFamily(null);
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setGeneTip({
@@ -876,7 +1150,7 @@ const NeighborhoodBody = ({
                       gene: a.gene,
                       isCenter: a.isCenter,
                       identity: a.isCenter
-                        ? similarityToNoI?.get(a.gene.id)
+                        ? getSimilarity(a.gene.id)
                         : undefined,
                     });
                   }}
