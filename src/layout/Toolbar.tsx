@@ -170,6 +170,11 @@ export function Toolbar({
           fields={searchFields}
           onCollapseToMatches={onCollapseToMatches}
           inputRef={searchInputRef}
+          // Portal the gear popover into the chassis root rather
+          // than `document.body` so it stays visible when the host
+          // wraps TBrowse in a fullscreen modal (gramene-search /
+          // sorghum-webapp homology view, etc.).
+          portalTarget={containerRef}
         />
       </Section>
       <Section

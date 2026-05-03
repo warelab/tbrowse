@@ -62,7 +62,19 @@ export function SearchControls({
   fields,
   onCollapseToMatches,
   inputRef: externalInputRef,
-}: SearchBarProps & { inputRef?: RefObject<HTMLInputElement> }) {
+  portalTarget,
+}: SearchBarProps & {
+  inputRef?: RefObject<HTMLInputElement>;
+  /**
+   * Where the gear-popover should be portaled. Hosts that put
+   * TBrowse inside a fullscreen modal MUST pass the chassis root
+   * here (or any ancestor inside the fullscreen / modal subtree)
+   * — `document.body` is hidden by the Fullscreen API and sits
+   * behind CSS modals in z-order, so a body-portaled popover
+   * disappears when the modal is up.
+   */
+  portalTarget?: RefObject<HTMLElement | null>;
+}) {
   // Use the external ref if the toolbar passed one (so hotkeys can
   // focus the input even when the controls aren't mounted in the
   // same component as the hotkey listener), otherwise fall back to
@@ -269,6 +281,7 @@ export function SearchControls({
           update({ caseSensitive: !caseSensitive })
         }
         onToggleRegex={() => update({ regex: !regex })}
+        portalTarget={portalTarget}
       />
     </div>
   );
@@ -292,6 +305,11 @@ interface ConfigPopoverButtonProps {
   onSelectNoFields: () => void;
   onToggleCaseSensitive: () => void;
   onToggleRegex: () => void;
+  /** Element the popover is portaled into. Falls back to
+   *  `document.body` when null. Hosts wrapping TBrowse in a
+   *  fullscreen modal need to pass an element inside the modal —
+   *  see `SearchControls.portalTarget`. */
+  portalTarget?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -323,6 +341,7 @@ function ConfigPopoverButton({
   onSelectNoFields,
   onToggleCaseSensitive,
   onToggleRegex,
+  portalTarget,
 }: ConfigPopoverButtonProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -548,7 +567,14 @@ function ConfigPopoverButton({
           <div className={`tbrowse-root tbrowse-theme-${theme}`}>
             {popoverContent}
           </div>,
-          document.body,
+          // Prefer the chassis-root element — it's inside whatever
+          // fullscreen / modal subtree the host has wrapped TBrowse
+          // in, so the popover stays visible. Fall back to body
+          // when no chassis ref is available. `document.body` is
+          // hidden when the host enables the browser Fullscreen
+          // API on a smaller subtree, which is why portaling into
+          // the chassis is the safer default.
+          portalTarget?.current ?? document.body,
         )}
     </div>
   );
