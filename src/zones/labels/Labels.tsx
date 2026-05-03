@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { ZoneDefinition, ZoneRenderProps } from '../../types';
 import { allFields, builtInFields, providerFields, type LabelField } from './fields';
 import { FieldPicker } from './FieldPicker';
 import { useProviderCache } from './providerCache';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { compileStringMatcher } from '../../search/fields';
 
 export interface LabelsZoneState {
   visibleFields: string[];
@@ -66,6 +67,8 @@ const LabelsBody = ({
   hoveredNodeId,
   hoveredSubtreeIds,
   selectedNodeId,
+  searchState,
+  searchResults,
   onHoverNode,
   onSelectNode,
 }: ZoneRenderProps<LabelsZoneState>) => {
@@ -101,6 +104,26 @@ const LabelsBody = ({
 
   const providerCache = useProviderCache(activeProviders, allGeneIds);
 
+  // Compile the search query once per (query, flags) change. The
+  // labels zone applies it to every visible label part — so a
+  // matching substring inside any rendered field gets a `<mark>`
+  // span. We don't gate on `matchedLeafIds`: a leaf might match via
+  // a search field whose value isn't one of the visible label
+  // fields (e.g. the leaf matched on `node-id` but the user is
+  // showing only gene id and taxonomy), in which case no label
+  // substring matches and nothing is marked — that's correct.
+  const labelMatcher = useMemo(() => {
+    if (!searchState || !searchState.query) return null;
+    const m = compileStringMatcher(searchState.query, {
+      caseSensitive: searchState.caseSensitive ?? false,
+      regex: searchState.regex ?? false,
+    });
+    return m.ok ? m : null;
+  }, [searchState]);
+  // Skip the per-part match search entirely on rows that didn't
+  // match — saves a string scan per visible label part.
+  const matchedLeafIds = searchResults.matchedLeafIds;
+
   const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
 
   return (
@@ -111,9 +134,25 @@ const LabelsBody = ({
         const isSelected = selectedNodeId === r.nodeId;
 
         const isCollapsed = r.kind === 'collapsedSummary';
-        const display = isCollapsed
+        // Highlighting only applies when the row is a search match
+        // AND we have a compiled matcher. Both conditions are cheap
+        // to test and the common case (no search) costs nothing.
+        const matcher =
+          !isCollapsed && labelMatcher && matchedLeafIds.has(r.nodeId)
+            ? labelMatcher
+            : null;
+        const displayText = isCollapsed
           ? collapsedSummaryLabel(r.nodeId, r.leafCount, data)
           : leafLabel(r.nodeId, activeFields, data, providerCache);
+        const displayNode = isCollapsed
+          ? displayText
+          : leafLabelNode(
+              r.nodeId,
+              activeFields,
+              data,
+              providerCache,
+              matcher,
+            );
 
         return (
           <div
@@ -160,15 +199,81 @@ const LabelsBody = ({
               opacity: r.opacity ?? 1,
               transform: `translateX(${-32 * (1 - (r.opacity ?? 1))}px)`,
             }}
-            title={display}
+            // Title stays plain text; React highlights only the
+            // visible label, copy-paste still gets the original.
+            title={displayText}
           >
-            {display}
+            {displayNode}
           </div>
         );
       })}
     </>
   );
 };
+
+/** Build the rendered label as a list of ReactNode parts so the
+ *  search matcher can wrap matching substrings in `<mark>` without
+ *  touching the underlying field values. The companion `leafLabel`
+ *  produces the plain string version used for the title attribute
+ *  and copy-paste fidelity. */
+function leafLabelNode(
+  nodeId: string,
+  fields: LabelField[],
+  data: ZoneRenderProps['data'],
+  cache: ReturnType<typeof useProviderCache>,
+  matcher: { spanOf: (s: string) => [number, number] | null } | null,
+): ReactNode {
+  const node = data.tree.nodes[nodeId];
+  if (!node) return '?';
+  const out: ReactNode[] = [];
+  for (const f of fields) {
+    let v: string | null = null;
+    if (f.kind === 'builtin') {
+      v = f.get(node, data);
+    } else if (node.geneId) {
+      const cached = cache.get(f.providerId, node.geneId);
+      v = cached === 'pending' ? PENDING_PLACEHOLDER : cached;
+    }
+    if (v === null || v === '') continue;
+    if (out.length > 0) {
+      out.push(
+        <span key={`s-${f.id}`} aria-hidden="true">
+          {FIELD_SEPARATOR}
+        </span>,
+      );
+    }
+    out.push(<LabelPart key={f.id} value={v} matcher={matcher} />);
+  }
+  return out.length > 0 ? <>{out}</> : '—';
+}
+
+function LabelPart({
+  value,
+  matcher,
+}: {
+  value: string;
+  matcher: { spanOf: (s: string) => [number, number] | null } | null;
+}) {
+  if (!matcher) return <>{value}</>;
+  const span = matcher.spanOf(value);
+  if (!span || span[0] === span[1]) return <>{value}</>;
+  return (
+    <>
+      {value.slice(0, span[0])}
+      <mark
+        style={{
+          background: 'var(--tbrowse-search-soft)',
+          color: 'inherit',
+          padding: 0,
+          borderRadius: 2,
+        }}
+      >
+        {value.slice(span[0], span[1])}
+      </mark>
+      {value.slice(span[1])}
+    </>
+  );
+}
 
 function leafLabel(
   nodeId: string,

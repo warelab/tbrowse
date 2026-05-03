@@ -78,7 +78,7 @@ function TBrowseShell(props: TBrowseProps) {
       className={`tbrowse-root tbrowse-theme-${props.theme ?? 'light'} ${props.className ?? ''}`}
       style={{ width: '100%', height: '100%' }}
     >
-      <Layout data={data} zones={props.zones} />
+      <Layout data={data} zones={props.zones} searchFields={props.searchFields} />
     </div>
   );
 }

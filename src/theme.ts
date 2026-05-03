@@ -42,6 +42,8 @@ const THEME_CSS = `
   --tbrowse-accent-soft: #e6f0fb;
   --tbrowse-accent-fg: #ffffff;
   --tbrowse-danger: #c0392b;
+  --tbrowse-search: #d97706;
+  --tbrowse-search-soft: rgba(217, 119, 6, 0.18);
   --tbrowse-tooltip-shadow: rgba(0, 0, 0, 0.12);
   --tbrowse-row-hover-bg: rgba(40, 120, 220, 0.08);
   --tbrowse-row-select-bg: rgba(40, 120, 220, 0.15);
@@ -67,6 +69,8 @@ const THEME_CSS = `
   --tbrowse-accent-soft: #1f3a5f;
   --tbrowse-accent-fg: #0e1116;
   --tbrowse-danger: #e57373;
+  --tbrowse-search: #fbbf24;
+  --tbrowse-search-soft: rgba(251, 191, 36, 0.22);
   --tbrowse-tooltip-shadow: rgba(0, 0, 0, 0.6);
   --tbrowse-row-hover-bg: rgba(120, 170, 240, 0.16);
   --tbrowse-row-select-bg: rgba(120, 170, 240, 0.26);

@@ -44,6 +44,12 @@ const NODE_GLYPH_SQUARE = 7;
 // Lets low-confidence branches fade to ~40% without disappearing entirely.
 const BOOTSTRAP_OPACITY_MIN = 0.4;
 const COLLAPSED_TRIANGLE_WIDTH = 18;
+/** Search-match highlight: an outer ring drawn around the leaf-tip
+ *  glyph for matched leaves, and used to tint collapsed-summary
+ *  triangles whose subtree contains at least one match. */
+const SEARCH_MATCH_COLOR = 'var(--tbrowse-search, #fbbf24)';
+const SEARCH_MATCH_RING_RADIUS = 5;
+const SEARCH_MATCH_RING_WIDTH = 1.75;
 /** Length of the visible/clickable horizontal stub drawn to the left of the
  *  root node so the root has a hit area (its own branch is zero-length). */
 const ROOT_STUB_LEN = 10;
@@ -177,6 +183,7 @@ const TreeBody = ({
   prunedNodeIds,
   swappedNodeIds,
   compressedNodeIds,
+  searchResults,
   nodeOfInterestId,
   onHoverNode,
   onSelectNode,
@@ -232,6 +239,23 @@ const TreeBody = ({
   // For the tooltip's "Compress / Uncompress branch" label we also need
   // to know whether a single node is currently compressed. Local helper.
   const isCompressed = (id: NodeId) => effectiveCompressed.has(id);
+
+  // Per-internal-node count of matched leaves anywhere in its subtree.
+  // Drives the badge on collapsed-summary triangles so the user can
+  // tell "this triangle hides 3 matches" without expanding it.
+  // O(matches × depth); cheap given the 10k-match cap.
+  const subtreeMatchCounts = useMemo(() => {
+    const counts = new Map<NodeId, number>();
+    if (searchResults.matchedLeafIds.size === 0) return counts;
+    for (const leafId of searchResults.matchedLeafIds) {
+      let cur = data.tree.nodes[leafId]?.parentId ?? null;
+      while (cur !== null) {
+        counts.set(cur, (counts.get(cur) ?? 0) + 1);
+        cur = data.tree.nodes[cur]?.parentId ?? null;
+      }
+    }
+    return counts;
+  }, [searchResults.matchedLeafIds, data.tree]);
 
   // Raw layout (no compression). Pixel positions come from branch-length
   // depth × xScale where xScale = drawingWidth / maxEndDepth.
@@ -767,7 +791,9 @@ const TreeBody = ({
         {/* Collapsed-summary triangles. Apex at the (interpolated) branch
             tip; base extends right by COLLAPSED_TRIANGLE_WIDTH; vertical
             base height scales (logarithmically) with the subtree's leaf
-            count, capped to fit within a single row. */}
+            count, capped to fit within a single row. Triangles whose
+            subtree contains search matches get the search-match stroke
+            colour and a small count badge to the right of the base. */}
         <g pointerEvents="none">
           {layout.nodes.map((n) => {
             if (!n.isCollapsedSummary) return null;
@@ -783,17 +809,38 @@ const TreeBody = ({
             const h = collapsedTriangleHeight(row.leafCount);
             const top = n.y - h / 2;
             const bot = n.y + h / 2;
+            const matchCount = subtreeMatchCounts.get(n.nodeId) ?? 0;
             return (
-              <polygon
-                key={`c-${n.nodeId}`}
-                points={`${apexX},${n.y} ${baseX},${top} ${baseX},${bot}`}
-                fill={COLLAPSED_TRIANGLE_FILL}
-                stroke={COLLAPSED_TRIANGLE_STROKE}
-                strokeWidth={1}
-                opacity={opacity}
-              >
-                <title>{`Collapsed (${row.leafCount} leaves)`}</title>
-              </polygon>
+              <g key={`c-${n.nodeId}`} opacity={opacity}>
+                <polygon
+                  points={`${apexX},${n.y} ${baseX},${top} ${baseX},${bot}`}
+                  fill={COLLAPSED_TRIANGLE_FILL}
+                  stroke={
+                    matchCount > 0
+                      ? SEARCH_MATCH_COLOR
+                      : COLLAPSED_TRIANGLE_STROKE
+                  }
+                  strokeWidth={matchCount > 0 ? 1.75 : 1}
+                >
+                  <title>
+                    {matchCount > 0
+                      ? `Collapsed (${row.leafCount} leaves, ${matchCount} matching)`
+                      : `Collapsed (${row.leafCount} leaves)`}
+                  </title>
+                </polygon>
+                {matchCount > 0 && (
+                  <text
+                    x={baseX + 3}
+                    y={n.y + 3}
+                    fontSize={10}
+                    fontWeight={600}
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                    fill={SEARCH_MATCH_COLOR}
+                  >
+                    {matchCount}
+                  </text>
+                )}
+              </g>
             );
           })}
         </g>
@@ -845,7 +892,9 @@ const TreeBody = ({
         {/* Leaf-node glyphs. Small filled circle in the branch colour at
             each visible leaf's branch tip, tracking the same interpolated
             x as the leaf-extension start so it slides smoothly during
-            collapse / expand / prune / regrow animations. */}
+            collapse / expand / prune / regrow animations. Search-matched
+            leaves additionally get an outer ring in the search-match
+            colour so they pop against the rest of the tree. */}
         <g pointerEvents="none">
           {layout.nodes.map((n) => {
             if (!n.isLeaf) return null;
@@ -857,17 +906,28 @@ const TreeBody = ({
             const parent = n.parentId !== null ? byId.get(n.parentId) : null;
             const tipX = parent ? parent.x + (n.x - parent.x) * opacity : n.x;
             const finalOpacity = opacity * bootstrapFactor(n.nodeId);
+            const isSearchMatch = searchResults.matchedLeafIds.has(n.nodeId);
             return (
-              <circle
-                key={`l-${n.nodeId}`}
-                cx={tipX}
-                cy={n.y}
-                r={LEAF_GLYPH_RADIUS}
-                fill={BRANCH_COLOR}
-                opacity={finalOpacity}
-              >
-                <title>{treeNode.geneId ?? n.nodeId}</title>
-              </circle>
+              <g key={`l-${n.nodeId}`} opacity={finalOpacity}>
+                {isSearchMatch && (
+                  <circle
+                    cx={tipX}
+                    cy={n.y}
+                    r={SEARCH_MATCH_RING_RADIUS}
+                    fill="none"
+                    stroke={SEARCH_MATCH_COLOR}
+                    strokeWidth={SEARCH_MATCH_RING_WIDTH}
+                  />
+                )}
+                <circle
+                  cx={tipX}
+                  cy={n.y}
+                  r={LEAF_GLYPH_RADIUS}
+                  fill={BRANCH_COLOR}
+                >
+                  <title>{treeNode.geneId ?? n.nodeId}</title>
+                </circle>
+              </g>
             );
           })}
         </g>

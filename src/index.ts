@@ -44,6 +44,14 @@ export {
   type BuiltinLabelField,
   type ProviderLabelField,
 } from './zones/labels/fields';
+export {
+  BUILTIN_SEARCH_FIELDS,
+  compileStringMatcher,
+  type SearchField,
+  type SearchPredicateOptions,
+  type MatchSpan,
+} from './search/fields';
+export { resolveMatches } from './search/resolveMatches';
 export type {
   NodeId,
   GeneId,
@@ -61,6 +69,7 @@ export type {
   LabelProvider,
   ZoneViewState,
   SearchState,
+  SearchResults,
   MSAViewState,
   LabelsViewState,
   ViewState,
@@ -71,3 +80,4 @@ export type {
   ZoneDefinition,
   TBrowseProps,
 } from './types';
+export { SEARCH_MATCH_LIMIT } from './types';

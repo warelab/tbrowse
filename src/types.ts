@@ -56,8 +56,47 @@ export interface ZoneViewState {
 }
 
 export interface SearchState {
-  field: string;
   query: string;
+  /**
+   * Ids of registered `SearchField`s to EXCLUDE from this search.
+   * Empty or undefined means "search every registered field" — the
+   * default. Per-field checkboxes in the search bar maintain this
+   * list so unticking a field persists into URL state without
+   * forcing the host to enumerate every remaining field.
+   */
+  excludedFields?: string[];
+  /** When false, queries are matched case-insensitively. Default false. */
+  caseSensitive?: boolean;
+  /** When true, `query` is interpreted as a regular expression. Bad
+   *  regex strings produce zero matches and surface an error to the
+   *  search bar without crashing the chassis. Default false. */
+  regex?: boolean;
+}
+
+/** Cap on the number of matched leaves a single search can return.
+ *  Pathological queries (empty string with substring matching, broad
+ *  regex like `.`) would otherwise mark every leaf in a 50k-leaf
+ *  tree, allocating a Set that big plus its ancestor closure. The
+ *  cap is exposed alongside `SearchResults` so the search bar can
+ *  show a "first N of many" badge. */
+export const SEARCH_MATCH_LIMIT = 10_000;
+
+export interface SearchResults {
+  /** Leaf-node ids that matched the current query. Empty when search
+   *  is null, the field id is unknown, the query is empty, or the
+   *  query is a malformed regex. */
+  matchedLeafIds: ReadonlySet<NodeId>;
+  /** Closure of ancestor ids covering every matched leaf. The tree
+   *  zone uses this to badge collapsed triangles that hide matches
+   *  without forcing them open. Empty whenever `matchedLeafIds` is. */
+  matchedAncestorIds: ReadonlySet<NodeId>;
+  /** True when matching was capped at `SEARCH_MATCH_LIMIT` — the
+   *  matched sets contain the first `SEARCH_MATCH_LIMIT` matches in
+   *  tree-traversal order, not all matches. */
+  truncated: boolean;
+  /** Set when `regex` is on and the query failed to compile. The
+   *  search bar should surface this; matched sets are empty. */
+  regexError: string | null;
 }
 
 export interface MSAViewState {
@@ -212,6 +251,12 @@ export interface ZoneRenderProps<S = unknown> {
   collapsedNodeIds: ReadonlySet<NodeId>;
   prunedNodeIds: ReadonlySet<NodeId>;
   swappedNodeIds: ReadonlySet<NodeId>;
+  /** Active search query — the raw state and the resolved match
+   *  sets. Zones consume `searchResults` to render highlights;
+   *  `searchState` is exposed so a zone can surface its own match
+   *  spans (e.g. labels highlighting the matching substring). */
+  searchState: SearchState | null;
+  searchResults: SearchResults;
   /** Branch-compression overrides — see ViewState.compressedNodeIds. */
   compressedNodeIds: ReadonlySet<NodeId>;
   onHoverNode: (id: NodeId | null) => void;
@@ -315,6 +360,13 @@ export interface TBrowseProps {
   nodeOfInterest?: string;
   zones: ZoneDefinition[];
   labelProviders?: LabelProvider[];
+  /**
+   * Additional search-bar field choices on top of the built-in set
+   * (gene id, taxonomy scientific / common name, node id). Hosts can
+   * use this to expose metadata- or zone-specific searches (e.g. a
+   * Pfam id, a custom annotation key) without forking the library.
+   */
+  searchFields?: import('./search/fields').SearchField[];
   viewState?: ViewState;
   initialViewState?: Partial<ViewState>;
   onViewStateChange?: (next: ViewState) => void;

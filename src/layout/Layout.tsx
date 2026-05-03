@@ -10,13 +10,17 @@ import { computeVisibleRows } from '../visibleRows';
 import type {
   HostData,
   NodeId,
+  SearchState,
   VisibleRow,
   ZoneDefinition,
   ZoneRenderProps,
 } from '../types';
+import { BUILTIN_SEARCH_FIELDS, type SearchField } from '../search/fields';
+import { resolveMatches } from '../search/resolveMatches';
 import { ChromeStrip } from './ChromeStrip';
 import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
+import { SearchBar } from './SearchBar';
 import { computeRowRange } from './rowRange';
 
 export const HEADER_HEIGHT = 56;
@@ -37,9 +41,11 @@ const easeOut = (t: number) => 1 - Math.pow(1 - t, 2);
 interface LayoutProps {
   data: HostData;
   zones: ZoneDefinition[];
+  /** Host-supplied search fields appended to the built-in set. */
+  searchFields?: SearchField[];
 }
 
-export function Layout({ data, zones }: LayoutProps) {
+export function Layout({ data, zones, searchFields: hostSearchFields }: LayoutProps) {
   const viewState = useTBrowseStore((s) => s.viewState);
   const setViewState = useTBrowseStore((s) => s.setViewState);
   const hoveredNodeId = useTBrowseStore((s) => s.hoveredNodeId);
@@ -72,6 +78,95 @@ export function Layout({ data, zones }: LayoutProps) {
     () => new Set(viewState.compressedNodeIds ?? []),
     [viewState.compressedNodeIds],
   );
+
+  // Search field registry: built-ins first, host extras appended so a
+  // host can shadow a built-in id by re-using it (last wins) — useful
+  // for swapping out the gene-id matcher with a fuzzy variant.
+  const searchFields = useMemo<ReadonlyArray<SearchField>>(() => {
+    if (!hostSearchFields || hostSearchFields.length === 0) {
+      return BUILTIN_SEARCH_FIELDS;
+    }
+    const seen = new Set<string>();
+    const merged: SearchField[] = [];
+    for (const f of hostSearchFields) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      merged.push(f);
+    }
+    for (const f of BUILTIN_SEARCH_FIELDS) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      merged.push(f);
+    }
+    return merged;
+  }, [hostSearchFields]);
+
+  // Match resolution. Keyed on the search slice, the field registry,
+  // and the data slices the built-in fields actually read; the
+  // pruned-set is included so hidden leaves don't surface as matches.
+  const searchResults = useMemo(
+    () =>
+      resolveMatches(
+        data,
+        viewState.search,
+        searchFields,
+        prunedNodeIds,
+      ),
+    [
+      data,
+      viewState.search,
+      searchFields,
+      prunedNodeIds,
+    ],
+  );
+
+  // setSearchState replaces the search slice entirely (or clears it
+  // by passing null). Wired into the chassis SearchBar and exposed
+  // through ZoneRenderProps so a zone can offer "search for this
+  // value" affordances on right-click etc.
+  const setSearchState = useCallback(
+    (next: SearchState | null) =>
+      setViewState((vs) =>
+        // Drop empty queries to null so the URL stays clean.
+        next === null || !next.query
+          ? vs.search === null
+            ? vs
+            : { ...vs, search: null }
+          : { ...vs, search: next },
+      ),
+    [setViewState],
+  );
+
+  // "Show matches only" — collapse every internal node that isn't
+  // on a path from the root to a matched leaf. The matched-ancestor
+  // closure (which the search resolver already computes for triangle
+  // badges) is the inverse of the set we want to collapse. No-op
+  // when there are no matches; pruned and swapped state are left
+  // alone so the user's other manual choices survive.
+  const onCollapseToMatches = useCallback(() => {
+    if (searchResults.matchedLeafIds.size === 0) return;
+    setViewState((vs) => {
+      const keep = new Set<NodeId>(searchResults.matchedAncestorIds);
+      for (const id of searchResults.matchedLeafIds) keep.add(id);
+      const next: NodeId[] = [];
+      for (const id of Object.keys(data.tree.nodes)) {
+        if (keep.has(id)) continue;
+        const node = data.tree.nodes[id];
+        if (!node || node.isLeaf) continue;
+        next.push(id);
+      }
+      // Skip the update if the collapsed set is already exactly
+      // what we want (avoids a no-op render churn when the button
+      // is clicked twice with the same result).
+      if (
+        next.length === vs.collapsedNodeIds.length &&
+        next.every((id, i) => vs.collapsedNodeIds[i] === id)
+      ) {
+        return vs;
+      }
+      return { ...vs, collapsedNodeIds: next };
+    });
+  }, [setViewState, data.tree, searchResults]);
 
   const targetVisibleRows = useMemo(
     () =>
@@ -476,6 +571,8 @@ export function Layout({ data, zones }: LayoutProps) {
       prunedNodeIds,
       swappedNodeIds,
       compressedNodeIds,
+      searchState: viewState.search,
+      searchResults,
       onHoverNode,
       onSelectNode,
       onClearSelection,
@@ -511,6 +608,13 @@ export function Layout({ data, zones }: LayoutProps) {
         color: 'var(--tbrowse-text)',
       }}
     >
+      <SearchBar
+        search={viewState.search}
+        setSearch={setSearchState}
+        results={searchResults}
+        fields={searchFields}
+        onCollapseToMatches={onCollapseToMatches}
+      />
       <ChromeStrip zones={zones} data={data} />
       <div
         ref={outerRef}
