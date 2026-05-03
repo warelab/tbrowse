@@ -61,6 +61,7 @@ export function TBrowse(props: TBrowseProps) {
 }
 
 function TBrowseShell(props: TBrowseProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const data: HostData = {
     tree: props.tree,
     taxonomy: props.taxonomy,
@@ -75,10 +76,17 @@ function TBrowseShell(props: TBrowseProps) {
 
   return (
     <div
+      ref={containerRef}
       className={`tbrowse-root tbrowse-theme-${props.theme ?? 'light'} ${props.className ?? ''}`}
       style={{ width: '100%', height: '100%' }}
     >
-      <Layout data={data} zones={props.zones} searchFields={props.searchFields} />
+      <Layout
+        data={data}
+        zones={props.zones}
+        searchFields={props.searchFields}
+        hotkeys={props.hotkeys}
+        containerRef={containerRef}
+      />
     </div>
   );
 }

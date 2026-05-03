@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { useTBrowseStore } from '../store';
 import { computePivotState } from '../pivot';
 import {
@@ -17,10 +24,9 @@ import type {
 } from '../types';
 import { BUILTIN_SEARCH_FIELDS, type SearchField } from '../search/fields';
 import { resolveMatches } from '../search/resolveMatches';
-import { ChromeStrip } from './ChromeStrip';
 import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
-import { SearchBar } from './SearchBar';
+import { Toolbar } from './Toolbar';
 import { computeRowRange } from './rowRange';
 
 export const HEADER_HEIGHT = 56;
@@ -43,9 +49,21 @@ interface LayoutProps {
   zones: ZoneDefinition[];
   /** Host-supplied search fields appended to the built-in set. */
   searchFields?: SearchField[];
+  /** Hotkey opt-out forwarded from `TBrowseProps.hotkeys`. */
+  hotkeys?: { search?: boolean };
+  /** Ref to the chassis-root DOM element — Toolbar uses it to scope
+   *  global hotkey listeners (`/`, Cmd/Ctrl-F) so they only fire
+   *  when the user is interacting with our chassis. */
+  containerRef: RefObject<HTMLDivElement | null>;
 }
 
-export function Layout({ data, zones, searchFields: hostSearchFields }: LayoutProps) {
+export function Layout({
+  data,
+  zones,
+  searchFields: hostSearchFields,
+  hotkeys,
+  containerRef,
+}: LayoutProps) {
   const viewState = useTBrowseStore((s) => s.viewState);
   const setViewState = useTBrowseStore((s) => s.setViewState);
   const hoveredNodeId = useTBrowseStore((s) => s.hoveredNodeId);
@@ -121,19 +139,27 @@ export function Layout({ data, zones, searchFields: hostSearchFields }: LayoutPr
   );
 
   // setSearchState replaces the search slice entirely (or clears it
-  // by passing null). Wired into the chassis SearchBar and exposed
-  // through ZoneRenderProps so a zone can offer "search for this
-  // value" affordances on right-click etc.
+  // by passing null). Wired into the chassis Toolbar's search panel
+  // and exposed through ZoneRenderProps so a zone can offer
+  // "search for this value" affordances on right-click etc.
+  // Drops the slice back to null only when EVERYTHING is default —
+  // empty query AND no excluded fields AND both modifiers off — so
+  // pre-configured field selections and modifier toggles survive
+  // an empty query (the user might be about to type).
   const setSearchState = useCallback(
     (next: SearchState | null) =>
-      setViewState((vs) =>
-        // Drop empty queries to null so the URL stays clean.
-        next === null || !next.query
-          ? vs.search === null
-            ? vs
-            : { ...vs, search: null }
-          : { ...vs, search: next },
-      ),
+      setViewState((vs) => {
+        const isEmpty =
+          next === null ||
+          (!next.query &&
+            !next.caseSensitive &&
+            !next.regex &&
+            (!next.excludedFields || next.excludedFields.length === 0));
+        if (isEmpty) {
+          return vs.search === null ? vs : { ...vs, search: null };
+        }
+        return { ...vs, search: next };
+      }),
     [setViewState],
   );
 
@@ -608,14 +634,17 @@ export function Layout({ data, zones, searchFields: hostSearchFields }: LayoutPr
         color: 'var(--tbrowse-text)',
       }}
     >
-      <SearchBar
+      <Toolbar
+        zones={zones}
+        data={data}
         search={viewState.search}
         setSearch={setSearchState}
-        results={searchResults}
-        fields={searchFields}
+        searchResults={searchResults}
+        searchFields={searchFields}
         onCollapseToMatches={onCollapseToMatches}
+        hotkeys={hotkeys}
+        containerRef={containerRef}
       />
-      <ChromeStrip zones={zones} data={data} />
       <div
         ref={outerRef}
         className="tbrowse-outer"

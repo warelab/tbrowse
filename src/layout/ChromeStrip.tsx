@@ -1,12 +1,18 @@
 import { useTBrowseStore } from '../store';
 import type { HostData, ZoneDefinition } from '../types';
 
-interface ChromeStripProps {
+interface ZoneTogglesProps {
   zones: ZoneDefinition[];
   data: HostData;
 }
 
-export function ChromeStrip({ zones, data }: ChromeStripProps) {
+/**
+ * Per-zone visibility toggle buttons. Returned without an outer row
+ * wrapper so the parent toolbar can position them inside a sliding
+ * panel; renders one button per registered zone, lit when the zone
+ * is currently visible.
+ */
+export function ZoneToggles({ zones, data }: ZoneTogglesProps) {
   const zoneStates = useTBrowseStore((s) => s.viewState.zones);
   const setViewState = useTBrowseStore((s) => s.setViewState);
 
@@ -35,21 +41,15 @@ export function ChromeStrip({ zones, data }: ChromeStripProps) {
 
   return (
     <div
-      className="tbrowse-chrome"
+      className="tbrowse-zone-toggles"
       style={{
-        height: 28,
-        flexShrink: 0,
-        padding: '0 10px',
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        borderBottom: '1px solid var(--tbrowse-divider)',
-        background: 'var(--tbrowse-bg-strip)',
-        color: 'var(--tbrowse-text)',
         fontSize: 11,
+        color: 'var(--tbrowse-text)',
       }}
     >
-      <span style={{ color: 'var(--tbrowse-text-muted)', marginRight: 4 }}>Zones:</span>
       {zones.map((def) => {
         const visible = visibleById[def.id] ?? false;
         const available = def.isAvailable(data);

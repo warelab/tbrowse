@@ -361,6 +361,23 @@ export interface TBrowseProps {
   zones: ZoneDefinition[];
   labelProviders?: LabelProvider[];
   /**
+   * Global keyboard-shortcut configuration. Hosts that own their own
+   * `/` or Cmd/Ctrl-F handlers (e.g. an outer site-wide search bar)
+   * should opt out via `hotkeys: { search: false }` to avoid
+   * conflicting focus-stealing. The TBrowse search panel can still
+   * be opened programmatically by writing to `ViewState.search`.
+   *
+   * When enabled (the default), the hotkeys only fire while the
+   * user is interacting with the chassis — i.e. their cursor is
+   * over it or their keyboard focus is inside it — so host
+   * listeners outside that region remain unaffected.
+   */
+  hotkeys?: {
+    /** Default true — `/` and Cmd/Ctrl-F open and focus the search
+     *  panel. Set to false to free those keys for the host. */
+    search?: boolean;
+  };
+  /**
    * Additional search-bar field choices on top of the built-in set
    * (gene id, taxonomy scientific / common name, node id). Hosts can
    * use this to expose metadata- or zone-specific searches (e.g. a
