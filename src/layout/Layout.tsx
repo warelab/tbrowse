@@ -371,26 +371,58 @@ export function Layout({ data, zones }: LayoutProps) {
       setViewState((vs) => {
         const target = data.tree.nodes[id];
         if (!target || target.taxonomyId === undefined) return vs;
-        if (vs.collapsedNodeIds.length === 0) return vs;
-        const collapsedSet = new Set(vs.collapsedNodeIds);
-        let changed = false;
+
+        // Collect the union of root-paths from every paralog leaf
+        // (every leaf sharing the target's taxonomyId, target
+        // included). Anything in this set is on the path to a
+        // paralog and must be visible.
+        const paralogPaths = new Set<NodeId>();
         for (const node of Object.values(data.tree.nodes)) {
-          if (!node.isLeaf) continue;
-          if (node.taxonomyId !== target.taxonomyId) continue;
-          let cur = node.parentId;
+          if (!node.isLeaf || node.taxonomyId !== target.taxonomyId) continue;
+          let cur: NodeId | null = node.id;
           while (cur !== null) {
-            if (collapsedSet.has(cur)) {
-              collapsedSet.delete(cur);
-              changed = true;
-            }
+            if (paralogPaths.has(cur)) break;
+            paralogPaths.add(cur);
             cur = data.tree.nodes[cur]?.parentId ?? null;
           }
         }
+        if (paralogPaths.size === 0) return vs;
+
+        const collapsedSet = new Set(vs.collapsedNodeIds);
+        let changed = false;
+
+        // Walk each path-node. If it's currently collapsed,
+        // uncollapse it AND collapse every internal-node child that
+        // is NOT itself on a paralog path — so revealing this
+        // ancestor doesn't expose unrelated subtrees. If it's
+        // already uncollapsed, leave its children alone (whatever
+        // visibility state they're in is intentional).
+        for (const ancestorId of paralogPaths) {
+          const ancestor = data.tree.nodes[ancestorId];
+          if (!ancestor || ancestor.isLeaf) continue;
+          if (!collapsedSet.has(ancestorId)) continue;
+
+          collapsedSet.delete(ancestorId);
+          changed = true;
+
+          const kids = childrenIndex.get(ancestorId);
+          if (!kids) continue;
+          for (const k of kids) {
+            if (paralogPaths.has(k)) continue;
+            const kidNode = data.tree.nodes[k];
+            if (!kidNode || kidNode.isLeaf) continue;
+            if (!collapsedSet.has(k)) {
+              collapsedSet.add(k);
+              changed = true;
+            }
+          }
+        }
+
         return changed
           ? { ...vs, collapsedNodeIds: [...collapsedSet] }
           : vs;
       }),
-    [setViewState, data.tree],
+    [setViewState, data.tree, childrenIndex],
   );
 
   const setZoneState = useCallback(

@@ -18,9 +18,13 @@ export interface PivotState {
  *   3. Otherwise null (with a console warning).
  *
  * The pivot:
- * - For each ancestor of the target, every non-path internal-node sibling
- *   is added to `collapsedNodeIds` (turning it into a triangle). Leaf
- *   siblings are left alone — they're already minimal.
+ * - Every internal node that is NOT on the root-to-target path is added
+ *   to `collapsedNodeIds` (turning the deepest possible visible
+ *   ancestors into triangles). Uncollapsing any of those triangles
+ *   reveals the next level — also triangles — so the user can drill
+ *   down level by level. Leaves are never collapsed (they're already
+ *   minimal). The target's own descendants are also collapsed for the
+ *   same drill-down reason.
  * - For each ancestor whose path-child is not its first child,
  *   `swappedNodeIds` includes the ancestor so its children render in
  *   reversed order, putting the path-child on top. (Assumes binary
@@ -54,26 +58,23 @@ export function computePivotState(tree: Tree, identifier: string): PivotState | 
     cur = tree.nodes[cur]?.parentId ?? null;
   }
   path.reverse(); // root → target
+  const pathSet = new Set(path);
+
+  const collapsedNodeIds: NodeId[] = [];
+  for (const id of Object.keys(tree.nodes)) {
+    if (pathSet.has(id)) continue;
+    const node = tree.nodes[id];
+    if (!node || node.isLeaf) continue;
+    collapsedNodeIds.push(id);
+  }
 
   const childrenIndex = buildChildrenIndex(tree);
-  const collapsedNodeIds: NodeId[] = [];
   const swappedNodeIds: NodeId[] = [];
-
   for (let i = 0; i < path.length - 1; i++) {
     const ancestorId = path[i];
     const pathChildId = path[i + 1];
     const children = childrenIndex.get(ancestorId) ?? [];
-
-    for (const childId of children) {
-      if (childId === pathChildId) continue;
-      const childNode = tree.nodes[childId];
-      if (childNode && !childNode.isLeaf) {
-        collapsedNodeIds.push(childId);
-      }
-    }
-
-    const pathChildIdx = children.indexOf(pathChildId);
-    if (pathChildIdx > 0) {
+    if (children.indexOf(pathChildId) > 0) {
       swappedNodeIds.push(ancestorId);
     }
   }

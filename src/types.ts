@@ -230,8 +230,14 @@ export interface ZoneRenderProps<S = unknown> {
    */
   onMakeNodeOfInterest: (id: NodeId) => void;
   /**
-   * Uncollapse any ancestor that hides a leaf whose taxonomyId matches
-   * the leaf at `id`. Pruned leaves are not touched.
+   * Reveal every leaf whose taxonomyId matches the leaf at `id`
+   * (its paralogs) without exposing unrelated subtrees. For each
+   * ancestor on a paralog's root-path that is currently collapsed,
+   * the ancestor is uncollapsed AND its non-paralog-path internal
+   * children are collapsed in turn — so newly-visible ancestors
+   * don't drag their entire subtrees into view. Already-uncollapsed
+   * ancestors are left alone (their existing visibility is treated
+   * as intentional). Pruned leaves are not touched.
    */
   onShowParalogs: (id: NodeId) => void;
   /**

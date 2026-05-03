@@ -37,9 +37,10 @@ describe('computePivotState', () => {
     //   n1.children = [n3, n8] (path: n3 at idx 0)
     //   n3.children = [n4, n5] (path: n4 at idx 0)
     expect(result!.swappedNodeIds).toEqual([]);
-    // Non-path internal siblings collapse: n8 (sibling of n3 under n1).
-    // Leaf siblings (n5 of n4, n2 of n1) are NOT collapsed.
-    expect(result!.collapsedNodeIds).toEqual(['n8']);
+    // Every non-path internal node collapses. Internal nodes are
+    // {n0, n1, n3, n8}; the path covers {n0, n1, n3}, leaving {n8}.
+    // Leaves (n2, n5) are never collapsed.
+    expect(new Set(result!.collapsedNodeIds)).toEqual(new Set(['n8']));
   });
 
   it('swaps ancestors whose path-child is not at index 0', () => {
@@ -48,8 +49,12 @@ describe('computePivotState', () => {
     expect(result!.targetId).toBe('n2');
     // Path n0 → n2. n2 is at index 1 of n0's children → swap n0.
     expect(result!.swappedNodeIds).toEqual(['n0']);
-    // n1 is the non-path sibling of n2 under n0 — internal → collapsed.
-    expect(result!.collapsedNodeIds).toEqual(['n1']);
+    // Path = {n0, n2}. Every other internal node collapses, including
+    // descendants of off-path subtrees (n3, n8 under n1) so the user
+    // can drill down level by level.
+    expect(new Set(result!.collapsedNodeIds)).toEqual(
+      new Set(['n1', 'n3', 'n8']),
+    );
   });
 
   it('swaps multiple ancestors when path-child index is non-zero each time', () => {
@@ -60,8 +65,8 @@ describe('computePivotState', () => {
     const result = computePivotState(tree, 'GENE_RAT');
     expect(result).not.toBeNull();
     expect(result!.swappedNodeIds).toEqual(['n1', 'n8']);
-    // Non-path internal siblings: n3 (sibling of n8 under n1).
-    expect(result!.collapsedNodeIds).toEqual(['n3']);
+    // Path = {n0, n1, n8, n7}. Internal {n0,n1,n3,n8}; non-path → {n3}.
+    expect(new Set(result!.collapsedNodeIds)).toEqual(new Set(['n3']));
   });
 
   it('falls back to node id match when no leaf geneId matches', () => {
