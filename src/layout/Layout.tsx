@@ -358,16 +358,34 @@ export function Layout({
   // Reorder drag state (transient).
   const [dragState, setDragState] = useState<DragState | null>(null);
 
+  // True while a column resize is in progress; drives the per-zone
+  // pixel-width readout in each zone header.
+  const [isResizing, setIsResizing] = useState(false);
+
   useEffect(() => {
     const el = outerRef.current;
     if (!el) return;
+    let firstFire = true;
+    let clearTimer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver((entries) => {
       const r = entries[0].contentRect;
       setViewportHeight(r.height);
       setViewportWidth(r.width);
+      // Skip the initial observe() callback so the readout doesn't
+      // flash on mount; only show during ongoing size changes.
+      if (firstFire) {
+        firstFire = false;
+        return;
+      }
+      setIsResizing(true);
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => setIsResizing(false), 250);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (clearTimer) clearTimeout(clearTimer);
+    };
   }, []);
 
   const rowRange = useMemo(
@@ -784,7 +802,27 @@ export function Layout({
                   containerWidth={viewportWidth}
                   minWidth={def.minWidth}
                   nextMinWidth={nextMinWidth}
+                  setResizing={setIsResizing}
                 />
+              )}
+              {isResizing && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 8,
+                    fontSize: 11,
+                    fontWeight: 400,
+                    color: 'var(--tbrowse-text-muted)',
+                    background: 'var(--tbrowse-bg-alt)',
+                    padding: '1px 4px',
+                    borderRadius: 3,
+                    pointerEvents: 'none',
+                    zIndex: 3,
+                  }}
+                >
+                  {Math.ceil(renderedWidth)}px
+                </div>
               )}
             </div>
           );

@@ -19,6 +19,7 @@ export function ResizeHandle({
   containerWidth,
   minWidth,
   nextMinWidth,
+  setResizing,
 }: {
   zoneId: string;
   nextZoneId: string;
@@ -28,6 +29,7 @@ export function ResizeHandle({
   containerWidth: number;
   minWidth: number;
   nextMinWidth: number;
+  setResizing: (resizing: boolean) => void;
 }) {
   const setViewState = useTBrowseStore((s) => s.setViewState);
 
@@ -38,6 +40,7 @@ export function ResizeHandle({
     const startX = e.clientX;
     const startFr = currentFr;
     const startNextFr = nextFr;
+    setResizing(true);
     // pixels-per-fr at drag start; the user expects 1px drag to move the
     // boundary by 1px regardless of the underlying fr scale.
     const frPerPx = sumFr / containerWidth;
@@ -63,6 +66,7 @@ export function ResizeHandle({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      setResizing(false);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);

@@ -147,7 +147,7 @@ export interface TreeZoneState {
 
 const DEFAULT_PRUNED_STYLE: PrunedNodeStyle = 'triangle';
 
-const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => {
+const TreeHeader = ({ hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => {
   const hoveredInfo = useMemo(
     () => describeHoveredNode(hoveredNodeId, data),
     [hoveredNodeId, data],
@@ -174,7 +174,6 @@ const TreeHeader = ({ width, hoveredNodeId, data }: ZoneRenderProps<TreeZoneStat
         }}
       >
         <span style={{ fontWeight: 600 }}>Tree</span>
-        <span style={{ fontWeight: 400, color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>{width}px</span>
       </div>
       {/* Second row: live readout of the hovered node. */}
       <div
