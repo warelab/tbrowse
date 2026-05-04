@@ -1,7 +1,7 @@
 {
   "name": "tbrowse",
   "version": "2.1.1",
-  "description": "Embeddable React component for visualizing phylogenetic trees with pluggable data zones.",
+  "description": "Embeddable React component for visualizing phylogenetic trees and pluggable data zones.",
   "type": "module",
   "main": "./dist/tbrowse.cjs",
   "module": "./dist/tbrowse.js",
