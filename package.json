@@ -1,6 +1,6 @@
 {
   "name": "tbrowse",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Embeddable React component for visualizing phylogenetic trees and pluggable data zones.",
   "type": "module",
   "main": "./dist/tbrowse.cjs",
@@ -23,6 +23,7 @@
     "build:playground": "vite build --mode playground",
     "preview:playground": "vite preview --mode playground",
     "typecheck": "tsc --noEmit",
+    "prepublishOnly": "rm -rf dist && npm run build && npm run typecheck && npm test",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

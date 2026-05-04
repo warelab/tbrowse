@@ -1,5 +1,14 @@
 import type { NodeId, Tree, VisibleRow } from '../../types';
 
+/** Floor applied to each branch's contribution to layout depth.
+ *  Branches with a `distance` smaller than this — including zeros
+ *  and tiny floating-point values like 1e-7 from upstream gene-tree
+ *  exporters — are bumped up to `MIN_BRANCH_DISTANCE` so the child
+ *  node's x doesn't collapse onto its parent's. The underlying
+ *  `TreeNode.distance` data is not modified; the clamp only affects
+ *  the cumulative depth used for x-positioning. */
+const MIN_BRANCH_DISTANCE = 0.01;
+
 export interface TreeLayoutNode {
   nodeId: NodeId;
   parentId: NodeId | null;
@@ -71,7 +80,13 @@ export function computeTreeLayout(input: TreeLayoutInput): TreeLayoutResult {
     arr.push(id);
   }
 
-  // Cumulative distance from root via BFS.
+  // Cumulative distance from root via BFS. Each branch contributes
+  // at least `MIN_BRANCH_DISTANCE` to the layout, so very-short
+  // branches (zero-length, or measured-but-tiny like 1e-7 from a
+  // gene-tree exporter) still get a visible horizontal segment
+  // instead of collapsing onto their parent's x. The underlying
+  // `tree.nodes[child].distance` is left untouched — the floor
+  // applies only to layout depth, not to the data.
   const depth = new Map<NodeId, number>();
   depth.set(tree.rootId, 0);
   const queue: NodeId[] = [tree.rootId];
@@ -79,7 +94,9 @@ export function computeTreeLayout(input: TreeLayoutInput): TreeLayoutResult {
     const id = queue.shift()!;
     const d = depth.get(id) ?? 0;
     for (const child of childrenOf.get(id) ?? []) {
-      depth.set(child, d + (tree.nodes[child]?.distance ?? 0));
+      const raw = tree.nodes[child]?.distance ?? 0;
+      const clamped = Math.max(MIN_BRANCH_DISTANCE, raw);
+      depth.set(child, d + clamped);
       queue.push(child);
     }
   }

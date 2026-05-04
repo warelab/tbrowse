@@ -1,5 +1,10 @@
 import { useMemo, useRef } from 'react';
-import { ancestorIdsOf, buildChildrenIndex, countLeavesInSubtree } from '../../treeIndex';
+import {
+  ancestorIdsOf,
+  buildChildrenIndex,
+  countLeavesInSubtree,
+  EMPTY_NODE_ID_SET,
+} from '../../treeIndex';
 import type { NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
 import { computeTreeLayout, type TreeLayoutNode } from './layout';
 import { Tooltip } from './Tooltip';
@@ -93,6 +98,14 @@ const COLLAPSED_TRIANGLE_MAX_H = 22;
 const COLLAPSED_TRIANGLE_FILL = 'rgba(128, 128, 140, 0.22)';
 const COLLAPSED_TRIANGLE_STROKE = 'var(--tbrowse-text-muted)';
 
+/** Width of the compressed-root-path glyph (the "||||||||" string).
+ *  Enabled by `TreeZoneState.rerootCompression`; the chain of
+ *  unbranched internal-node ancestors above the effective root is
+ *  visually replaced with a fixed-width run of vertical pipes. */
+const COMPRESSED_PATH_WIDTH = 26;
+const COMPRESSED_PATH_BAR_COUNT = 8;
+const COMPRESSED_PATH_BAR_HEIGHT = 7;
+
 function collapsedTriangleHeight(leafCount: number): number {
   // Logarithmic so a 2-leaf and a 1000-leaf collapsed subtree are
   // distinguishable but both stay inside a single row's height.
@@ -122,6 +135,14 @@ export type PrunedNodeStyle =
 
 export interface TreeZoneState {
   prunedNodeStyle?: PrunedNodeStyle;
+  /** When true (default), an unbranched chain of internal nodes
+   *  from the root down to the first visible "real" content (a
+   *  fork or a visible end) is collapsed into a compact
+   *  fixed-width visual element that reads as a string of vertical
+   *  pipes. This kicks in when the user has pruned everything
+   *  except a single deep subtree so the spine connecting that
+   *  subtree back to the root is just a long single-child run. */
+  rerootCompression?: boolean;
 }
 
 const DEFAULT_PRUNED_STYLE: PrunedNodeStyle = 'triangle';
@@ -435,11 +456,141 @@ const TreeBody = ({
 
   const fullChildrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
 
+  // ─── Reroot-path compression ────────────────────────────────────
+  // When the user has pruned the tree such that the root has a
+  // single-child chain leading down to the first node with multiple
+  // visible children (or a visible leaf / collapsed-summary), that
+  // chain carries no information — it's just an empty spine. With
+  // `rerootCompression` on (default), we collapse it to a fixed
+  // visual width so the visible content gets the horizontal real
+  // estate, and render the elided spine as a string of vertical
+  // pipes that reads as `||||||||`. Compression only kicks in when
+  // the chain's natural span exceeds `COMPRESSED_PATH_WIDTH`, so a
+  // tree that already has a tight spine is left alone.
+  const rerootCompressionEnabled = zoneState.rerootCompression ?? true;
+
+  const rootCompression = useMemo<{
+    /** First and last node of the chain (root → effective root). */
+    chain: NodeId[];
+    /** Branches that should not render — every chain edge. */
+    branchSkip: ReadonlySet<NodeId>;
+    /** Internal-node glyphs that should not render — intermediate
+     *  chain nodes only; root and effective root keep their glyphs. */
+    glyphSkip: ReadonlySet<NodeId>;
+    /** Layout-node array with the effective root + descendants
+     *  shifted left so the chain occupies a fixed
+     *  `COMPRESSED_PATH_WIDTH` instead of its natural span. */
+    nodes: TreeLayoutNode[];
+  } | null>(() => {
+    if (!rerootCompressionEnabled) return null;
+    if (!layout.rootId) return null;
+
+    const layoutById = new Map<NodeId, TreeLayoutNode>();
+    const childrenIndex = new Map<NodeId, NodeId[]>();
+    for (const n of layout.nodes) {
+      layoutById.set(n.nodeId, n);
+      if (n.parentId === null) continue;
+      let arr = childrenIndex.get(n.parentId);
+      if (!arr) {
+        arr = [];
+        childrenIndex.set(n.parentId, arr);
+      }
+      arr.push(n.nodeId);
+    }
+    // Walk down from root following only-child edges, stopping at
+    // the first fork or visible end.
+    const chain: NodeId[] = [];
+    let cur: NodeId | null = layout.rootId;
+    while (cur !== null) {
+      const node = layoutById.get(cur);
+      if (!node) break;
+      chain.push(cur);
+      if (node.isVisibleEnd) break;
+      const kids = childrenIndex.get(cur);
+      if (!kids || kids.length !== 1) break;
+      cur = kids[0];
+    }
+    if (chain.length <= 1) return null;
+
+    const root = layoutById.get(chain[0]);
+    const effRoot = layoutById.get(chain[chain.length - 1]);
+    if (!root || !effRoot) return null;
+    const naturalSpan = effRoot.x - root.x;
+    if (naturalSpan <= COMPRESSED_PATH_WIDTH) return null;
+    const shift = naturalSpan - COMPRESSED_PATH_WIDTH;
+
+    // Effective root + descendants — these all shift left, then
+    // get rescaled outward so the visible subtree fills the now-
+    // freed horizontal space rather than ending halfway across the
+    // drawing area.
+    const subtree = new Set<NodeId>([effRoot.nodeId]);
+    const queue: NodeId[] = [effRoot.nodeId];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const k of childrenIndex.get(id) ?? []) {
+        if (subtree.has(k)) continue;
+        subtree.add(k);
+        queue.push(k);
+      }
+    }
+    // Where the subtree's right edge currently lands after the
+    // shift, and where we want it after the rescale: at the same
+    // place the rightmost visible end was BEFORE compression
+    // (i.e. drawingLeftX + drawingWidth as the previous layout
+    // memo positioned it). Compute scale relative to the shifted
+    // subtree's natural span from the effective root.
+    let preRescaleMax = -Infinity;
+    for (const n of layout.nodes) {
+      if (!subtree.has(n.nodeId)) continue;
+      if (!n.isVisibleEnd) continue;
+      // (n.x - shift) is the post-shift x; we need the rescale to
+      // stretch from (effRoot.x - shift) to drawingLeftX +
+      // drawingWidth, so collect post-shift x values here.
+      const x = n.x - shift;
+      if (x > preRescaleMax) preRescaleMax = x;
+    }
+    const effRootShiftedX = effRoot.x - shift;
+    const targetMaxX = LEFT_PAD + drawingWidth;
+    const preSpan = preRescaleMax - effRootShiftedX;
+    const targetSpan = targetMaxX - effRootShiftedX;
+    // Scale factor of 1 leaves the subtree alone; > 1 stretches it
+    // outward to fill the freed space; clamp at 1 if anything
+    // numerical goes weird (shouldn't happen but cheap to guard).
+    const subtreeScale =
+      preSpan > 0 && targetSpan > 0 ? targetSpan / preSpan : 1;
+    const intermediateChain = new Set(chain.slice(1, -1));
+    const nodes = layout.nodes.map((n) => {
+      if (subtree.has(n.nodeId)) {
+        const shiftedX = n.x - shift;
+        const stretchedX =
+          effRootShiftedX + (shiftedX - effRootShiftedX) * subtreeScale;
+        return { ...n, x: stretchedX };
+      }
+      if (intermediateChain.has(n.nodeId))
+        return { ...n, x: effRootShiftedX };
+      return n;
+    });
+    return {
+      chain,
+      branchSkip: new Set(chain.slice(1)),
+      glyphSkip: intermediateChain,
+      nodes,
+    };
+  }, [layout, rerootCompressionEnabled, drawingWidth]);
+
+  const compressedNodes = rootCompression?.nodes ?? layout.nodes;
+  const compressedBranchSkip: ReadonlySet<NodeId> =
+    rootCompression?.branchSkip ?? EMPTY_NODE_ID_SET;
+  const compressedGlyphSkip: ReadonlySet<NodeId> =
+    rootCompression?.glyphSkip ?? EMPTY_NODE_ID_SET;
+  const compressibleChain = rootCompression?.chain ?? null;
+  // ─────────────────────────────────────────────────────────────────
+
   const byId = useMemo(() => {
     const m = new Map<string, TreeLayoutNode>();
-    for (const n of layout.nodes) m.set(n.nodeId, n);
+    for (const n of compressedNodes) m.set(n.nodeId, n);
     return m;
-  }, [layout]);
+  }, [compressedNodes]);
 
   // Per-node opacity for the animation pipeline. Visible-end rows (leaves
   // and collapsed-summaries) carry an opacity hint via visibleRows; an
@@ -753,7 +904,7 @@ const TreeBody = ({
         {/* Row hit areas. Full-row click target for each visible end so
             hovering anywhere in the row outside the branch still hits. */}
         <g>
-          {layout.nodes.map((n) => {
+          {compressedNodes.map((n) => {
             if (!n.isVisibleEnd) return null;
             const r = visibleRows.find((row) => row.nodeId === n.nodeId);
             if (!r) return null;
@@ -801,8 +952,11 @@ const TreeBody = ({
             fading-in child extends from its parent (left→right for
             expand/regrow). The parent end stays anchored. */}
         <g pointerEvents="none">
-          {layout.nodes.map((child) => {
+          {compressedNodes.map((child) => {
             if (child.parentId === null) return null;
+            // Skip the chain branches — they're collectively replaced
+            // by the compressed-path bars glyph drawn below.
+            if (compressedBranchSkip.has(child.nodeId)) return null;
             const parent = byId.get(child.parentId);
             if (!parent) return null;
             if (!branchInRange(parent.y, child.y)) return null;
@@ -825,13 +979,59 @@ const TreeBody = ({
             );
           })}
         </g>
+        {/* Compressed root-path glyph: when an unbranched chain of
+            internal nodes runs from the actual root down to the
+            effective root, the chain's branches are skipped above
+            and replaced here with a string of vertical pipes. */}
+        {compressibleChain &&
+          (() => {
+            const root = byId.get(compressibleChain[0]);
+            const effRoot = byId.get(
+              compressibleChain[compressibleChain.length - 1],
+            );
+            if (!root || !effRoot) return null;
+            if (!yInRange(root.y)) return null;
+            const startX = root.x;
+            const endX = effRoot.x;
+            const span = endX - startX;
+            if (span <= 0) return null;
+            const margin = 2;
+            const innerSpan = Math.max(0, span - 2 * margin);
+            const spacing =
+              COMPRESSED_PATH_BAR_COUNT > 1
+                ? innerSpan / (COMPRESSED_PATH_BAR_COUNT - 1)
+                : 0;
+            const half = COMPRESSED_PATH_BAR_HEIGHT / 2;
+            return (
+              <g pointerEvents="none">
+                {Array.from({ length: COMPRESSED_PATH_BAR_COUNT }).map(
+                  (_, i) => {
+                    const x = startX + margin + i * spacing;
+                    return (
+                      <line
+                        key={`crp-${i}`}
+                        x1={x}
+                        y1={root.y - half}
+                        x2={x}
+                        y2={root.y + half}
+                        stroke={BRANCH_COLOR}
+                        strokeWidth={1.25}
+                        strokeLinecap="round"
+                      />
+                    );
+                  },
+                )}
+              </g>
+            );
+          })()}
         {/* Branch-compression glyphs. Two short diagonal slashes ("//") at
             the midpoint of each compressed horizontal segment, signalling
             that the rendered length is shorter than the actual branch
             length. Drawn after the branches so they overlay the line. */}
         <g pointerEvents="none">
-          {layout.nodes.map((child) => {
+          {compressedNodes.map((child) => {
             if (child.parentId === null) return null;
+            if (compressedBranchSkip.has(child.nodeId)) return null;
             if (!effectiveCompressed.has(child.nodeId)) return null;
             const parent = byId.get(child.parentId);
             if (!parent) return null;
@@ -869,7 +1069,7 @@ const TreeBody = ({
             For collapsed-summary nodes the extension starts past the
             triangle's base. */}
         <g pointerEvents="none">
-          {layout.nodes.map((n) => {
+          {compressedNodes.map((n) => {
             if (!n.isVisibleEnd) return null;
             if (!yInRange(n.y)) return null;
             const hl = isHighlighted(n.nodeId);
@@ -907,7 +1107,7 @@ const TreeBody = ({
             subtree contains search matches get the search-match stroke
             colour and a small count badge to the right of the base. */}
         <g pointerEvents="none">
-          {layout.nodes.map((n) => {
+          {compressedNodes.map((n) => {
             if (!n.isCollapsedSummary) return null;
             if (!yInRange(n.y)) return null;
             const row = visibleRows.find((r) => r.nodeId === n.nodeId);
@@ -970,9 +1170,12 @@ const TreeBody = ({
             tip during collapse/expand/prune/regrow animations so the
             glyph sits at the visible bend even mid-animation. */}
         <g pointerEvents="none">
-          {layout.nodes.map((n) => {
+          {compressedNodes.map((n) => {
             if (n.isLeaf) return null;
             if (n.isVisibleEnd) return null; // collapsed-summary; render its own marker if needed elsewhere
+            // Don't render glyphs for the intermediate compressed-
+            // away chain nodes — they're behind the bars.
+            if (compressedGlyphSkip.has(n.nodeId)) return null;
             if (!yInRange(n.y)) return null;
             const treeNode = data.tree.nodes[n.nodeId];
             if (!treeNode) return null;
@@ -1017,7 +1220,7 @@ const TreeBody = ({
             leaves additionally get an outer ring in the search-match
             colour so they pop against the rest of the tree. */}
         <g pointerEvents="none">
-          {layout.nodes.map((n) => {
+          {compressedNodes.map((n) => {
             if (!n.isLeaf) return null;
             if (n.isCollapsedSummary) return null;
             if (!yInRange(n.y)) return null;
@@ -1091,8 +1294,11 @@ const TreeBody = ({
                 />
               );
             })()}
-          {layout.nodes.map((child) => {
+          {compressedNodes.map((child) => {
             if (child.parentId === null) return null;
+            // Chain branches are not drawn — don't expose hit areas
+            // for them either; the bars glyph is non-interactive.
+            if (compressedBranchSkip.has(child.nodeId)) return null;
             const parent = byId.get(child.parentId);
             if (!parent) return null;
             if (!branchInRange(parent.y, child.y)) return null;
