@@ -75,10 +75,60 @@ export function Layout({
     return map;
   }, [zones]);
 
+  // A zone only renders when it's marked visible in the view state
+  // AND its data is currently available — `visible: true` could be
+  // stale (URL-persisted from a previous session whose host data
+  // included neighbourhood / MSA / etc.) and we don't want a stale
+  // flag to push an empty zone onto the row. The toggle in the
+  // Zones popover stays disabled in the same situation.
   const visibleZones = useMemo(
-    () => viewState.zones.filter((z) => z.visible && zoneById.has(z.id)),
-    [viewState.zones, zoneById],
+    () =>
+      viewState.zones.filter((z) => {
+        if (!z.visible) return false;
+        const def = zoneById.get(z.id);
+        return def !== undefined && def.isAvailable(data);
+      }),
+    [viewState.zones, zoneById, data],
   );
+
+  // Auto-enable on first data arrival. Each zone we've seen become
+  // available is added to `autoEnabledRef`; zones already in the
+  // set are skipped on subsequent runs, so a user-driven manual
+  // toggle-off after auto-enable doesn't get clobbered the next
+  // time the zone is re-checked. Always-available zones (tree,
+  // labels) get added on mount and never trigger another update.
+  const autoEnabledRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const newlyAvailable: string[] = [];
+    for (const def of zones) {
+      if (autoEnabledRef.current.has(def.id)) continue;
+      if (def.isAvailable(data)) {
+        autoEnabledRef.current.add(def.id);
+        newlyAvailable.push(def.id);
+      }
+    }
+    if (newlyAvailable.length === 0) return;
+    setViewState((vs) => {
+      const next = vs.zones.map((z) =>
+        newlyAvailable.includes(z.id) && !z.visible
+          ? { ...z, visible: true }
+          : z,
+      );
+      // Add an entry for any zone the existing list is missing
+      // (rare — only if the host hand-built `zones` without all
+      // registered ids).
+      const seen = new Set(next.map((z) => z.id));
+      for (const id of newlyAvailable) {
+        if (seen.has(id)) continue;
+        const def = zones.find((d) => d.id === id);
+        if (!def) continue;
+        next.push({ id, width: def.defaultWidth, visible: true });
+      }
+      const changed = next.some((z, i) => z !== vs.zones[i]) ||
+        next.length !== vs.zones.length;
+      return changed ? { ...vs, zones: next } : vs;
+    });
+  }, [data, zones, setViewState]);
 
   const collapsedNodeIds = useMemo(
     () => new Set(viewState.collapsedNodeIds),

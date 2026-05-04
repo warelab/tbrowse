@@ -1376,4 +1376,11 @@ export const neighborhoodZone: ZoneDefinition<NeighborhoodZoneState> = {
   defaultZoneState: DEFAULT_STATE,
   isAvailable: (data) =>
     Boolean(data.neighborhood && Object.keys(data.neighborhood).length > 0),
+  // Off by default — the neighborhood track is opt-in. The chassis
+  // auto-flips this on the first time `data.neighborhood` is
+  // populated, so hosts that always have neighborhood data still
+  // see the zone appear without intervention; hosts that never
+  // have neighborhood data leave it hidden, and the toggle stays
+  // disabled.
+  defaultVisible: false,
 };

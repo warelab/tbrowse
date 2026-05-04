@@ -9,23 +9,54 @@ import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 // room inside the SVG. (The stub is what users hover/click to interact with
 // the root node, since the root's own branch is zero-length.)
 const LEFT_PAD = 16;
-// RIGHT_PAD must be ≥ COLLAPSED_TRIANGLE_WIDTH so that when a collapsed-
-// summary node ends up at the deepest visible depth (i.e. lands at
-// drawingLeftX + drawingWidth) its triangle, which extends
-// COLLAPSED_TRIANGLE_WIDTH to the right of the apex, doesn't overflow the
-// zone's `overflow: hidden` clip and get cut off. Adds a few extra px of
-// breathing room so the triangle's base doesn't sit flush against the
-// labels-zone divider.
-const RIGHT_PAD = 24;
+// RIGHT_PAD must be ≥ COLLAPSED_TRIANGLE_WIDTH_MAX so that when a
+// collapsed-summary node ends up at the deepest visible depth (i.e.
+// lands at drawingLeftX + drawingWidth) its triangle, which extends
+// up to COLLAPSED_TRIANGLE_WIDTH_MAX to the right of the apex,
+// doesn't overflow the zone's `overflow: hidden` clip and get cut
+// off. Adds a few extra px of breathing room so the triangle's base
+// doesn't sit flush against the labels-zone divider.
+const RIGHT_PAD = 44;
 
 // Theme-aware colour values: SVG presentation attributes accept var()
 // references the same way `style` does, so we string them as
 // `var(--name)` here and they re-evaluate when the theme class flips on
 // the root.
 const BRANCH_COLOR = 'var(--tbrowse-branch)';
-const BRANCH_WIDTH = 1.5;
 const HIGHLIGHT_COLOR = 'var(--tbrowse-accent)';
-const HIGHLIGHT_WIDTH = 2.5;
+/** Branches are scaled by the absolute number of leaves under
+ *  them: each ×4 multiple of subtree leaf count adds one pixel of
+ *  thickness, clamped to `[BRANCH_WIDTH_MIN, BRANCH_WIDTH_MAX]`.
+ *  Thresholds land at 1, 4, 16, 64 leaves → 1, 2, 3, 4 px;
+ *  branches with more than 64 leaves stay at the 4 px ceiling.
+ *  Independent of total tree size — two trees with 50 vs 5000
+ *  leaves both give a 16-leaf subtree the same 3 px thickness.
+ *  Hovered / highlighted branches add `BRANCH_WIDTH_HIGHLIGHT_BUMP`
+ *  on top so the cursor cue stays visible at every thickness. */
+const BRANCH_WIDTH_MIN = 1;
+const BRANCH_WIDTH_MAX = 3;
+const BRANCH_WIDTH_HIGHLIGHT_BUMP = 1.25;
+/** Each step multiplies the leaf count by `LEAVES_PER_STEP` and
+ *  bumps the output by `(max − min) / MAX_STEPS`. With
+ *  `LEAVES_PER_STEP = 4` and `MAX_STEPS = 3`, the cutoffs sit at
+ *  leaf counts 1, 4, 16, 64 and the output spans `min`, `min +
+ *  (max−min)/3`, `min + 2(max−min)/3`, `max`. Branch thickness
+ *  (1→4 px) and triangle length (14→38 px) share the curve. */
+const BRANCH_WIDTH_LEAVES_PER_STEP = 4;
+/** Fixed horizontal length of the pruned-stub connector's
+ *  horizontal arm. The connector is an L: vertical from the anchor
+ *  branch up/down to `stubY`, then horizontal out to `markX`. */
+const PRUNED_STUB_LEN = 8;
+/** Fixed vertical gap from one stub to the next in a stack on the
+ *  same side of the anchor — also the gap between the first stub
+ *  and the anchor branch itself. Pruned stubs are intentionally
+ *  uniform: their geometry doesn't reflect the size of the pruned
+ *  clade, so the eye treats every prune-marker the same regardless
+ *  of how much got cut. */
+const PRUNED_STUB_GAP = 6;
+/** Fixed stroke width for every pruned-stub connector. */
+const PRUNED_STUB_WIDTH = 1;
+const BRANCH_WIDTH_MAX_STEPS = 3;
 const EXTENSION_COLOR = 'var(--tbrowse-leaf-extension)';
 const EXTENSION_HIGHLIGHT_COLOR = 'var(--tbrowse-accent)';
 // Selection amber stays fixed — it reads on both themes and is meant to
@@ -35,15 +66,19 @@ const SELECT_RADIUS = 5;
 const HIT_STROKE_WIDTH = 12;
 const SPECIATION_COLOR = 'var(--tbrowse-text-muted)';
 const DUPLICATION_COLOR = 'var(--tbrowse-danger)';
-const NODE_GLYPH_RADIUS = 3.5;
+const NODE_GLYPH_RADIUS = 3.8;
 /** Slightly smaller than the internal-node glyph so leaves read as
  *  terminal "ticks" rather than competing with the speciation circles. */
 const LEAF_GLYPH_RADIUS = 2.5;
 const NODE_GLYPH_SQUARE = 7;
-// Bootstrap (0..100) maps to opacity multiplier in [BOOTSTRAP_MIN, 1].
-// Lets low-confidence branches fade to ~40% without disappearing entirely.
-const BOOTSTRAP_OPACITY_MIN = 0.4;
-const COLLAPSED_TRIANGLE_WIDTH = 18;
+/** Collapsed-summary triangles stretch to the right with subtree
+ *  size, on the same `1, 4, 16, 64` cutoffs as the branch-thickness
+ *  scale. A degenerate single-leaf collapse renders at the MIN
+ *  length; a 64+ leaf collapse hits the MAX. Step size is
+ *  `(MAX − MIN) / 3` so the four cutoffs map evenly onto the four
+ *  thickness levels. */
+const COLLAPSED_TRIANGLE_WIDTH_MIN = 14;
+const COLLAPSED_TRIANGLE_WIDTH_MAX = 38;
 /** Search-match highlight: an outer ring drawn around the leaf-tip
  *  glyph for matched leaves, and used to tint collapsed-summary
  *  triangles whose subtree contains at least one match. */
@@ -240,6 +275,69 @@ const TreeBody = ({
   // to know whether a single node is currently compressed. Local helper.
   const isCompressed = (id: NodeId) => effectiveCompressed.has(id);
 
+  // Per-node count of leaves in the subtree rooted at that node —
+  // 1 for leaves, N for the root, monotonic on the way up. Drives
+  // the per-branch thickness scaling: branches carrying many leaves
+  // render thicker than branches that lead to a single tip. Walks
+  // the tree once via parent pointers (O(leaves × depth)).
+  const subtreeLeafCounts = useMemo(() => {
+    const counts = new Map<NodeId, number>();
+    for (const n of Object.values(data.tree.nodes)) {
+      if (!n.isLeaf) continue;
+      let cur: NodeId | null = n.id;
+      while (cur !== null) {
+        counts.set(cur, (counts.get(cur) ?? 0) + 1);
+        cur = data.tree.nodes[cur]?.parentId ?? null;
+      }
+    }
+    return counts;
+  }, [data.tree]);
+
+  // Shared count→size scale used by branch thickness AND collapsed-
+  // triangle horizontal length. Both follow the same `1, 4, 16, 64`
+  // leaf-count cutoffs (`BRANCH_WIDTH_LEAVES_PER_STEP = 4`,
+  // `BRANCH_WIDTH_MAX_STEPS = 3`), mapped onto different output
+  // ranges via `pxPerStep = (max − min) / MAX_STEPS`. So a 4-leaf
+  // clade lands at `min + (max − min)/3`, a 16-leaf clade at
+  // `min + 2(max − min)/3`, and a 64-leaf-or-more clade at `max`.
+  // Total-tree-agnostic — a 16-leaf clade lands at the same step
+  // in any tree.
+  const sizeForCount = useMemo(() => {
+    const denom = Math.log(BRANCH_WIDTH_LEAVES_PER_STEP);
+    return (count: number, min: number, max: number): number => {
+      if (count <= 1) return min;
+      const stepsRaw = Math.log(count) / denom;
+      const steps = Math.min(BRANCH_WIDTH_MAX_STEPS, stepsRaw);
+      const pxPerStep = (max - min) / BRANCH_WIDTH_MAX_STEPS;
+      return min + steps * pxPerStep;
+    };
+  }, []);
+
+  // Map a node id to its branch thickness in [BRANCH_WIDTH_MIN,
+  // BRANCH_WIDTH_MAX].
+  const branchWidth = useMemo(
+    () => (nodeId: NodeId) =>
+      sizeForCount(
+        subtreeLeafCounts.get(nodeId) ?? 1,
+        BRANCH_WIDTH_MIN,
+        BRANCH_WIDTH_MAX,
+      ),
+    [subtreeLeafCounts, sizeForCount],
+  );
+
+  // Map a node id to its collapsed-summary triangle horizontal
+  // length in [COLLAPSED_TRIANGLE_WIDTH_MIN, COLLAPSED_TRIANGLE_WIDTH_MAX].
+  // Triangles representing larger subtrees stretch further right.
+  const triangleWidth = useMemo(
+    () => (nodeId: NodeId) =>
+      sizeForCount(
+        subtreeLeafCounts.get(nodeId) ?? 1,
+        COLLAPSED_TRIANGLE_WIDTH_MIN,
+        COLLAPSED_TRIANGLE_WIDTH_MAX,
+      ),
+    [subtreeLeafCounts, sizeForCount],
+  );
+
   // Per-internal-node count of matched leaves anywhere in its subtree.
   // Drives the badge on collapsed-summary triangles so the user can
   // tell "this triangle hides 3 matches" without expanding it.
@@ -370,10 +468,6 @@ const TreeBody = ({
   // regrow back to — based on its position in the anchor's original
   // children list.
   const prunedStubs = useMemo(() => {
-    const STUB_OFFSET = 6;
-    const STUB_STEP = 8;
-    const STUB_LEN = 12;
-
     // Group pruned ids by closest visible ancestor.
     const byAnchor = new Map<NodeId, NodeId[]>();
     for (const prunedId of prunedNodeIds) {
@@ -397,8 +491,13 @@ const TreeBody = ({
       stubY: number;
       markX: number;
       markY: number;
-      /** Leaf count of the pruned subtree (used by the "count" style). */
+      /** Leaf count of the pruned subtree — surfaced by the "count"
+       *  terminal-mark style. Does NOT influence stub geometry. */
       leafCount: number;
+      /** Stroke width for the L-connector. Fixed across every stub
+       *  (`PRUNED_STUB_WIDTH`); pruned stubs are deliberately not
+       *  scaled by clade size. */
+      strokeWidth: number;
     };
     const stubs: Stub[] = [];
 
@@ -451,44 +550,49 @@ const TreeBody = ({
         .filter((t) => !t.above)
         .sort((a, b) => a.baIdx - b.baIdx);
 
-      aboveSide.forEach((t, j) => {
-        const stubY = anchor.y - (STUB_OFFSET + j * STUB_STEP);
-        stubs.push({
-          prunedId: t.prunedId,
-          anchorX: anchor.x,
-          anchorY: anchor.y,
-          stubY,
-          markX: anchor.x + STUB_LEN,
-          markY: stubY,
-          leafCount: countLeavesInSubtree(t.prunedId, data.tree, fullChildrenIndex),
-        });
-      });
-      belowSide.forEach((t, j) => {
-        const stubY = anchor.y + (STUB_OFFSET + j * STUB_STEP);
-        stubs.push({
-          prunedId: t.prunedId,
-          anchorX: anchor.x,
-          anchorY: anchor.y,
-          stubY,
-          markX: anchor.x + STUB_LEN,
-          markY: stubY,
-          leafCount: countLeavesInSubtree(t.prunedId, data.tree, fullChildrenIndex),
-        });
-      });
+      // Place every stub on a side at the SAME fixed offset from
+      // the anchor branch — markers don't stack. Multiple prunes
+      // at the same anchor on the same side render their markers
+      // overlapping at one position (one click target wins, the
+      // others paint underneath). This keeps the visualisation
+      // uniform regardless of how many subtrees are pruned, and
+      // prevents the row from blooming vertically into the next
+      // row's space when many siblings get cut at once.
+      const stackSide = (side: typeof tagged, sign: 1 | -1) => {
+        for (const t of side) {
+          const leafCount = countLeavesInSubtree(
+            t.prunedId,
+            data.tree,
+            fullChildrenIndex,
+          );
+          const stubY = anchor.y + sign * PRUNED_STUB_GAP;
+          const markX = anchor.x + PRUNED_STUB_LEN;
+          stubs.push({
+            prunedId: t.prunedId,
+            anchorX: anchor.x,
+            anchorY: anchor.y,
+            stubY,
+            markX,
+            markY: stubY,
+            leafCount,
+            strokeWidth: PRUNED_STUB_WIDTH,
+          });
+        }
+      };
+      stackSide(aboveSide, -1);
+      stackSide(belowSide, 1);
     }
     return stubs;
-  }, [prunedNodeIds, data.tree, byId, fullChildrenIndex, swappedNodeIds]);
+  }, [
+    prunedNodeIds,
+    data.tree,
+    byId,
+    fullChildrenIndex,
+    swappedNodeIds,
+  ]);
 
   const isHighlighted = (nodeId: NodeId): boolean =>
     hoveredSubtreeIds.has(nodeId) || ancestorsHighlight.has(nodeId);
-
-  /** Confidence factor in [BOOTSTRAP_OPACITY_MIN, 1] from a node's bootstrap. */
-  const bootstrapFactor = (nodeId: NodeId): number => {
-    const bs = data.tree.nodes[nodeId]?.bootstrap;
-    if (bs === undefined) return 1;
-    const t = Math.max(0, Math.min(100, bs)) / 100;
-    return BOOTSTRAP_OPACITY_MIN + (1 - BOOTSTRAP_OPACITY_MIN) * t;
-  };
 
   // Would pruning the selected node empty the tree (no active leaves left)?
   // An active leaf is one whose ancestor chain contains no pruned node. The
@@ -677,6 +781,7 @@ const TreeBody = ({
           if (!root) return null;
           if (!yInRange(root.y)) return null;
           const hl = isHighlighted(root.nodeId);
+          const w = branchWidth(root.nodeId);
           return (
             <line
               key="b-root"
@@ -685,7 +790,8 @@ const TreeBody = ({
               x2={root.x}
               y2={root.y}
               stroke={hl ? HIGHLIGHT_COLOR : BRANCH_COLOR}
-              strokeWidth={hl ? HIGHLIGHT_WIDTH : BRANCH_WIDTH}
+              strokeWidth={hl ? w + BRANCH_WIDTH_HIGHLIGHT_BUMP : w}
+              strokeLinecap="round"
               pointerEvents="none"
             />
           );
@@ -704,14 +810,17 @@ const TreeBody = ({
             const childX = parent.x + (child.x - parent.x) * opacity;
             const d = `M ${parent.x} ${parent.y} L ${parent.x} ${child.y} L ${childX} ${child.y}`;
             const hl = isHighlighted(child.nodeId);
+            const w = branchWidth(child.nodeId);
             return (
               <path
                 key={`b-${child.nodeId}`}
                 d={d}
                 stroke={hl ? HIGHLIGHT_COLOR : BRANCH_COLOR}
-                strokeWidth={hl ? HIGHLIGHT_WIDTH : BRANCH_WIDTH}
+                strokeWidth={hl ? w + BRANCH_WIDTH_HIGHLIGHT_BUMP : w}
+                strokeLinejoin="round"
+                strokeLinecap="round"
                 fill="none"
-                opacity={opacity * bootstrapFactor(child.nodeId)}
+                opacity={opacity}
               />
             );
           })}
@@ -770,7 +879,7 @@ const TreeBody = ({
               ? parent.x + (n.x - parent.x) * opacity
               : n.x;
             const extStart = n.isCollapsedSummary
-              ? tipX + COLLAPSED_TRIANGLE_WIDTH
+              ? tipX + triangleWidth(n.nodeId)
               : tipX;
             if (extStart >= extensionEndX) return null;
             return (
@@ -783,14 +892,17 @@ const TreeBody = ({
                 stroke={hl ? EXTENSION_HIGHLIGHT_COLOR : EXTENSION_COLOR}
                 strokeWidth={hl ? 1.5 : 1}
                 strokeDasharray="2 3"
-                opacity={opacity * bootstrapFactor(n.nodeId)}
+                opacity={opacity}
               />
             );
           })}
         </g>
         {/* Collapsed-summary triangles. Apex at the (interpolated) branch
-            tip; base extends right by COLLAPSED_TRIANGLE_WIDTH; vertical
-            base height scales (logarithmically) with the subtree's leaf
+            tip; base extends right by `triangleWidth(nodeId)` — same
+            count→size scale that drives branch thickness, mapped onto
+            [COLLAPSED_TRIANGLE_WIDTH_MIN, COLLAPSED_TRIANGLE_WIDTH_MAX]
+            so larger subtrees get longer triangles. Vertical base
+            height scales (logarithmically) with the subtree's leaf
             count, capped to fit within a single row. Triangles whose
             subtree contains search matches get the search-match stroke
             colour and a small count badge to the right of the base. */}
@@ -805,11 +917,19 @@ const TreeBody = ({
             const apexX = parent
               ? parent.x + (n.x - parent.x) * opacity
               : n.x;
-            const baseX = apexX + COLLAPSED_TRIANGLE_WIDTH;
+            const baseX = apexX + triangleWidth(n.nodeId);
             const h = collapsedTriangleHeight(row.leafCount);
             const top = n.y - h / 2;
             const bot = n.y + h / 2;
             const matchCount = subtreeMatchCounts.get(n.nodeId) ?? 0;
+            // Triangle border thickness follows the same count-driven
+            // curve as branch lines (1, 4, 16, 64 leaves → 1, 2, 3, 4
+            // px), so a collapsed clade's outline reads as a fatter
+            // continuation of the branch leading into it. When the
+            // subtree contains search matches, the border picks up
+            // the search-match colour and a small `+0.75 px` bump so
+            // the highlight is still visually distinct.
+            const triW = branchWidth(n.nodeId);
             return (
               <g key={`c-${n.nodeId}`} opacity={opacity}>
                 <polygon
@@ -820,7 +940,8 @@ const TreeBody = ({
                       ? SEARCH_MATCH_COLOR
                       : COLLAPSED_TRIANGLE_STROKE
                   }
-                  strokeWidth={matchCount > 0 ? 1.75 : 1}
+                  strokeWidth={matchCount > 0 ? triW + 0.75 : triW}
+                  strokeLinejoin="round"
                 >
                   <title>
                     {matchCount > 0
@@ -858,7 +979,7 @@ const TreeBody = ({
             const opacity = opacityById.get(n.nodeId) ?? 1;
             const parent = n.parentId !== null ? byId.get(n.parentId) : null;
             const glyphX = parent ? parent.x + (n.x - parent.x) * opacity : n.x;
-            const finalOpacity = opacity * bootstrapFactor(n.nodeId);
+            const finalOpacity = opacity;
             const isDuplication = treeNode.eventType === 'duplication';
             if (isDuplication) {
               return (
@@ -905,7 +1026,7 @@ const TreeBody = ({
             const opacity = opacityById.get(n.nodeId) ?? 1;
             const parent = n.parentId !== null ? byId.get(n.parentId) : null;
             const tipX = parent ? parent.x + (n.x - parent.x) * opacity : n.x;
-            const finalOpacity = opacity * bootstrapFactor(n.nodeId);
+            const finalOpacity = opacity;
             const isSearchMatch = searchResults.matchedLeafIds.has(n.nodeId);
             return (
               <g key={`l-${n.nodeId}`} opacity={finalOpacity}>
@@ -1067,28 +1188,28 @@ function renderPrunedStub(
     markX: number;
     markY: number;
     leafCount: number;
+    strokeWidth: number;
   },
   isSelected: boolean,
 ) {
   const stroke = isSelected ? HIGHLIGHT_COLOR : '#888';
   const fill = isSelected ? HIGHLIGHT_COLOR : 'white';
   const text = isSelected ? HIGHLIGHT_COLOR : '#666';
-  const dashedL = (
+  // Solid L-connector — vertical from the anchor branch to
+  // `stubY`, then horizontal out to `markX`. Stroke width tracks
+  // the pruned subtree's leaf count via `branchWidth` (same `1,
+  // 4, 16, 64` cutoff curve as live branches). The horizontal arm
+  // is fixed-length (`PRUNED_STUB_LEN`); the vertical arm grows
+  // with stack offset so multiple stubs on one side cascade
+  // outward along the anchor's vertical axis.
+  const connector = (
     <path
       d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${stub.markX} ${stub.stubY}`}
       fill="none"
       stroke={stroke}
-      strokeWidth={1}
-      strokeDasharray="2 2"
-      pointerEvents="none"
-    />
-  );
-  const solidL = (
-    <path
-      d={`M ${stub.anchorX} ${stub.anchorY} L ${stub.anchorX} ${stub.stubY} L ${stub.markX} ${stub.stubY}`}
-      fill="none"
-      stroke={stroke}
-      strokeWidth={1}
+      strokeWidth={stub.strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
       pointerEvents="none"
     />
   );
@@ -1098,7 +1219,7 @@ function renderPrunedStub(
     case 'square':
       return (
         <>
-          {dashedL}
+          {connector}
           <rect
             x={mx - 3}
             y={my - 3}
@@ -1116,12 +1237,12 @@ function renderPrunedStub(
       // right — same orientation as the live collapsed-clade triangles.
       return (
         <>
-          {dashedL}
+          {connector}
           <polygon
-            points={`${mx - 4},${my} ${mx + 4},${my - 4} ${mx + 4},${my + 4}`}
+            points={`${mx - 3},${my} ${mx + 3},${my - 3} ${mx + 3},${my + 3}`}
             fill={fill}
             stroke={stroke}
-            strokeWidth={1}
+            strokeWidth={0.6}
             pointerEvents="none"
           />
         </>
@@ -1130,7 +1251,7 @@ function renderPrunedStub(
       // Dashed L ending in a short vertical "⊣" cap. No terminal glyph.
       return (
         <>
-          {dashedL}
+          {connector}
           <line
             x1={mx}
             y1={my - 4}
@@ -1145,7 +1266,7 @@ function renderPrunedStub(
     case 'slash':
       return (
         <>
-          {dashedL}
+          {connector}
           <rect
             x={mx - 3}
             y={my - 3}
@@ -1171,7 +1292,7 @@ function renderPrunedStub(
       // Two short crossed strokes forming an "x".
       return (
         <>
-          {dashedL}
+          {connector}
           <line
             x1={mx - 3}
             y1={my - 3}
@@ -1195,7 +1316,7 @@ function renderPrunedStub(
     case 'ellipsis':
       return (
         <>
-          {dashedL}
+          {connector}
           <rect
             x={mx - 6}
             y={my - 4}
@@ -1226,7 +1347,7 @@ function renderPrunedStub(
       // Faint hollow rounded square with low opacity.
       return (
         <g opacity={0.45}>
-          {dashedL}
+          {connector}
           <rect
             x={mx - 4}
             y={my - 4}
@@ -1246,7 +1367,7 @@ function renderPrunedStub(
       // prongs branching off, all in a ~10x10 box.
       return (
         <>
-          {dashedL}
+          {connector}
           <g pointerEvents="none">
             <line x1={mx - 3} y1={my} x2={mx + 1} y2={my} stroke={stroke} strokeWidth={1} />
             <line x1={mx + 1} y1={my - 4} x2={mx + 1} y2={my + 4} stroke={stroke} strokeWidth={1} />
@@ -1263,7 +1384,7 @@ function renderPrunedStub(
       const w = Math.max(12, label.length * charW + 6);
       return (
         <>
-          {dashedL}
+          {connector}
           <rect
             x={mx - w / 2}
             y={my - 5}
@@ -1322,7 +1443,7 @@ function renderPrunedStub(
       // Solid L-bend ending in a small right bracket "]".
       return (
         <>
-          {solidL}
+          {connector}
           <polyline
             points={`${mx - 1},${my - 4} ${mx + 3},${my - 4} ${mx + 3},${my + 4} ${mx - 1},${my + 4}`}
             fill="none"

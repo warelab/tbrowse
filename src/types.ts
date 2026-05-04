@@ -333,6 +333,15 @@ export interface ZoneDefinition<S = unknown> {
   minWidth: number;
   defaultZoneState: S;
   isAvailable: (data: HostData) => boolean;
+  /**
+   * Initial visibility before any data-availability check runs.
+   * Default `true` — the zone shows on first paint as long as
+   * `isAvailable(data)` agrees. Set to `false` for zones that
+   * should stay hidden until their data is observed (e.g. the
+   * neighborhood zone, which defaults to off and auto-enables
+   * the first time neighbourhood data appears in `HostData`).
+   */
+  defaultVisible?: boolean;
 }
 
 export interface TBrowseProps {

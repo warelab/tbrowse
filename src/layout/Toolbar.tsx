@@ -208,7 +208,7 @@ function TBrowseLogo() {
         borderRight: '1px solid var(--tbrowse-divider)',
         userSelect: 'none',
       }}
-      aria-label="tbrowse"
+      aria-label="TBrowse"
     >
       <svg
         width={22}
@@ -249,7 +249,7 @@ function TBrowseLogo() {
           color: 'var(--tbrowse-text)',
         }}
       >
-        tbrowse
+        TBrowse
       </span>
     </div>
   );

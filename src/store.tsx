@@ -69,7 +69,12 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     zones: props.zones.map((z) => ({
       id: z.id,
       width: z.defaultWidth,
-      visible: z.isAvailable(data),
+      // Initial visibility = (the zone opts in via `defaultVisible`,
+      //  default true) AND (its data is available right now). Zones
+      // that opt out (defaultVisible: false) stay hidden on first
+      // paint and rely on the chassis's auto-enable effect to flip
+      // them on once their data has been observed.
+      visible: (z.defaultVisible ?? true) && z.isAvailable(data),
     })),
     zoneStates,
     ...props.initialViewState,
