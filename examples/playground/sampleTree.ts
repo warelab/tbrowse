@@ -142,7 +142,7 @@ export const largeSampleTree: Tree = (() => {
 
 export const sampleExpressionColumns: TableColumn[] = [
   { id: 'tissue', label: 'Tissue', kind: 'string', width: 90 },
-  { id: 'tpm', label: 'TPM', kind: 'number', width: 80 },
+  { id: 'tpm', label: 'TPM', kind: 'number', width: 80, display: 'heatmap' },
   { id: 'logfc', label: 'log2 FC', kind: 'number', width: 80 },
   { id: 'sig', label: 'Sig.', kind: 'boolean', width: 50 },
   { id: 'note', label: 'Note', kind: 'string', width: 160 },

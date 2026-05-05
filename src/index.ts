@@ -32,14 +32,20 @@ export {
 export {
   createTableZone,
   defaultAggregators,
+  AGGREGATE_METHODS,
+  DEFAULT_METHOD_ID,
+  methodForKind,
   type TableZoneState,
   type TableData,
   type TableColumn,
+  type TableColumnOverride,
   type TableCellValue,
+  type TableDisplayMode,
   type CreateTableZoneOptions,
   type AggregateContext,
   type AggregateResult,
   type AggregateFn,
+  type ColumnKind,
 } from './zones/table/Table';
 export {
   COLOR_SCHEMES,

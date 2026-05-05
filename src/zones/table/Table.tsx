@@ -1,70 +1,70 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GeneId, NodeId, Tree, ZoneDefinition, ZoneRenderProps } from '../../types';
+import type { NodeId, Tree, ZoneDefinition, ZoneRenderProps } from '../../types';
 import { buildChildrenIndex, type ChildrenIndex } from '../../treeIndex';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { useTBrowseStore } from '../../store';
+import {
+  AGGREGATE_METHODS,
+  DEFAULT_METHOD_ID,
+  defaultAggregators,
+  methodForKind,
+  normalizeAggregateResult,
+  NULL_GLYPH,
+  type AggregateContext,
+  type AggregateFn,
+  type AggregateResult,
+  type ColumnKind,
+} from './aggregators';
+import {
+  buildHeatmapDomains,
+  heatmapBackground,
+  heatmapForeground,
+  normalize,
+  type HeatmapDomain,
+} from './heatmap';
+import { ConfigPopover } from './ConfigPopover';
+import type {
+  CreateTableZoneOptions,
+  TableCellValue,
+  TableColumn,
+  TableData,
+  TableDisplayMode,
+  TableZoneState,
+} from './types';
 
-export type TableCellValue = string | number | boolean | null | undefined;
-
-export type TableData = Record<GeneId, Record<string, TableCellValue>>;
-
-export interface AggregateContext {
-  /** Non-null cell values across the leaves under the collapsed subtree, in
-   *  tree-traversal order. */
-  values: TableCellValue[];
-  /** Total leaves in the collapsed subtree (including those without a
-   *  table entry — `values.length` may be smaller). */
-  totalLeaves: number;
-  /** Convenience: leaves whose `values` entry was non-null. */
-  leavesWithValue: number;
-}
-
-export interface AggregateResult {
-  /** Compact text rendered in the cell. Empty string ⇒ render nothing. */
-  text: string;
-  /** Optional rich tooltip for the cell (defaults to `text`). */
-  title?: string;
-}
-
-export type AggregateFn = (ctx: AggregateContext) => AggregateResult | string;
-
-export interface TableColumn {
-  id: string;
-  label: string;
-  /** Cell value type — drives default formatting and alignment. */
-  kind?: 'string' | 'number' | 'boolean';
-  /** Pixel width. Falls back to DEFAULT_COL_WIDTH. */
-  width?: number;
-  align?: 'left' | 'right' | 'center';
-  /** Override the default formatter for this column's cells. */
-  format?: (value: TableCellValue) => string;
-  /** Override the default kind-specific aggregator used for cells in
-   *  collapsed-subtree summary rows. */
-  aggregate?: AggregateFn;
-}
-
-export interface TableZoneState {
-  /** User-provided override for the zone name. Falls back to the
-   *  factory's `defaultName` when undefined. */
-  name?: string;
-}
-
-export interface CreateTableZoneOptions {
-  id: string;
-  defaultName: string;
-  table: TableData;
-  columns: TableColumn[];
-  defaultWidth?: number;
-  minWidth?: number;
-  defaultVisible?: boolean;
-}
+export type {
+  AggregateContext,
+  AggregateFn,
+  AggregateResult,
+  ColumnKind,
+  CreateTableZoneOptions,
+  TableCellValue,
+  TableColumn,
+  TableData,
+  TableDisplayMode,
+  TableZoneState,
+};
+export { AGGREGATE_METHODS, defaultAggregators };
+export type { TableColumnOverride } from './types';
 
 const DEFAULT_COL_WIDTH = 90;
 const HEADER_ROW_HEIGHT = LEAF_ROW_HEIGHT;
-const NULL_GLYPH = '—';
 
 const DEFAULT_STATE: TableZoneState = {};
 
-function defaultFormat(value: TableCellValue, kind: TableColumn['kind']): string {
+interface EffectiveColumn {
+  id: string;
+  base: TableColumn;
+  label: string;
+  kind: ColumnKind;
+  width: number;
+  align: 'left' | 'right' | 'center';
+  display: TableDisplayMode;
+  aggregator: AggregateFn;
+  format?: (value: TableCellValue) => string;
+}
+
+function defaultFormat(value: TableCellValue, kind: ColumnKind): string {
   if (value === null || value === undefined) return NULL_GLYPH;
   if (kind === 'boolean') return value ? '✓' : '';
   if (kind === 'number') {
@@ -76,114 +76,99 @@ function defaultFormat(value: TableCellValue, kind: TableColumn['kind']): string
   return String(value);
 }
 
-function defaultAlign(kind: TableColumn['kind']): 'left' | 'right' | 'center' {
+function defaultAlign(kind: ColumnKind): 'left' | 'right' | 'center' {
   if (kind === 'number') return 'right';
   if (kind === 'boolean') return 'center';
   return 'left';
 }
 
-function fmtNum(n: number, digits = 2): string {
-  return n.toLocaleString(undefined, { maximumFractionDigits: digits });
+function justifyFor(align: 'left' | 'right' | 'center'): React.CSSProperties['justifyContent'] {
+  if (align === 'right') return 'flex-end';
+  if (align === 'center') return 'center';
+  return 'flex-start';
 }
 
-const numberAggregator: AggregateFn = ({ values, totalLeaves, leavesWithValue }) => {
-  const nums = values.filter(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v),
-  );
-  if (nums.length === 0) return { text: NULL_GLYPH, title: `n=0 / ${totalLeaves}` };
-  let mean = 0;
-  for (const v of nums) mean += v;
-  mean /= nums.length;
-  let min = nums[0];
-  let max = nums[0];
-  let sumSq = 0;
-  for (const v of nums) {
-    if (v < min) min = v;
-    if (v > max) max = v;
-    const d = v - mean;
-    sumSq += d * d;
-  }
-  if (nums.length === 1) {
-    return {
-      text: fmtNum(mean),
-      title: `n=1 / ${totalLeaves}\nvalue=${fmtNum(mean, 6)}`,
-    };
-  }
-  // Sample stdev (Bessel-corrected) — matches what users expect when
-  // they think of these as a sample drawn from a population.
-  const stdev = Math.sqrt(sumSq / (nums.length - 1));
-  const text = `${fmtNum(mean)} ± ${fmtNum(stdev)}`;
-  const title = [
-    `n=${leavesWithValue} / ${totalLeaves}`,
-    `mean=${fmtNum(mean, 6)}`,
-    `stdev=${fmtNum(stdev, 6)}`,
-    `min=${fmtNum(min, 6)}`,
-    `max=${fmtNum(max, 6)}`,
-  ].join('\n');
-  return { text, title };
-};
-
-const booleanAggregator: AggregateFn = ({ values, totalLeaves, leavesWithValue }) => {
-  if (leavesWithValue === 0) return { text: NULL_GLYPH, title: `n=0 / ${totalLeaves}` };
-  let trues = 0;
-  for (const v of values) if (v === true) trues++;
-  return {
-    text: `${trues}/${leavesWithValue}`,
-    title: `${trues} true · ${leavesWithValue - trues} false · ${totalLeaves - leavesWithValue} missing`,
-  };
-};
-
-const stringAggregator: AggregateFn = ({ values, totalLeaves, leavesWithValue }) => {
-  if (values.length === 0) return { text: NULL_GLYPH, title: `n=0 / ${totalLeaves}` };
-  // Count occurrences for the tooltip and dominant-value display.
-  const counts = new Map<string, number>();
-  for (const v of values) {
-    const s = String(v);
-    counts.set(s, (counts.get(s) ?? 0) + 1);
-  }
-  const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 1) {
-    return {
-      text: sorted[0][0],
-      title: `${leavesWithValue}/${totalLeaves} all "${sorted[0][0]}"`,
-    };
-  }
-  const text = sorted.length <= 3
-    ? sorted.map(([s]) => s).join(', ')
-    : `${sorted.length} unique`;
-  const title = sorted
-    .slice(0, 8)
-    .map(([s, c]) => `${s}: ${c}`)
-    .concat(sorted.length > 8 ? [`… +${sorted.length - 8} more`] : [])
-    .join('\n');
-  return { text, title };
-};
-
-export const defaultAggregators: Record<
-  NonNullable<TableColumn['kind']>,
-  AggregateFn
-> = {
-  number: numberAggregator,
-  boolean: booleanAggregator,
-  string: stringAggregator,
-};
-
-function aggregatorFor(col: TableColumn): AggregateFn {
-  if (col.aggregate) return col.aggregate;
-  return defaultAggregators[col.kind ?? 'string'];
+function visibleColumnsRange(width: number, scrollLeft: number) {
+  return { start: scrollLeft, end: scrollLeft + width };
 }
 
-function normalizeAggregateResult(
-  out: AggregateResult | string,
-): AggregateResult {
-  return typeof out === 'string' ? { text: out } : out;
+/** Resolve the user's overrides on top of the factory column definitions
+ *  to produce the list rendered by the body. Hidden columns are filtered
+ *  out; the order honours `state.columnOrder` with any missing ids
+ *  appended in factory order. Per-column display/kind/aggregation
+ *  decisions also fall through to factory ⇒ kind defaults. */
+function resolveColumns(
+  factory: TableColumn[],
+  state: TableZoneState | undefined,
+): { effective: EffectiveColumn[]; orderedIds: string[] } {
+  const overrides = state?.columnOverrides ?? {};
+  const factoryIds = factory.map((c) => c.id);
+  const order = state?.columnOrder;
+  const seen = new Set<string>();
+  const orderedIds: string[] = [];
+  if (order) {
+    for (const id of order) {
+      if (factoryIds.includes(id) && !seen.has(id)) {
+        seen.add(id);
+        orderedIds.push(id);
+      }
+    }
+  }
+  for (const id of factoryIds) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      orderedIds.push(id);
+    }
+  }
+
+  const factoryById = new Map(factory.map((c) => [c.id, c]));
+  const effective: EffectiveColumn[] = [];
+  for (const id of orderedIds) {
+    const base = factoryById.get(id);
+    if (!base) continue;
+    const ov = overrides[id] ?? {};
+    if (ov.hidden) continue;
+    const kind: ColumnKind = ov.kind ?? base.kind ?? 'string';
+    const factoryDisplay = base.display ?? 'text';
+    let display = ov.display ?? factoryDisplay;
+    // Heatmap is numeric-only; coerce silently if a kind change made it
+    // illegal (the popover prevents this UX-side, but URL-state import
+    // can still produce mismatches).
+    if (display === 'heatmap' && kind !== 'number') display = 'text';
+    let aggregator: AggregateFn;
+    if (base.aggregate) aggregator = base.aggregate;
+    else aggregator = methodForKind(kind, ov.aggregateMethod).fn;
+    effective.push({
+      id,
+      base,
+      label: ov.label ?? base.label,
+      kind,
+      width: base.width ?? DEFAULT_COL_WIDTH,
+      align: base.align ?? defaultAlign(kind),
+      display,
+      aggregator,
+      format: base.format,
+    });
+  }
+  return { effective, orderedIds };
+}
+
+function computeOffsets(cols: EffectiveColumn[]): {
+  offsets: number[];
+  contentWidth: number;
+} {
+  const offsets: number[] = [];
+  let acc = 0;
+  for (const c of cols) {
+    offsets.push(acc);
+    acc += c.width;
+  }
+  return { offsets, contentWidth: acc };
 }
 
 /** Collect non-null table values for one column across every leaf under
  *  the collapsed subtree rooted at `nodeId`. Pruned subtrees are skipped
- *  so totals match the chassis-supplied `leafCount` for the row.
- *  Returns the values plus total-leaves / leaves-with-value counts so
- *  aggregators can report coverage. */
+ *  so totals match the chassis-supplied `leafCount` for the row. */
 function collectColumnValues(
   rootId: NodeId,
   columnId: string,
@@ -224,19 +209,32 @@ function collectColumnValues(
 export function createTableZone(
   opts: CreateTableZoneOptions,
 ): ZoneDefinition<TableZoneState> {
-  const columns = opts.columns;
-  const colWidths = columns.map((c) => c.width ?? DEFAULT_COL_WIDTH);
-  const colOffsets: number[] = [];
-  let acc = 0;
-  for (const w of colWidths) {
-    colOffsets.push(acc);
-    acc += w;
-  }
-  const contentWidth = acc;
+  const factoryColumns = opts.columns;
+  // Per-column heatmap domains are computed once across the full table —
+  // colours stay stable as the user collapses / prunes / scrolls. We
+  // only build domains for numerical columns; the body skips heatmap
+  // colouring when no domain is registered.
+  const heatmapDomains: Record<string, HeatmapDomain> = buildHeatmapDomains(
+    opts.table,
+    factoryColumns.filter((c) => (c.kind ?? 'string') === 'number').map((c) => c.id),
+  );
+  const fallbackContentWidth = factoryColumns.reduce(
+    (n, c) => n + (c.width ?? DEFAULT_COL_WIDTH),
+    0,
+  );
 
   const Header = (props: ZoneRenderProps<TableZoneState>) => {
     const { zoneState, setZoneState, width, bodyScrollLeft } = props;
-    const name = zoneState?.name ?? opts.defaultName;
+    const state = zoneState ?? DEFAULT_STATE;
+    const name = state.name ?? opts.defaultName;
+    const { effective, orderedIds } = useMemo(
+      () => resolveColumns(factoryColumns, state),
+      [state],
+    );
+    const { offsets, contentWidth } = useMemo(
+      () => computeOffsets(effective),
+      [effective],
+    );
 
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(name);
@@ -264,7 +262,7 @@ export function createTableZone(
       setEditing(false);
     };
 
-    const visibleColRange = visibleColumns(width, bodyScrollLeft);
+    const visibleColRange = visibleColumnsRange(width, bodyScrollLeft);
 
     return (
       <div
@@ -276,7 +274,6 @@ export function createTableZone(
           color: 'var(--tbrowse-text)',
         }}
       >
-        {/* Row 1: zone name + config slot */}
         <div
           style={{
             flex: 1,
@@ -332,10 +329,22 @@ export function createTableZone(
               fontWeight: 400,
             }}
           >
-            {columns.length} col{columns.length === 1 ? '' : 's'}
+            {effective.length}/{factoryColumns.length} col
+            {factoryColumns.length === 1 ? '' : 's'}
+          </span>
+          <span style={{ marginLeft: 'auto' }}>
+            <ConfigPopover
+              factoryColumns={factoryColumns}
+              state={state}
+              setState={(next) =>
+                setZoneState((s) =>
+                  typeof next === 'function' ? next(s ?? DEFAULT_STATE) : next,
+                )
+              }
+              orderedIds={orderedIds}
+            />
           </span>
         </div>
-        {/* Row 2: column headers, aligned with body cells */}
         <div
           style={{
             flex: `0 0 ${HEADER_ROW_HEIGHT}px`,
@@ -357,15 +366,15 @@ export function createTableZone(
               display: 'flex',
             }}
           >
-            {columns.map((c, i) => {
+            {effective.map((c, i) => {
               if (
-                colOffsets[i] + colWidths[i] < visibleColRange.start ||
-                colOffsets[i] > visibleColRange.end
+                offsets[i] + c.width < visibleColRange.start ||
+                offsets[i] > visibleColRange.end
               ) {
                 return (
                   <div
                     key={c.id}
-                    style={{ width: colWidths[i], flex: `0 0 ${colWidths[i]}px` }}
+                    style={{ width: c.width, flex: `0 0 ${c.width}px` }}
                   />
                 );
               }
@@ -374,12 +383,12 @@ export function createTableZone(
                   key={c.id}
                   title={c.label}
                   style={{
-                    width: colWidths[i],
-                    flex: `0 0 ${colWidths[i]}px`,
+                    width: c.width,
+                    flex: `0 0 ${c.width}px`,
                     padding: '0 6px',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: justifyFor(c.align ?? defaultAlign(c.kind)),
+                    justifyContent: justifyFor(c.align),
                     fontSize: 11,
                     fontWeight: 600,
                     color: 'var(--tbrowse-text-muted)',
@@ -413,12 +422,22 @@ export function createTableZone(
       bodyScrollLeft,
       setBodyScrollLeft,
       data,
+      zoneState,
     } = props;
+    const state = zoneState ?? DEFAULT_STATE;
+    const theme = useTBrowseStore((s) => s.theme);
+
+    const { effective } = useMemo(
+      () => resolveColumns(factoryColumns, state),
+      [state],
+    );
+    const { offsets, contentWidth } = useMemo(
+      () => computeOffsets(effective),
+      [effective],
+    );
 
     const maxScroll = Math.max(0, contentWidth - width);
 
-    // Clamp bodyScrollLeft if the zone got wider since the last render —
-    // a stale offset would leave blank space on the right.
     useEffect(() => {
       if (bodyScrollLeft > maxScroll) setBodyScrollLeft(maxScroll);
     }, [bodyScrollLeft, maxScroll, setBodyScrollLeft]);
@@ -434,10 +453,7 @@ export function createTableZone(
     );
 
     const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
-    const visibleColRange = visibleColumns(width, bodyScrollLeft);
-    // ChildrenIndex is keyed by the tree, so memoize across renders that
-    // share the same tree object (typical — host swaps tree only on data
-    // load). Aggregation walks the subtree once per (collapsed row, column).
+    const visibleColRange = visibleColumnsRange(width, bodyScrollLeft);
     const childrenIndex = useMemo(
       () => buildChildrenIndex(data.tree),
       [data.tree],
@@ -503,24 +519,22 @@ export function createTableZone(
                   userSelect: 'text',
                 }}
               >
-                {columns.map((c, i) => {
+                {effective.map((c, i) => {
                   if (
-                    colOffsets[i] + colWidths[i] < visibleColRange.start ||
-                    colOffsets[i] > visibleColRange.end
+                    offsets[i] + c.width < visibleColRange.start ||
+                    offsets[i] > visibleColRange.end
                   ) {
                     return (
                       <div
                         key={c.id}
-                        style={{
-                          width: colWidths[i],
-                          flex: `0 0 ${colWidths[i]}px`,
-                        }}
+                        style={{ width: c.width, flex: `0 0 ${c.width}px` }}
                       />
                     );
                   }
                   let cellText: string;
                   let cellTitle: string;
                   let isMissing: boolean;
+                  let heatmapValue: number | null = null;
                   if (isCollapsed) {
                     const ctx = collectColumnValues(
                       r.nodeId,
@@ -530,12 +544,16 @@ export function createTableZone(
                       childrenIndex,
                       prunedNodeIds,
                     );
-                    const out = normalizeAggregateResult(
-                      aggregatorFor(c)(ctx),
-                    );
+                    const out = normalizeAggregateResult(c.aggregator(ctx));
                     cellText = out.text;
                     cellTitle = out.title ?? out.text;
                     isMissing = ctx.leavesWithValue === 0;
+                    if (
+                      c.display === 'heatmap' &&
+                      typeof out.numeric === 'number'
+                    ) {
+                      heatmapValue = out.numeric;
+                    }
                   } else {
                     const raw = rowData?.[c.id];
                     isMissing = raw === null || raw === undefined;
@@ -543,27 +561,49 @@ export function createTableZone(
                       ? c.format(raw)
                       : defaultFormat(raw, c.kind);
                     cellTitle = isMissing ? '' : cellText;
+                    if (
+                      c.display === 'heatmap' &&
+                      typeof raw === 'number' &&
+                      Number.isFinite(raw)
+                    ) {
+                      heatmapValue = raw;
+                    }
+                  }
+                  // Heatmap colouring on top of the row's hover/select bg —
+                  // applied as a div background so hover/select stripes
+                  // still tint the row in non-heatmap columns.
+                  let cellBg: string | undefined;
+                  let cellFg: string | undefined;
+                  if (
+                    c.display === 'heatmap' &&
+                    heatmapValue !== null &&
+                    heatmapDomains[c.id]
+                  ) {
+                    const t = normalize(heatmapValue, heatmapDomains[c.id]);
+                    if (t !== null) {
+                      cellBg = heatmapBackground(t, theme);
+                      cellFg = heatmapForeground(t, theme);
+                    }
                   }
                   return (
                     <div
                       key={c.id}
                       title={cellTitle}
                       style={{
-                        width: colWidths[i],
-                        flex: `0 0 ${colWidths[i]}px`,
+                        width: c.width,
+                        flex: `0 0 ${c.width}px`,
                         padding: '0 6px',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: justifyFor(
-                          c.align ?? defaultAlign(c.kind),
-                        ),
+                        justifyContent: justifyFor(c.align),
                         borderRight: '1px solid var(--tbrowse-border-row)',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        color: isMissing
+                        color: cellFg ?? (isMissing
                           ? 'var(--tbrowse-text-subtle)'
-                          : 'inherit',
+                          : 'inherit'),
+                        background: cellBg,
                         fontVariantNumeric:
                           c.kind === 'number' ? 'tabular-nums' : undefined,
                       }}
@@ -585,7 +625,8 @@ export function createTableZone(
     displayName: opts.defaultName,
     Header,
     Body,
-    defaultWidth: opts.defaultWidth ?? Math.min(40, Math.max(10, contentWidth / 20)),
+    defaultWidth:
+      opts.defaultWidth ?? Math.min(40, Math.max(10, fallbackContentWidth / 20)),
     minWidth: opts.minWidth ?? 80,
     defaultZoneState: DEFAULT_STATE,
     isAvailable: () => true,
@@ -593,12 +634,5 @@ export function createTableZone(
   };
 }
 
-function justifyFor(align: 'left' | 'right' | 'center'): React.CSSProperties['justifyContent'] {
-  if (align === 'right') return 'flex-end';
-  if (align === 'center') return 'center';
-  return 'flex-start';
-}
-
-function visibleColumns(width: number, scrollLeft: number) {
-  return { start: scrollLeft, end: scrollLeft + width };
-}
+// Re-exports kept for completeness of the public surface.
+export { DEFAULT_METHOD_ID, methodForKind };
