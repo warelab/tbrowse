@@ -501,37 +501,84 @@ function App() {
       <div
         className="panel"
         style={{
-          padding: 12,
           borderBottom: '1px solid var(--tbrowse-divider)',
           background: 'var(--tbrowse-bg-strip)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <strong style={{ marginRight: 12 }}>tbrowse playground</strong>
-        <span style={{ marginRight: 12, color: '#666', fontSize: 12 }}>data:</span>
-        <button
-          onClick={switchToSample}
-          disabled={dataSource === 'sample'}
-          style={{ marginRight: 4 }}
-        >
-          Sample
-        </button>
-        <button
-          onClick={loadEnsembl}
-          disabled={dataSource === 'ensembl' || ensemblStatus === 'loading'}
-        >
-          {ensemblStatus === 'loading'
-            ? 'Loading…'
-            : ensemblData
-              ? 'Ensembl (cached)'
-              : 'Load Ensembl tree'}
-        </button>
-        {dataSource === 'ensembl' && ensemblData && (
+        {/* 1 — Sample tree + sample-only operations */}
+        <ToolbarRow label="Sample">
+          <button
+            onClick={switchToSample}
+            disabled={dataSource === 'sample'}
+          >
+            Sample
+          </button>
+          <button
+            onClick={() => setCollapsed(['n1'])}
+            disabled={dataSource !== 'sample'}
+          >
+            collapse n1
+          </button>
+          <button
+            onClick={() => setCollapsed(['n3'])}
+            disabled={dataSource !== 'sample'}
+          >
+            collapse n3
+          </button>
+          <button
+            onClick={() => setPruned(['n1'])}
+            disabled={dataSource !== 'sample'}
+          >
+            prune n1
+          </button>
+          <button
+            onClick={() => setPruned(['n4'])}
+            disabled={dataSource !== 'sample'}
+          >
+            prune n4
+          </button>
+          <button
+            onClick={() => pivotTo('ENSG00000000001')}
+            disabled={dataSource !== 'sample'}
+          >
+            pivot to Human
+          </button>
+          <button
+            onClick={() => pivotTo('ENSDARG00000001')}
+            disabled={dataSource !== 'sample'}
+          >
+            pivot to Zebrafish
+          </button>
+          <button
+            onClick={() => setTree((t) => (t === sampleTree ? largeSampleTree : sampleTree))}
+            disabled={dataSource !== 'sample'}
+          >
+            toggle tree size
+          </button>
+        </ToolbarRow>
+
+        {/* 2 — Ensembl tree + Pfam domains fan-out */}
+        <ToolbarRow label="Ensembl">
+          <button
+            onClick={loadEnsembl}
+            disabled={dataSource === 'ensembl' || ensemblStatus === 'loading'}
+          >
+            {ensemblStatus === 'loading'
+              ? 'Loading…'
+              : ensemblData
+                ? 'Ensembl (cached)'
+                : 'Load Ensembl tree'}
+          </button>
           <button
             onClick={loadEnsemblDomains}
             disabled={
-              !!ensemblDomains || domainStatus.state === 'loading'
+              dataSource !== 'ensembl' ||
+              !ensemblData ||
+              !!ensemblDomains ||
+              domainStatus.state === 'loading'
             }
-            style={{ marginLeft: 4 }}
             title="Fan out to /overlap/translation/{ENSP} for each leaf and feed through fromEnsemblProteinFeatures."
           >
             {domainStatus.state === 'loading'
@@ -540,8 +587,20 @@ function App() {
                 ? 'Pfam domains (cached)'
                 : 'Load Pfam domains'}
           </button>
-        )}
-        <span style={{ marginLeft: 8, display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+          {domainStatus.state === 'error' && (
+            <span style={{ color: '#c0392b', fontSize: 12 }}>
+              domains error: {domainStatus.error}
+            </span>
+          )}
+          {ensemblError && (
+            <span style={{ color: '#c0392b', fontSize: 12 }}>
+              error: {ensemblError}
+            </span>
+          )}
+        </ToolbarRow>
+
+        {/* 3 — Gramene tree + user data uploads */}
+        <ToolbarRow label="Gramene & data">
           <input
             type="text"
             value={grameneGeneInput}
@@ -552,7 +611,7 @@ function App() {
               }
             }}
             placeholder="Gramene gene id"
-            style={{ width: 140, fontSize: 12 }}
+            style={{ width: 160, fontSize: 12 }}
             disabled={grameneStatus.state === 'loading'}
           />
           <button
@@ -562,116 +621,87 @@ function App() {
           >
             {grameneStatus.state === 'loading' ? 'Loading…' : 'Load Gramene'}
           </button>
-        </span>
-        <span
-          style={{
-            marginLeft: 8,
-            display: 'inline-flex',
-            gap: 4,
-            alignItems: 'center',
-          }}
-          title="Upload a CSV/TSV with a gene_id column — each upload creates a new table zone keyed by gene id, so it links directly to whichever tree is loaded (e.g. the Gramene tree)."
-        >
-          <label
-            style={{
-              fontSize: 12,
-              padding: '2px 8px',
-              border: '1px solid #888',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: '#f7f7f7',
-            }}
+          <span
+            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+            title="Upload a CSV/TSV with a gene_id column — each upload creates a new table zone keyed by gene id, so it links directly to whichever tree is loaded (e.g. the Gramene tree)."
           >
-            Upload data…
-            <input
-              type="file"
-              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
-              multiple
-              onChange={(e) => {
-                handleUploadedFiles(e.target.files);
-                // Reset the input so the same file can be re-uploaded.
-                e.target.value = '';
+            <label
+              style={{
+                fontSize: 12,
+                padding: '2px 8px',
+                border: '1px solid var(--tbrowse-border)',
+                borderRadius: 3,
+                cursor: 'pointer',
+                background: 'var(--tbrowse-bg-input)',
               }}
-              style={{ display: 'none' }}
-            />
-          </label>
-          {uploadedZones.length > 0 && (
-            <span style={{ fontSize: 11, color: '#666' }}>
-              {uploadedZones.length} uploaded
+            >
+              Upload data…
+              <input
+                type="file"
+                accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+                multiple
+                onChange={(e) => {
+                  handleUploadedFiles(e.target.files);
+                  e.target.value = '';
+                }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {uploadedZones.length > 0 && (
+              <span style={{ fontSize: 11, color: 'var(--tbrowse-text-muted)' }}>
+                {uploadedZones.length} uploaded
+              </span>
+            )}
+          </span>
+          {grameneStatus.state === 'error' && (
+            <span style={{ color: '#c0392b', fontSize: 12 }}>
+              gramene error: {grameneStatus.error}
             </span>
           )}
-        </span>
-        <span style={{ marginLeft: 12 }}>
-          <button onClick={reset}>reset</button>
-          {dataSource === 'sample' && (
-            <>
-              <button onClick={() => setCollapsed(['n1'])}>collapse n1</button>
-              <button onClick={() => setCollapsed(['n3'])}>collapse n3</button>
-              <button onClick={() => setPruned(['n1'])}>prune n1</button>
-              <button onClick={() => setPruned(['n4'])}>prune n4</button>
-              <button onClick={() => pivotTo('ENSG00000000001')}>pivot to Human</button>
-              <button onClick={() => pivotTo('ENSDARG00000001')}>pivot to Zebrafish</button>
-              <button
-                onClick={() => setTree((t) => (t === sampleTree ? largeSampleTree : sampleTree))}
-              >
-                toggle tree size
-              </button>
-            </>
+          {uploadStatus.state === 'error' && uploadStatus.message && (
+            <span style={{ color: '#c0392b', fontSize: 12 }}>
+              upload: {uploadStatus.message}
+            </span>
           )}
-        </span>
-        <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
-          theme:&nbsp;
-          <button
-            type="button"
-            onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
-            style={{ fontSize: 12 }}
-          >
-            {theme === 'light' ? '☀ light' : '☾ dark'}
-          </button>
-        </span>
-        <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
-          pruned-mark:&nbsp;
-          <select
-            value={prunedStyle}
-            onChange={(e) => setPrunedStyle(e.target.value as PrunedNodeStyle)}
-          >
-            {PRUNED_STYLES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </span>
-        <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
-          selected: {viewState.selectedNodeId ?? '—'}
-        </span>
-        {stats && (
-          <span style={{ marginLeft: 16, color: '#666', fontSize: 12 }}>
-            {stats.source}: {stats.leaves} leaves · {stats.nodes} nodes · {stats.taxa} taxa ·
-            MSA {stats.msaLength} cols
+        </ToolbarRow>
+
+        {/* 4 — global controls + status readouts */}
+        <ToolbarRow label="Controls">
+          <button onClick={reset}>reset</button>
+          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+            theme:&nbsp;
+            <button
+              type="button"
+              onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+              style={{ fontSize: 12 }}
+            >
+              {theme === 'light' ? '☀ light' : '☾ dark'}
+            </button>
           </span>
-        )}
-        {domainStatus.state === 'error' && (
-          <span style={{ marginLeft: 12, color: '#c0392b', fontSize: 12 }}>
-            domains error: {domainStatus.error}
+          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+            pruned-mark:&nbsp;
+            <select
+              value={prunedStyle}
+              onChange={(e) => setPrunedStyle(e.target.value as PrunedNodeStyle)}
+            >
+              {PRUNED_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
           </span>
-        )}
-        {grameneStatus.state === 'error' && (
-          <span style={{ marginLeft: 12, color: '#c0392b', fontSize: 12 }}>
-            gramene error: {grameneStatus.error}
+          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+            selected: {viewState.selectedNodeId ?? '—'}
           </span>
-        )}
-        {ensemblError && (
-          <span style={{ marginLeft: 12, color: '#c0392b', fontSize: 12 }}>
-            error: {ensemblError}
-          </span>
-        )}
-        {uploadStatus.state === 'error' && uploadStatus.message && (
-          <span style={{ marginLeft: 12, color: '#c0392b', fontSize: 12 }}>
-            upload: {uploadStatus.message}
-          </span>
-        )}
+          {stats && (
+            <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+              {stats.source}: {stats.leaves} leaves · {stats.nodes} nodes ·{' '}
+              {stats.taxa} taxa · MSA {stats.msaLength} cols
+            </span>
+          )}
+        </ToolbarRow>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         <TBrowse
@@ -683,6 +713,45 @@ function App() {
           theme={theme}
         />
       </div>
+    </div>
+  );
+}
+
+/** One row of the playground toolbar. Labels are aligned in a small
+ *  fixed-width column so the section headings line up vertically across
+ *  the four rows. */
+function ToolbarRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 6,
+        padding: '8px 12px',
+        borderBottom: '1px solid var(--tbrowse-border-soft)',
+      }}
+    >
+      <span
+        style={{
+          width: 110,
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--tbrowse-text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+          flex: '0 0 110px',
+        }}
+      >
+        {label}
+      </span>
+      {children}
     </div>
   );
 }
