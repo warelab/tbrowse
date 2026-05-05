@@ -52,6 +52,7 @@ export { AGGREGATE_METHODS, defaultAggregators };
 export type { TableColumnOverride } from './types';
 
 const DEFAULT_COL_WIDTH = 90;
+const MIN_COL_WIDTH = 30;
 const HEADER_ROW_HEIGHT = LEAF_ROW_HEIGHT;
 
 const DEFAULT_STATE: TableZoneState = {};
@@ -163,7 +164,7 @@ function resolveColumns(
       base,
       label: ov.label ?? base.label,
       kind,
-      width: base.width ?? DEFAULT_COL_WIDTH,
+      width: Math.max(MIN_COL_WIDTH, ov.width ?? base.width ?? DEFAULT_COL_WIDTH),
       align: base.align ?? defaultAlign(kind),
       display,
       aggregator,
@@ -420,9 +421,27 @@ export function createTableZone(
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
+                    position: 'relative',
                   }}
                 >
-                  {c.label}
+                  <span
+                    style={{
+                      flex: '1 1 auto',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {c.label}
+                  </span>
+                  <ResizeHandle
+                    columnId={c.id}
+                    currentWidth={c.width}
+                    factoryWidth={c.base.width ?? DEFAULT_COL_WIDTH}
+                    setZoneState={(updater) =>
+                      setZoneState((s) => updater(s ?? DEFAULT_STATE))
+                    }
+                  />
                 </div>
               );
             })}
@@ -719,6 +738,98 @@ function buildTableColumnSearchField(
       return span ? { value: v, start: span[0], end: span[1] } : null;
     },
   };
+}
+
+/** A 6 px-wide hit target sitting on the column's right edge. Drag to
+ *  resize the column; double-click to clear the user override and
+ *  restore the factory width. The cursor is `col-resize` so the
+ *  affordance reads even when the strip itself stays invisible. */
+function ResizeHandle({
+  columnId,
+  currentWidth,
+  factoryWidth,
+  setZoneState,
+}: {
+  columnId: string;
+  currentWidth: number;
+  factoryWidth: number;
+  setZoneState: (
+    updater: (prev: TableZoneState) => TableZoneState,
+  ) => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const setOverrideWidth = (next: number | undefined) => {
+    setZoneState((prev) => {
+      const overrides = { ...(prev.columnOverrides ?? {}) };
+      const cur = overrides[columnId] ?? {};
+      const merged = { ...cur, width: next };
+      if (next === undefined) delete merged.width;
+      // Drop the entry entirely when nothing's overridden.
+      if (Object.keys(merged).filter((k) => merged[k as keyof typeof merged] !== undefined).length === 0) {
+        delete overrides[columnId];
+      } else {
+        overrides[columnId] = merged;
+      }
+      return { ...prev, columnOverrides: overrides };
+    });
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = { startX: e.clientX, startWidth: currentWidth };
+    const onMove = (ev: PointerEvent) => {
+      if (!dragRef.current) return;
+      const dx = ev.clientX - dragRef.current.startX;
+      const next = Math.max(MIN_COL_WIDTH, dragRef.current.startWidth + dx);
+      setOverrideWidth(next);
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
+
+  const onDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Setting width undefined clears the override; the column reverts
+    // to the factory width on next render.
+    void factoryWidth;
+    setOverrideWidth(undefined);
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize column"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title="Drag to resize · double-click to reset"
+      style={{
+        position: 'absolute',
+        top: 0,
+        right: -3,
+        width: 6,
+        height: '100%',
+        cursor: 'col-resize',
+        zIndex: 1,
+        background: hover ? 'var(--tbrowse-accent)' : 'transparent',
+        opacity: hover ? 0.6 : 1,
+        userSelect: 'none',
+        touchAction: 'none',
+      }}
+    />
+  );
 }
 
 // Re-exports kept for completeness of the public surface.

@@ -49,6 +49,9 @@ export interface TableColumnOverride {
    *  dropdown (label `"<zoneName> | <columnName>"`). Honoured only on
    *  string-kind columns. */
   searchable?: boolean;
+  /** User-resized column width in px. Falls back to the factory column's
+   *  `width`, then to the zone-wide default. */
+  width?: number;
   /** User-chosen palette id. Falls back to the factory column's
    *  `palette`, then to the data-driven auto-pick. */
   palette?: string;
