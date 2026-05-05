@@ -4,6 +4,7 @@ import {
   TBrowse,
   computePivotState,
   createTableZone,
+  type ZoneDefinition,
   fromEnsemblGeneTree,
   fromEnsemblProteinFeatures,
   fromGrameneGene,
@@ -47,6 +48,7 @@ import {
   sampleTaxonomy,
   sampleTree,
 } from './sampleTree';
+import { parseTableFile } from './parseTableFile';
 
 const ENSEMBL_GENE_OF_INTEREST = 'ENSG00000139618'; // BRCA2 (human)
 const ENSEMBL_URL = `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${ENSEMBL_GENE_OF_INTEREST}?aligned=1&sequence=protein`;
@@ -111,6 +113,11 @@ function App() {
       }),
     [],
   );
+  const [uploadedZones, setUploadedZones] = useState<ZoneDefinition[]>([]);
+  const [uploadStatus, setUploadStatus] = useState<{
+    state: 'idle' | 'error';
+    message?: string;
+  }>({ state: 'idle' });
   const zones = useMemo(
     () => [
       treeZone,
@@ -119,8 +126,9 @@ function App() {
       neighborhoodZone,
       expressionZone,
       scoresZone,
+      ...uploadedZones,
     ],
-    [expressionZone, scoresZone],
+    [expressionZone, scoresZone, uploadedZones],
   );
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
@@ -343,6 +351,55 @@ function App() {
     setViewState(buildInitialViewState(zoneIds));
   };
 
+  const handleUploadedFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadStatus({ state: 'idle' });
+    for (const file of Array.from(files)) {
+      try {
+        const text = await file.text();
+        const parsed = parseTableFile(text);
+        if (parsed.columns.length === 0 || parsed.rowCount === 0) {
+          setUploadStatus({
+            state: 'error',
+            message: `${file.name}: ${parsed.warnings.join('; ') || 'no data rows'}`,
+          });
+          continue;
+        }
+        const stem = file.name.replace(/\.[^.]+$/, '');
+        const id = `upload-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const zone = createTableZone({
+          id,
+          defaultName: stem,
+          table: parsed.table,
+          columns: parsed.columns,
+          defaultWidth: 14,
+          minWidth: 140,
+        });
+        setUploadedZones((prev) => [...prev, zone]);
+        // Append zoneState entry so the chassis lays the new zone out
+        // immediately instead of waiting for an interaction.
+        setViewState((vs) => ({
+          ...vs,
+          zones: [
+            ...vs.zones,
+            { id, width: zone.defaultWidth, visible: true },
+          ],
+        }));
+        if (parsed.warnings.length > 0) {
+          setUploadStatus({
+            state: 'error',
+            message: `${file.name}: ${parsed.warnings.join('; ')}`,
+          });
+        }
+      } catch (err) {
+        setUploadStatus({
+          state: 'error',
+          message: `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+  };
+
   const setCollapsed = (ids: string[]) =>
     setViewState((vs) => ({ ...vs, collapsedNodeIds: ids }));
   const setPruned = (ids: string[]) =>
@@ -506,6 +563,44 @@ function App() {
             {grameneStatus.state === 'loading' ? 'Loading…' : 'Load Gramene'}
           </button>
         </span>
+        <span
+          style={{
+            marginLeft: 8,
+            display: 'inline-flex',
+            gap: 4,
+            alignItems: 'center',
+          }}
+          title="Upload a CSV/TSV with a gene_id column — each upload creates a new table zone keyed by gene id, so it links directly to whichever tree is loaded (e.g. the Gramene tree)."
+        >
+          <label
+            style={{
+              fontSize: 12,
+              padding: '2px 8px',
+              border: '1px solid #888',
+              borderRadius: 3,
+              cursor: 'pointer',
+              background: '#f7f7f7',
+            }}
+          >
+            Upload data…
+            <input
+              type="file"
+              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+              multiple
+              onChange={(e) => {
+                handleUploadedFiles(e.target.files);
+                // Reset the input so the same file can be re-uploaded.
+                e.target.value = '';
+              }}
+              style={{ display: 'none' }}
+            />
+          </label>
+          {uploadedZones.length > 0 && (
+            <span style={{ fontSize: 11, color: '#666' }}>
+              {uploadedZones.length} uploaded
+            </span>
+          )}
+        </span>
         <span style={{ marginLeft: 12 }}>
           <button onClick={reset}>reset</button>
           {dataSource === 'sample' && (
@@ -570,6 +665,11 @@ function App() {
         {ensemblError && (
           <span style={{ marginLeft: 12, color: '#c0392b', fontSize: 12 }}>
             error: {ensemblError}
+          </span>
+        )}
+        {uploadStatus.state === 'error' && uploadStatus.message && (
+          <span style={{ marginLeft: 12, color: '#c0392b', fontSize: 12 }}>
+            upload: {uploadStatus.message}
           </span>
         )}
       </div>
