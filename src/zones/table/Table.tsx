@@ -23,6 +23,7 @@ import {
   type HeatmapDomain,
 } from './heatmap';
 import { ConfigPopover } from './ConfigPopover';
+import { compileStringMatcher, type SearchField } from '../../search/fields';
 import type {
   CreateTableZoneOptions,
   TableCellValue,
@@ -631,6 +632,63 @@ export function createTableZone(
     defaultZoneState: DEFAULT_STATE,
     isAvailable: () => true,
     defaultVisible: opts.defaultVisible,
+    getSearchFields: (state, _data) => {
+      const overrides = state?.columnOverrides ?? {};
+      const zoneName = state?.name ?? opts.defaultName;
+      const fields: SearchField[] = [];
+      for (const col of factoryColumns) {
+        const ov = overrides[col.id] ?? {};
+        const kind = ov.kind ?? col.kind ?? 'string';
+        if (kind !== 'string') continue;
+        const enabled = ov.searchable ?? col.searchable ?? false;
+        if (!enabled) continue;
+        const label = `${zoneName} | ${ov.label ?? col.label}`;
+        fields.push(buildTableColumnSearchField(opts.id, col.id, label, opts.table));
+      }
+      return fields;
+    },
+  };
+}
+
+/** Build a SearchField that scans cell values in `table[geneId]?.[columnId]`.
+ *  String values only — non-string entries are coerced via `String(...)` so
+ *  numbers stringified by the host (e.g. accession ids stored as numbers)
+ *  still match, but the match-span pointer remains accurate. */
+function buildTableColumnSearchField(
+  zoneId: string,
+  columnId: string,
+  label: string,
+  table: TableData,
+): SearchField {
+  const id = `table:${zoneId}:${columnId}`;
+  const valueOf = (geneId: string | undefined): string | null => {
+    if (!geneId) return null;
+    const v = table[geneId]?.[columnId];
+    if (v === null || v === undefined) return null;
+    return typeof v === 'string' ? v : String(v);
+  };
+  return {
+    id,
+    label,
+    buildPredicate(query, opts) {
+      const matcher = compileStringMatcher(query, opts);
+      if (!matcher.ok) return matcher;
+      return {
+        ok: true,
+        test: (node) => {
+          const v = valueOf(node.geneId);
+          return v != null && matcher.test(v);
+        },
+      };
+    },
+    describeMatch(node, query, opts) {
+      const v = valueOf(node.geneId);
+      if (v == null) return null;
+      const matcher = compileStringMatcher(query, opts);
+      if (!matcher.ok) return null;
+      const span = matcher.spanOf(v);
+      return span ? { value: v, start: span[0], end: span[1] } : null;
+    },
   };
 }
 

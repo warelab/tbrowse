@@ -29,6 +29,9 @@ interface EffectiveColumnRow {
   /** True when the factory provides a hard `aggregate` override; method
    *  picker is disabled in that case. */
   aggregateLocked: boolean;
+  /** Resolved searchable flag (override → factory default → false).
+   *  Honoured only on string-kind columns. */
+  searchable: boolean;
 }
 
 interface ConfigPopoverProps {
@@ -80,6 +83,7 @@ export function ConfigPopover({
         display: safeDisplay,
         aggregateMethodId,
         aggregateLocked,
+        searchable: ov.searchable ?? base.searchable ?? false,
       };
     })
     .filter((r): r is EffectiveColumnRow => r !== null);
@@ -194,6 +198,24 @@ export function ConfigPopover({
     });
   };
 
+  const setAllSearchable = (searchable: boolean) => {
+    setState((s) => {
+      const next = { ...(s.columnOverrides ?? {}) };
+      for (const r of rows) {
+        // Only string columns can be search sources — text-bearing only.
+        if (r.kind !== 'string') continue;
+        const cur = next[r.base.id] ?? {};
+        const factoryDefault = r.base.searchable ?? false;
+        const merged: TableColumnOverride = { ...cur };
+        if (searchable === factoryDefault) delete merged.searchable;
+        else merged.searchable = searchable;
+        if (Object.keys(merged).length === 0) delete next[r.base.id];
+        else next[r.base.id] = merged;
+      }
+      return { ...s, columnOverrides: next };
+    });
+  };
+
   const resetAll = () => {
     setState((s) => ({
       ...s,
@@ -211,6 +233,9 @@ export function ConfigPopover({
   const allHeatmapOn =
     heatmapEligible.length > 0 &&
     heatmapEligible.every((r) => r.display === 'heatmap');
+  const searchEligible = rows.filter((r) => r.kind === 'string');
+  const allSearchOn =
+    searchEligible.length > 0 && searchEligible.every((r) => r.searchable);
 
   return (
     <>
@@ -285,6 +310,7 @@ export function ConfigPopover({
                     <Th>Kind</Th>
                     <Th>Display</Th>
                     <Th>Aggregation</Th>
+                    <Th>Searchable</Th>
                   </tr>
                   <tr style={{ background: 'var(--tbrowse-bg-alt)' }}>
                     <Td>
@@ -341,6 +367,23 @@ export function ConfigPopover({
                       </button>
                     </Td>
                     <Td />
+                    <Td>
+                      <button
+                        type="button"
+                        style={popoverButtonStyle()}
+                        onClick={() => setAllSearchable(!allSearchOn)}
+                        disabled={searchEligible.length === 0}
+                        title={
+                          searchEligible.length === 0
+                            ? 'No text columns'
+                            : allSearchOn
+                              ? 'Stop searching every text column'
+                              : 'Make every text column searchable'
+                        }
+                      >
+                        {allSearchOn ? 'text → off' : 'text → on'}
+                      </button>
+                    </Td>
                   </tr>
                 </thead>
                 <tbody>
@@ -472,6 +515,26 @@ export function ConfigPopover({
                             ))}
                           </select>
                         )}
+                      </Td>
+                      <Td>
+                        <input
+                          type="checkbox"
+                          checked={r.searchable}
+                          disabled={r.kind !== 'string'}
+                          title={
+                            r.kind === 'string'
+                              ? 'Add this column to the search-bar dropdown'
+                              : 'Searchable supports text columns only'
+                          }
+                          onChange={(e) =>
+                            updateOverride(r.base.id, {
+                              searchable:
+                                e.target.checked === (r.base.searchable ?? false)
+                                  ? undefined
+                                  : e.target.checked,
+                            })
+                          }
+                        />
                       </Td>
                     </tr>
                   ))}

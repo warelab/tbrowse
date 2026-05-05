@@ -342,6 +342,19 @@ export interface ZoneDefinition<S = unknown> {
    * the first time neighbourhood data appears in `HostData`).
    */
   defaultVisible?: boolean;
+  /**
+   * Optional contributor: returns SearchFields the zone wants to add
+   * to the search-bar dropdown based on its current state and data.
+   * Called whenever this zone's state changes; results merge with the
+   * host's `searchFields` prop and the built-ins (last-wins on
+   * duplicate id). Lets a zone expose state-dependent search choices
+   * (e.g. a user-marked "searchable" column on a table zone) without
+   * forcing the host to mirror that state.
+   */
+  getSearchFields?: (
+    zoneState: S,
+    data: HostData,
+  ) => import('./search/fields').SearchField[];
 }
 
 export interface TBrowseProps {

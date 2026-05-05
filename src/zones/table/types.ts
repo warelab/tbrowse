@@ -24,6 +24,9 @@ export interface TableColumn {
   /** Hard override aggregator. When set, this beats both the kind default
    *  and the user's chosen `aggregateMethod` in zoneState. */
   aggregate?: AggregateFn;
+  /** Default for the user-toggleable "searchable" flag. Only honoured on
+   *  string-kind columns. Defaults to false. */
+  searchable?: boolean;
 }
 
 export interface TableColumnOverride {
@@ -34,6 +37,10 @@ export interface TableColumnOverride {
   /** Aggregate-method id from `AGGREGATE_METHODS[kind]`. Ignored when the
    *  factory column has a hard `aggregate` override. */
   aggregateMethod?: string;
+  /** When true, the column contributes a SearchField to the search-bar
+   *  dropdown (label `"<zoneName> | <columnName>"`). Honoured only on
+   *  string-kind columns. */
+  searchable?: boolean;
 }
 
 export interface TableZoneState {

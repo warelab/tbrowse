@@ -147,16 +147,29 @@ export function Layout({
     [viewState.compressedNodeIds],
   );
 
-  // Search field registry: built-ins first, host extras appended so a
-  // host can shadow a built-in id by re-using it (last wins) — useful
-  // for swapping out the gene-id matcher with a fuzzy variant.
+  // Search field registry: host extras first, then zone contributions
+  // (state-dependent, via `ZoneDefinition.getSearchFields`), then
+  // built-ins. Last-wins on duplicate id, so hosts can shadow a
+  // built-in (e.g. swap the gene-id matcher for a fuzzy variant) and
+  // zones can shadow hosts when needed. Zone contributions reactively
+  // re-run whenever any zone's state changes.
+  const zoneStatesForSearch = viewState.zoneStates;
   const searchFields = useMemo<ReadonlyArray<SearchField>>(() => {
-    if (!hostSearchFields || hostSearchFields.length === 0) {
-      return BUILTIN_SEARCH_FIELDS;
+    const fromZones: SearchField[] = [];
+    for (const z of zones) {
+      if (!z.getSearchFields) continue;
+      const state = zoneStatesForSearch?.[z.id] ?? z.defaultZoneState;
+      const contributed = z.getSearchFields(state, data);
+      if (contributed && contributed.length > 0) fromZones.push(...contributed);
     }
     const seen = new Set<string>();
     const merged: SearchField[] = [];
-    for (const f of hostSearchFields) {
+    for (const f of hostSearchFields ?? []) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      merged.push(f);
+    }
+    for (const f of fromZones) {
       if (seen.has(f.id)) continue;
       seen.add(f.id);
       merged.push(f);
@@ -167,7 +180,7 @@ export function Layout({
       merged.push(f);
     }
     return merged;
-  }, [hostSearchFields]);
+  }, [hostSearchFields, zones, zoneStatesForSearch, data]);
 
   // Match resolution. Keyed on the search slice, the field registry,
   // and the data slices the built-in fields actually read; the
