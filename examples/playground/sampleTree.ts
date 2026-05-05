@@ -3,6 +3,8 @@ import type {
   LabelProvider,
   MSA,
   ProteinDomain,
+  TableColumn,
+  TableData,
   Taxonomy,
   Tree,
   TreeNode,
@@ -131,3 +133,39 @@ export const largeSampleTree: Tree = (() => {
   const rootId = make(Math.log2(leafCount), null);
   return { rootId, nodes };
 })();
+
+// ---------- Sample tabular data zone ----------
+//
+// Two example user-uploaded tables with arbitrary columns. Genes
+// without entries render as null cells. The playground passes these
+// to `createTableZone` to produce one zone definition per table.
+
+export const sampleExpressionColumns: TableColumn[] = [
+  { id: 'tissue', label: 'Tissue', kind: 'string', width: 90 },
+  { id: 'tpm', label: 'TPM', kind: 'number', width: 80 },
+  { id: 'logfc', label: 'log2 FC', kind: 'number', width: 80 },
+  { id: 'sig', label: 'Sig.', kind: 'boolean', width: 50 },
+  { id: 'note', label: 'Note', kind: 'string', width: 160 },
+];
+
+export const sampleExpressionTable: TableData = {
+  ENSG00000000001: { tissue: 'Liver', tpm: 142.5, logfc: 2.31, sig: true, note: 'Up in tumor' },
+  ENSPTRG00000001: { tissue: 'Liver', tpm: 130.2, logfc: 2.15, sig: true, note: 'Up in tumor' },
+  ENSMUSG00000001: { tissue: 'Liver', tpm: 88.7, logfc: 0.42, sig: false, note: null },
+  ENSDARG00000001: { tissue: 'Embryo', tpm: 12.4, logfc: -0.18, sig: false },
+  // ENSRNOG00000001 intentionally omitted to show null-row behaviour.
+};
+
+export const sampleScoreColumns: TableColumn[] = [
+  { id: 'orth', label: 'Orth. score', kind: 'number', width: 90 },
+  { id: 'paralogs', label: '# paralogs', kind: 'number', width: 90 },
+  { id: 'curated', label: 'Curated', kind: 'boolean', width: 70 },
+];
+
+export const sampleScoreTable: TableData = {
+  ENSG00000000001: { orth: 0.97, paralogs: 2, curated: true },
+  ENSPTRG00000001: { orth: 0.94, paralogs: 2, curated: true },
+  ENSMUSG00000001: { orth: 0.81, paralogs: 1, curated: false },
+  ENSRNOG00000001: { orth: 0.78, paralogs: 1, curated: false },
+  ENSDARG00000001: { orth: 0.42, paralogs: 3, curated: false },
+};

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   TBrowse,
   computePivotState,
+  createTableZone,
   fromEnsemblGeneTree,
   fromEnsemblProteinFeatures,
   fromGrameneGene,
@@ -35,10 +36,14 @@ const PRUNED_STYLES: { id: PrunedNodeStyle; label: string }[] = [
 ];
 import {
   largeSampleTree,
+  sampleExpressionColumns,
+  sampleExpressionTable,
   sampleGeneMetadata,
   sampleGoProvider,
   sampleMSA,
   sampleProteinDomains,
+  sampleScoreColumns,
+  sampleScoreTable,
   sampleTaxonomy,
   sampleTree,
 } from './sampleTree';
@@ -50,10 +55,12 @@ const ENSEMBL_URL = `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${
 // fractions of the container so this gives tree 30 % / labels 20 % /
 // MSA 50 %.
 const INITIAL_ZONE_FR: Record<string, number> = {
-  tree: 22,
-  labels: 12,
-  msa: 36,
-  neighborhood: 30,
+  tree: 18,
+  labels: 10,
+  msa: 28,
+  neighborhood: 22,
+  'table-expression': 12,
+  'table-scores': 10,
 };
 
 function buildInitialViewState(zoneIds: string[]): ViewState {
@@ -80,9 +87,40 @@ const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
 const GRAMENE_BASE = 'https://data.gramene.org/v69';
 
 function App() {
-  const zones = useMemo(
-    () => [treeZone, labelsZone, msaZone, neighborhoodZone],
+  const expressionZone = useMemo(
+    () =>
+      createTableZone({
+        id: 'table-expression',
+        defaultName: 'Expression',
+        table: sampleExpressionTable,
+        columns: sampleExpressionColumns,
+        defaultWidth: 12,
+        minWidth: 140,
+      }),
     [],
+  );
+  const scoresZone = useMemo(
+    () =>
+      createTableZone({
+        id: 'table-scores',
+        defaultName: 'Scores',
+        table: sampleScoreTable,
+        columns: sampleScoreColumns,
+        defaultWidth: 10,
+        minWidth: 120,
+      }),
+    [],
+  );
+  const zones = useMemo(
+    () => [
+      treeZone,
+      labelsZone,
+      msaZone,
+      neighborhoodZone,
+      expressionZone,
+      scoresZone,
+    ],
+    [expressionZone, scoresZone],
   );
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 

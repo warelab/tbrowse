@@ -30,6 +30,18 @@ export {
   type NeighborhoodZoneState,
 } from './zones/neighborhood/Neighborhood';
 export {
+  createTableZone,
+  defaultAggregators,
+  type TableZoneState,
+  type TableData,
+  type TableColumn,
+  type TableCellValue,
+  type CreateTableZoneOptions,
+  type AggregateContext,
+  type AggregateResult,
+  type AggregateFn,
+} from './zones/table/Table';
+export {
   COLOR_SCHEMES,
   defaultSchemeFor,
   applicableSchemes,
