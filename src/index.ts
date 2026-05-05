@@ -48,6 +48,13 @@ export {
   type ColumnKind,
 } from './zones/table/Table';
 export {
+  PALETTES,
+  DEFAULT_SEQUENTIAL_PALETTE,
+  DEFAULT_DIVERGING_PALETTE,
+  type Palette,
+  type PaletteKind,
+} from './zones/table/heatmap';
+export {
   COLOR_SCHEMES,
   defaultSchemeFor,
   applicableSchemes,

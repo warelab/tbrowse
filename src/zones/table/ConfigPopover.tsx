@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTBrowseStore } from '../../store';
 import { AGGREGATE_METHODS, methodForKind } from './aggregators';
+import {
+  autoPalette,
+  paletteById,
+  PALETTES,
+  type HeatmapDomain,
+  type Palette,
+} from './heatmap';
 import type {
   ColumnKind,
   TableColumn,
@@ -32,6 +39,14 @@ interface EffectiveColumnRow {
   /** Resolved searchable flag (override → factory default → false).
    *  Honoured only on string-kind columns. */
   searchable: boolean;
+  /** Resolved palette for heatmap rendering, or null when the column is
+   *  not numeric / has no domain. */
+  palette: Palette | null;
+  /** Diverging-palette midpoint, in data units. */
+  paletteMidpoint: number;
+  /** Domain bounds used by the heatmap, exposed so the popover can
+   *  surface them in the midpoint input's hint. */
+  domain: HeatmapDomain | null;
 }
 
 interface ConfigPopoverProps {
@@ -40,6 +55,9 @@ interface ConfigPopoverProps {
   setState: (next: TableZoneState | ((prev: TableZoneState) => TableZoneState)) => void;
   /** Order ids in display order, used for the "move up/down" controls. */
   orderedIds: string[];
+  /** Per-column heatmap domains computed by the zone, used to surface
+   *  min/max in the midpoint hint and to power the auto-palette pick. */
+  heatmapDomains: Record<string, HeatmapDomain>;
 }
 
 export function ConfigPopover({
@@ -47,6 +65,7 @@ export function ConfigPopover({
   state,
   setState,
   orderedIds,
+  heatmapDomains,
 }: ConfigPopoverProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -75,6 +94,14 @@ export function ConfigPopover({
       const aggregateMethodId = aggregateLocked
         ? '__factory__'
         : methodForKind(kind, ov.aggregateMethod).id;
+      const domain = heatmapDomains[id] ?? null;
+      const explicitPalette = ov.palette ?? base.palette;
+      const palette = explicitPalette
+        ? paletteById(explicitPalette)
+        : domain
+          ? autoPalette(domain)
+          : null;
+      const paletteMidpoint = ov.paletteMidpoint ?? base.paletteMidpoint ?? 0;
       return {
         base,
         hidden: ov.hidden ?? false,
@@ -84,6 +111,9 @@ export function ConfigPopover({
         aggregateMethodId,
         aggregateLocked,
         searchable: ov.searchable ?? base.searchable ?? false,
+        palette,
+        paletteMidpoint,
+        domain,
       };
     })
     .filter((r): r is EffectiveColumnRow => r !== null);
@@ -191,6 +221,23 @@ export function ConfigPopover({
         // Reset the aggregate method when kind changes (not all method
         // ids are valid for every kind).
         if (merged.kind !== r.kind) delete merged.aggregateMethod;
+        if (Object.keys(merged).length === 0) delete next[r.base.id];
+        else next[r.base.id] = merged;
+      }
+      return { ...s, columnOverrides: next };
+    });
+  };
+
+  const setAllPalette = (paletteId: string) => {
+    setState((s) => {
+      const next = { ...(s.columnOverrides ?? {}) };
+      for (const r of rows) {
+        if (r.kind !== 'number') continue;
+        const cur = next[r.base.id] ?? {};
+        const merged: TableColumnOverride = { ...cur, palette: paletteId };
+        // If the chosen palette equals the factory column's `palette`,
+        // drop the override so URL state stays minimal.
+        if (paletteId === r.base.palette) delete merged.palette;
         if (Object.keys(merged).length === 0) delete next[r.base.id];
         else next[r.base.id] = merged;
       }
@@ -309,6 +356,7 @@ export function ConfigPopover({
                     <Th>Label</Th>
                     <Th>Kind</Th>
                     <Th>Display</Th>
+                    <Th>Palette</Th>
                     <Th>Aggregation</Th>
                     <Th>Searchable</Th>
                   </tr>
@@ -365,6 +413,33 @@ export function ConfigPopover({
                       >
                         {allHeatmapOn ? 'all → text' : 'numeric → heatmap'}
                       </button>
+                    </Td>
+                    <Td>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          setAllPalette(e.target.value);
+                        }}
+                        style={selectStyle()}
+                        title="Apply this palette to every numeric column"
+                      >
+                        <option value="">— set all —</option>
+                        <optgroup label="Sequential">
+                          {PALETTES.filter((p) => p.kind === 'sequential').map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Diverging">
+                          {PALETTES.filter((p) => p.kind === 'diverging').map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
                     </Td>
                     <Td />
                     <Td>
@@ -486,6 +561,80 @@ export function ConfigPopover({
                             </option>
                           ))}
                         </select>
+                      </Td>
+                      <Td>
+                        {r.kind !== 'number' || !r.palette ? (
+                          <span
+                            style={{ fontSize: 11, color: 'var(--tbrowse-text-subtle)' }}
+                            title="Palette applies to numeric heatmap columns only"
+                          >
+                            —
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                            <select
+                              value={r.palette.id}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                updateOverride(r.base.id, {
+                                  palette: next === r.base.palette ? undefined : next,
+                                });
+                              }}
+                              style={selectStyle()}
+                              disabled={r.display !== 'heatmap'}
+                              title={
+                                r.display === 'heatmap'
+                                  ? 'Pick a heatmap palette'
+                                  : 'Switch this column to Heatmap to choose a palette'
+                              }
+                            >
+                              <optgroup label="Sequential">
+                                {PALETTES.filter((p) => p.kind === 'sequential').map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                              <optgroup label="Diverging">
+                                {PALETTES.filter((p) => p.kind === 'diverging').map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+                            {r.palette.kind === 'diverging' && (
+                              <input
+                                type="number"
+                                value={r.paletteMidpoint}
+                                step="any"
+                                onChange={(e) => {
+                                  const num = e.target.value === ''
+                                    ? undefined
+                                    : Number(e.target.value);
+                                  const factoryMid = r.base.paletteMidpoint ?? 0;
+                                  updateOverride(r.base.id, {
+                                    paletteMidpoint:
+                                      num === undefined || num === factoryMid
+                                        ? undefined
+                                        : num,
+                                  });
+                                }}
+                                style={{
+                                  ...textInputStyle(),
+                                  width: 64,
+                                  minWidth: 0,
+                                }}
+                                disabled={r.display !== 'heatmap'}
+                                title={
+                                  r.domain
+                                    ? `Diverging midpoint (data range ${r.domain.min} – ${r.domain.max})`
+                                    : 'Diverging midpoint (anchors the central palette stop)'
+                                }
+                              />
+                            )}
+                          </span>
+                        )}
                       </Td>
                       <Td>
                         {r.aggregateLocked ? (

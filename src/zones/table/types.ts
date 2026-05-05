@@ -27,6 +27,14 @@ export interface TableColumn {
   /** Default for the user-toggleable "searchable" flag. Only honoured on
    *  string-kind columns. Defaults to false. */
   searchable?: boolean;
+  /** Default heatmap palette id from the registry in `./heatmap`. When
+   *  unset, the zone auto-picks: a diverging palette when the column's
+   *  data domain crosses zero, sequential otherwise. Only honoured when
+   *  `display === 'heatmap'`. */
+  palette?: string;
+  /** Anchor for the diverging palette's midpoint (in data units). When
+   *  unset, defaults to 0. Ignored for sequential palettes. */
+  paletteMidpoint?: number;
 }
 
 export interface TableColumnOverride {
@@ -41,6 +49,12 @@ export interface TableColumnOverride {
    *  dropdown (label `"<zoneName> | <columnName>"`). Honoured only on
    *  string-kind columns. */
   searchable?: boolean;
+  /** User-chosen palette id. Falls back to the factory column's
+   *  `palette`, then to the data-driven auto-pick. */
+  palette?: string;
+  /** User-chosen midpoint for diverging palettes. Falls back to the
+   *  factory column's `paletteMidpoint`, then to 0. */
+  paletteMidpoint?: number;
 }
 
 export interface TableZoneState {

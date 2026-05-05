@@ -16,11 +16,14 @@ import {
   type ColumnKind,
 } from './aggregators';
 import {
+  autoPalette,
   buildHeatmapDomains,
-  heatmapBackground,
-  heatmapForeground,
-  normalize,
+  colorAt,
+  paletteById,
+  rgbCss,
+  readableForeground,
   type HeatmapDomain,
+  type Palette,
 } from './heatmap';
 import { ConfigPopover } from './ConfigPopover';
 import { compileStringMatcher, type SearchField } from '../../search/fields';
@@ -63,6 +66,11 @@ interface EffectiveColumn {
   display: TableDisplayMode;
   aggregator: AggregateFn;
   format?: (value: TableCellValue) => string;
+  /** Resolved palette for heatmap rendering. Always populated for
+   *  number-kind columns; ignored when `display !== 'heatmap'`. */
+  palette: Palette;
+  /** Anchor for the diverging-palette midpoint, in data units. */
+  paletteMidpoint: number;
 }
 
 function defaultFormat(value: TableCellValue, kind: ColumnKind): string {
@@ -101,6 +109,7 @@ function visibleColumnsRange(width: number, scrollLeft: number) {
 function resolveColumns(
   factory: TableColumn[],
   state: TableZoneState | undefined,
+  heatmapDomains: Record<string, HeatmapDomain>,
 ): { effective: EffectiveColumn[]; orderedIds: string[] } {
   const overrides = state?.columnOverrides ?? {};
   const factoryIds = factory.map((c) => c.id);
@@ -139,6 +148,16 @@ function resolveColumns(
     let aggregator: AggregateFn;
     if (base.aggregate) aggregator = base.aggregate;
     else aggregator = methodForKind(kind, ov.aggregateMethod).fn;
+    // Palette resolution: explicit override → factory default → auto
+    // (sequential vs diverging based on whether the data crosses 0).
+    const explicit = ov.palette ?? base.palette;
+    const domain = heatmapDomains[id];
+    const palette = explicit
+      ? paletteById(explicit)
+      : domain
+        ? autoPalette(domain)
+        : paletteById(undefined);
+    const paletteMidpoint = ov.paletteMidpoint ?? base.paletteMidpoint ?? 0;
     effective.push({
       id,
       base,
@@ -149,6 +168,8 @@ function resolveColumns(
       display,
       aggregator,
       format: base.format,
+      palette,
+      paletteMidpoint,
     });
   }
   return { effective, orderedIds };
@@ -229,7 +250,7 @@ export function createTableZone(
     const state = zoneState ?? DEFAULT_STATE;
     const name = state.name ?? opts.defaultName;
     const { effective, orderedIds } = useMemo(
-      () => resolveColumns(factoryColumns, state),
+      () => resolveColumns(factoryColumns, state, heatmapDomains),
       [state],
     );
     const { offsets, contentWidth } = useMemo(
@@ -343,6 +364,7 @@ export function createTableZone(
                 )
               }
               orderedIds={orderedIds}
+              heatmapDomains={heatmapDomains}
             />
           </span>
         </div>
@@ -429,7 +451,7 @@ export function createTableZone(
     const theme = useTBrowseStore((s) => s.theme);
 
     const { effective } = useMemo(
-      () => resolveColumns(factoryColumns, state),
+      () => resolveColumns(factoryColumns, state, heatmapDomains),
       [state],
     );
     const { offsets, contentWidth } = useMemo(
@@ -580,10 +602,16 @@ export function createTableZone(
                     heatmapValue !== null &&
                     heatmapDomains[c.id]
                   ) {
-                    const t = normalize(heatmapValue, heatmapDomains[c.id]);
-                    if (t !== null) {
-                      cellBg = heatmapBackground(t, theme);
-                      cellFg = heatmapForeground(t, theme);
+                    const rgb = colorAt(
+                      heatmapValue,
+                      heatmapDomains[c.id],
+                      c.palette,
+                      theme,
+                      c.paletteMidpoint,
+                    );
+                    if (rgb) {
+                      cellBg = rgbCss(rgb);
+                      cellFg = readableForeground(rgb, theme);
                     }
                   }
                   return (
