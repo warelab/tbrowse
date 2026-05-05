@@ -288,6 +288,7 @@ export function createTableZone(
 
     return (
       <div
+        data-table-zone-header={opts.id}
         style={{
           height: '100%',
           display: 'flex',

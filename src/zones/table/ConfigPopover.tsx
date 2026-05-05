@@ -68,7 +68,15 @@ export function ConfigPopover({
   heatmapDomains,
 }: ConfigPopoverProps) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  /** Anchored to the host zone's bounds: `right` is distance from
+   *  viewport's right edge to the zone's right edge (so the popover's
+   *  right edge lines up with the zone), and `maxWidth` caps the
+   *  popover at the zone's width. */
+  const [anchor, setAnchor] = useState<{
+    right: number;
+    top: number;
+    maxWidth: number;
+  } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const theme = useTBrowseStore((s) => s.theme);
 
@@ -120,8 +128,28 @@ export function ConfigPopover({
 
   const togglePopover = () => {
     if (!open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setPos({ x: rect.left, y: rect.bottom + 4 });
+      const btnRect = buttonRef.current.getBoundingClientRect();
+      // Find the host zone's outer header element so we can clamp the
+      // popover to that zone's bounds. Falls back to a button-anchored
+      // layout if the data attribute is missing for any reason.
+      const zoneEl = buttonRef.current.closest<HTMLElement>(
+        '[data-table-zone-header]',
+      );
+      const zoneRect = zoneEl?.getBoundingClientRect();
+      const right = zoneRect
+        ? Math.max(0, window.innerWidth - zoneRect.right)
+        : Math.max(0, window.innerWidth - btnRect.right);
+      // Strict cap: never extend past the zone's left edge. The floor
+      // here is just enough room for the bulk-row's "set all" controls
+      // when the zone itself is tiny — the inner content scrolls
+      // horizontally past that point.
+      const zoneWidth = zoneRect ? zoneRect.right - zoneRect.left : 540;
+      const maxWidth = Math.max(120, zoneWidth);
+      setAnchor({
+        right,
+        top: btnRect.bottom + 4,
+        maxWidth,
+      });
     }
     setOpen((o) => !o);
   };
@@ -304,24 +332,29 @@ export function ConfigPopover({
         ⚙ Configure
       </button>
       {open &&
-        pos &&
+        anchor &&
         createPortal(
           <div className={`tbrowse-root tbrowse-theme-${theme}`}>
             <div
               className="tbrowse-table-config"
               style={{
                 position: 'fixed',
-                left: Math.max(8, pos.x),
-                top: pos.y,
+                right: anchor.right,
+                top: anchor.top,
+                width: anchor.maxWidth,
+                maxWidth: anchor.maxWidth,
+                boxSizing: 'border-box',
                 background: 'var(--tbrowse-bg-elevated)',
                 border: '1px solid var(--tbrowse-border)',
                 color: 'var(--tbrowse-text)',
                 borderRadius: 6,
                 boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
-                padding: 10,
+                padding: 8,
                 zIndex: 1000,
-                minWidth: 540,
-                fontSize: 12,
+                fontSize: 11,
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: '70vh',
               }}
             >
               <div
@@ -342,11 +375,18 @@ export function ConfigPopover({
                   Reset
                 </button>
               </div>
+              <div
+                style={{
+                  overflow: 'auto',
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                }}
+              >
               <table
                 style={{
                   borderCollapse: 'collapse',
-                  width: '100%',
                   tableLayout: 'auto',
+                  fontSize: 11,
                 }}
               >
                 <thead>
@@ -622,7 +662,7 @@ export function ConfigPopover({
                                 }}
                                 style={{
                                   ...textInputStyle(),
-                                  width: 64,
+                                  width: 56,
                                   minWidth: 0,
                                 }}
                                 disabled={r.display !== 'heatmap'}
@@ -689,6 +729,7 @@ export function ConfigPopover({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>,
           document.body,
@@ -702,12 +743,13 @@ function Th({ children }: { children?: React.ReactNode }) {
     <th
       style={{
         textAlign: 'left',
-        fontSize: 10,
+        fontSize: 9,
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.4,
         color: 'var(--tbrowse-text-subtle)',
         fontWeight: 600,
-        padding: '4px 6px',
+        padding: '3px 4px',
+        whiteSpace: 'nowrap',
         borderBottom: '1px solid var(--tbrowse-border-soft)',
       }}
     >
@@ -720,7 +762,7 @@ function Td({ children }: { children?: React.ReactNode }) {
   return (
     <td
       style={{
-        padding: '4px 6px',
+        padding: '2px 4px',
         borderBottom: '1px solid var(--tbrowse-border-soft)',
         verticalAlign: 'middle',
       }}
@@ -732,44 +774,46 @@ function Td({ children }: { children?: React.ReactNode }) {
 
 function popoverButtonStyle(): React.CSSProperties {
   return {
-    fontSize: 11,
-    padding: '2px 8px',
+    fontSize: 10,
+    padding: '1px 6px',
     borderRadius: 3,
     border: '1px solid var(--tbrowse-border)',
     background: 'var(--tbrowse-bg-input)',
     color: 'var(--tbrowse-text)',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
   };
 }
 
 function popoverIconButtonStyle(): React.CSSProperties {
   return {
     ...popoverButtonStyle(),
-    padding: '0 6px',
-    minWidth: 22,
+    padding: '0 4px',
+    minWidth: 18,
   };
 }
 
 function selectStyle(): React.CSSProperties {
   return {
-    fontSize: 12,
-    padding: '1px 4px',
+    fontSize: 11,
+    padding: '1px 2px',
     background: 'var(--tbrowse-bg-input)',
     color: 'var(--tbrowse-text)',
     border: '1px solid var(--tbrowse-border)',
     borderRadius: 3,
+    maxWidth: 130,
   };
 }
 
 function textInputStyle(): React.CSSProperties {
   return {
-    fontSize: 12,
-    padding: '2px 6px',
+    fontSize: 11,
+    padding: '1px 4px',
     background: 'var(--tbrowse-bg-input)',
     color: 'var(--tbrowse-text)',
     border: '1px solid var(--tbrowse-border)',
     borderRadius: 3,
-    width: '100%',
-    minWidth: 120,
+    width: 90,
+    minWidth: 60,
   };
 }
