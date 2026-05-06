@@ -3,12 +3,14 @@ import { createRoot } from 'react-dom/client';
 import {
   TBrowse,
   computePivotState,
+  createGenomeZone,
   createTableZone,
   type ZoneDefinition,
   fromEnsemblGeneTree,
   fromEnsemblProteinFeatures,
   fromGrameneGene,
   fromGrameneGenetree,
+  fromGrameneGeneStructures,
   fromGrameneNeighborhood,
   labelsZone,
   msaZone,
@@ -16,6 +18,7 @@ import {
   treeZone,
   type FromEnsemblResult,
   type FromGrameneGenetreeResult,
+  type GeneStructure,
   type Neighborhood,
   type PrunedNodeStyle,
   type ProteinDomain,
@@ -40,6 +43,8 @@ import {
   sampleExpressionColumns,
   sampleExpressionTable,
   sampleGeneMetadata,
+  sampleGeneStructures,
+  sampleGenomeFeatures,
   sampleGoProvider,
   sampleMSA,
   sampleProteinDomains,
@@ -61,6 +66,7 @@ const INITIAL_ZONE_FR: Record<string, number> = {
   labels: 10,
   msa: 28,
   neighborhood: 22,
+  'genome-canonical': 24,
   'table-expression': 12,
   'table-scores': 10,
 };
@@ -113,6 +119,15 @@ function App() {
       }),
     [],
   );
+  const genomeZone = useMemo(
+    () =>
+      createGenomeZone({
+        id: 'genome-canonical',
+        displayName: 'Gene structure',
+        defaultWidth: 24,
+      }),
+    [],
+  );
   const [uploadedZones, setUploadedZones] = useState<ZoneDefinition[]>([]);
   const [uploadStatus, setUploadStatus] = useState<{
     state: 'idle' | 'error';
@@ -124,11 +139,12 @@ function App() {
       labelsZone,
       msaZone,
       neighborhoodZone,
+      genomeZone,
       expressionZone,
       scoresZone,
       ...uploadedZones,
     ],
-    [expressionZone, scoresZone, uploadedZones],
+    [genomeZone, expressionZone, scoresZone, uploadedZones],
   );
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
@@ -153,6 +169,9 @@ function App() {
   const [grameneData, setGrameneData] = useState<FromGrameneGenetreeResult | null>(null);
   const [grameneNeighborhood, setGrameneNeighborhood] = useState<
     Record<string, Neighborhood> | null
+  >(null);
+  const [grameneGeneStructures, setGrameneGeneStructures] = useState<
+    Record<string, GeneStructure> | null
   >(null);
   const [grameneStatus, setGrameneStatus] = useState<{
     state: 'idle' | 'loading' | 'error';
@@ -298,6 +317,41 @@ function App() {
     }
   };
 
+  /**
+   * Fetch `gene_structure` (+ `location` + `name`) for every leaf in the
+   * tree, in chunks so the URL stays under typical proxy limits, and
+   * convert via `fromGrameneGeneStructures`. Errors are logged but
+   * non-fatal — the rest of the view keeps working without gene
+   * structures.
+   */
+  const loadGrameneGeneStructures = async (geneIds: string[]) => {
+    try {
+      const CHUNK = 200;
+      const accumulated: Record<string, GeneStructure> = {};
+      for (let i = 0; i < geneIds.length; i += CHUNK) {
+        const slice = geneIds.slice(i, i + CHUNK);
+        const url = new URL(`${GRAMENE_BASE}/genes`);
+        url.searchParams.set('rows', '-1');
+        url.searchParams.set(
+          'fl',
+          '_id,name,location,gene_structure,canonical_transcript',
+        );
+        url.searchParams.set('idList', slice.join(','));
+        const res = await fetch(url.toString(), {
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status} on /genes`);
+        const json = (await res.json()) as unknown;
+        const map = fromGrameneGeneStructures(json);
+        for (const k of Object.keys(map)) accumulated[k] = map[k];
+      }
+      setGrameneGeneStructures(accumulated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Gene-structure fetch failed:', err);
+    }
+  };
+
   const loadGramene = async (geneId: string) => {
     setGrameneStatus({ state: 'loading' });
     try {
@@ -323,6 +377,15 @@ function App() {
       // off the (potentially large) Solr graph fetch in the background.
       setGrameneNeighborhood(null);
       void loadGrameneNeighborhood(gene.geneTreeId);
+      // Same pattern for gene structures: fan out to /genes for every
+      // leaf, in chunks. Runs concurrently with the neighborhood fetch.
+      setGrameneGeneStructures(null);
+      const leafIds = Object.values(data.tree.nodes)
+        .filter((n) => n.isLeaf && typeof n.geneId === 'string')
+        .map((n) => n.geneId as string);
+      if (leafIds.length > 0) {
+        void loadGrameneGeneStructures(leafIds);
+      }
       setDataSource('gramene');
       // Center on the originating gene so the user lands looking at it.
       const initial = buildInitialViewState(zoneIds);
@@ -448,6 +511,7 @@ function App() {
           proteinDomains: grameneData.proteinDomains,
           exonJunctions: grameneData.exonJunctions,
           neighborhood: grameneNeighborhood ?? undefined,
+          geneStructures: grameneGeneStructures ?? undefined,
           labelProviders: undefined,
         }
       : dataSource === 'ensembl' && ensemblData
@@ -465,6 +529,8 @@ function App() {
             geneMetadata: sampleGeneMetadata,
             msa: sampleMSA,
             proteinDomains: sampleProteinDomains,
+            geneStructures: sampleGeneStructures,
+            genomeFeatures: sampleGenomeFeatures,
             labelProviders: [sampleGoProvider],
           };
 

@@ -72,6 +72,8 @@ function TBrowseShell(props: TBrowseProps) {
     proteinDomains: props.proteinDomains,
     exonJunctions: props.exonJunctions,
     neighborhood: props.neighborhood,
+    geneStructures: props.geneStructures,
+    genomeFeatures: props.genomeFeatures,
   };
 
   return (

@@ -9,6 +9,7 @@ export {
 export {
   fromGrameneGene,
   fromGrameneGenetree,
+  fromGrameneGeneStructures,
   fromGrameneNeighborhood,
   type FromGrameneGeneResult,
   type FromGrameneGenetreeOptions,
@@ -29,6 +30,11 @@ export {
   neighborhoodZone,
   type NeighborhoodZoneState,
 } from './zones/neighborhood/Neighborhood';
+export {
+  createGenomeZone,
+  type GenomeZoneState,
+  type CreateGenomeZoneOptions,
+} from './zones/genome/Genome';
 export {
   createTableZone,
   defaultAggregators,
@@ -91,6 +97,10 @@ export type {
   ProteinDomain,
   Neighborhood,
   NeighborhoodGene,
+  Exon,
+  Transcript,
+  GeneStructure,
+  GenomeFeature,
   LabelProvider,
   ZoneViewState,
   SearchState,

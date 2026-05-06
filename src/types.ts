@@ -195,6 +195,69 @@ export interface Neighborhood {
   downstream: NeighborhoodGene[];
 }
 
+/**
+ * One exon of a transcript. Coordinates are absolute on the genome,
+ * 1-based, inclusive. `cdsStart` / `cdsEnd` mark the coding portion of
+ * this exon (clamped to the exon's own bounds); leaving them undefined
+ * means the exon is fully UTR. For protein-coding transcripts the
+ * concatenation of every exon's `[cdsStart..cdsEnd]` sub-range, walked
+ * in transcript order, is the CDS — i.e. its length is `peptideLen * 3
+ * + 3` (stop codon included) when the data is well-formed.
+ */
+export interface Exon {
+  start: number;
+  end: number;
+  cdsStart?: number;
+  cdsEnd?: number;
+}
+
+export interface Transcript {
+  id: string;
+  isCanonical?: boolean;
+  /** e.g. "protein_coding", "nonsense_mediated_decay". The genome zone
+   *  treats anything other than "protein_coding" as non-translating. */
+  biotype?: string;
+  /** Genomic order (ascending `start`); strand comes from the parent
+   *  `GeneStructure` so every transcript on a gene shares it. */
+  exons: Exon[];
+}
+
+/**
+ * Per-leaf gene structure: gene span on the genome plus its transcripts
+ * (canonical + alternates). The genome browser zone uses this to render
+ * exon/intron diagrams; `canonicalTranscriptId` must match a transcript
+ * id in `transcripts`. Strand applies to every transcript on the gene.
+ */
+export interface GeneStructure {
+  /** Chromosome / scaffold name (e.g. "1", "Chr3", "scaffold_42"). */
+  region: string;
+  strand: 1 | -1;
+  /** Gene span (5'UTR..3'UTR across all transcripts), genomic coords. */
+  start: number;
+  end: number;
+  canonicalTranscriptId: string;
+  transcripts: Transcript[];
+  /** Optional human-readable gene symbol surfaced in tooltips. */
+  name?: string;
+}
+
+/**
+ * One genome annotation in the proximal region of a leaf gene
+ * (e.g. transcription factor binding site, enhancer, repeat). Coords
+ * are absolute on the genome. `kind` drives a default colour bucket;
+ * `category` overrides it when present so a host can group by motif
+ * id, family, etc.
+ */
+export interface GenomeFeature {
+  id: string;
+  kind: string;
+  start: number;
+  end: number;
+  strand?: 1 | -1;
+  label?: string;
+  category?: string;
+}
+
 export interface ProteinDomain {
   /** Stable identifier (e.g. Pfam accession "PF00069"). Drives the color. */
   id: string;
@@ -235,6 +298,16 @@ export interface HostData {
    * gene plus up to 10 upstream + 10 downstream flanking genes.
    */
   neighborhood?: Record<GeneId, Neighborhood>;
+  /**
+   * Optional per-leaf gene structure (canonical + alternate transcripts
+   * with exon/CDS coordinates). Drives the genome browser zone.
+   */
+  geneStructures?: Record<GeneId, GeneStructure>;
+  /**
+   * Optional per-leaf proximal genome features (TFBS, enhancers, etc.)
+   * displayed as a track within the genome browser zone.
+   */
+  genomeFeatures?: Record<GeneId, GenomeFeature[]>;
 }
 
 export interface ZoneRenderProps<S = unknown> {
@@ -371,6 +444,10 @@ export interface TBrowseProps {
    * gene plus up to 10 upstream + 10 downstream flanking genes.
    */
   neighborhood?: Record<GeneId, Neighborhood>;
+  /** Optional per-leaf gene structures (drives the genome browser zone). */
+  geneStructures?: Record<GeneId, GeneStructure>;
+  /** Optional per-leaf proximal genome features (TFBS, enhancers, etc.). */
+  genomeFeatures?: Record<GeneId, GenomeFeature[]>;
   /**
    * If provided, the initial view collapses every subtree except the path
    * to this node and swaps siblings so the node sits at the top of the

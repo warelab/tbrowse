@@ -1,5 +1,7 @@
 import type {
   GeneMetadata,
+  GeneStructure,
+  GenomeFeature,
   LabelProvider,
   MSA,
   ProteinDomain,
@@ -168,4 +170,140 @@ export const sampleScoreTable: TableData = {
   ENSMUSG00000001: { orth: 0.81, paralogs: 1, curated: false },
   ENSRNOG00000001: { orth: 0.78, paralogs: 1, curated: false },
   ENSDARG00000001: { orth: 0.42, paralogs: 3, curated: false },
+};
+
+// Hand-crafted gene structures for the five sample leaves. Each gene has
+// 4 exons covering a 60-residue protein (60×3 = 180 nt CDS) plus 5'UTR
+// and 3'UTR, with one or two long introns to exercise the // compression
+// glyph. Two leaves sit on the reverse strand to exercise auto-flipping.
+export const sampleGeneStructures: Record<string, GeneStructure> = {
+  ENSG00000000001: {
+    region: '17',
+    strand: 1,
+    start: 1000,
+    end: 8200,
+    canonicalTranscriptId: 'ENST_HUMAN_TP53.1',
+    name: 'TP53',
+    transcripts: [
+      {
+        id: 'ENST_HUMAN_TP53.1',
+        isCanonical: true,
+        biotype: 'protein_coding',
+        exons: [
+          { start: 1000, end: 1199, cdsStart: 1100, cdsEnd: 1199 }, // 5'UTR + 100 cds nt
+          { start: 3000, end: 3049, cdsStart: 3000, cdsEnd: 3049 }, // 50 cds nt
+          { start: 6000, end: 6029, cdsStart: 6000, cdsEnd: 6029 }, // 30 cds nt
+          { start: 8000, end: 8200, cdsStart: 8000, cdsEnd: 8002 }, // 3 cds (stop) + 3'UTR
+        ],
+      },
+      {
+        id: 'ENST_HUMAN_TP53.2',
+        biotype: 'protein_coding',
+        exons: [
+          { start: 1000, end: 1199, cdsStart: 1100, cdsEnd: 1199 },
+          { start: 6000, end: 6029, cdsStart: 6000, cdsEnd: 6029 },
+          { start: 8000, end: 8200, cdsStart: 8000, cdsEnd: 8002 },
+        ],
+      },
+    ],
+  },
+  ENSPTRG00000001: {
+    region: '17',
+    strand: 1,
+    start: 1000,
+    end: 8200,
+    canonicalTranscriptId: 'ENSPTRT_TP53.1',
+    name: 'TP53',
+    transcripts: [
+      {
+        id: 'ENSPTRT_TP53.1',
+        isCanonical: true,
+        biotype: 'protein_coding',
+        exons: [
+          { start: 1000, end: 1199, cdsStart: 1100, cdsEnd: 1199 },
+          { start: 3000, end: 3049, cdsStart: 3000, cdsEnd: 3049 },
+          { start: 6000, end: 6029, cdsStart: 6000, cdsEnd: 6029 },
+          { start: 8000, end: 8200, cdsStart: 8000, cdsEnd: 8002 },
+        ],
+      },
+    ],
+  },
+  ENSMUSG00000001: {
+    // Reverse strand to exercise auto-flip.
+    region: '11',
+    strand: -1,
+    start: 1000,
+    end: 7900,
+    canonicalTranscriptId: 'ENSMUST_Trp53.1',
+    name: 'Trp53',
+    transcripts: [
+      {
+        id: 'ENSMUST_Trp53.1',
+        isCanonical: true,
+        biotype: 'protein_coding',
+        exons: [
+          { start: 1000, end: 1300, cdsStart: 1003, cdsEnd: 1300 },   // stop + 3'UTR (low end on - strand)
+          { start: 4000, end: 4019, cdsStart: 4000, cdsEnd: 4019 },
+          { start: 7000, end: 7150, cdsStart: 7000, cdsEnd: 7150 },
+          { start: 7800, end: 7900, cdsStart: 7800, cdsEnd: 7849 },   // 5'UTR (high end on - strand)
+        ],
+      },
+    ],
+  },
+  ENSRNOG00000001: {
+    region: '10',
+    strand: -1,
+    start: 500,
+    end: 6000,
+    canonicalTranscriptId: 'ENSRNOT_Tp53.1',
+    name: 'Tp53',
+    transcripts: [
+      {
+        id: 'ENSRNOT_Tp53.1',
+        isCanonical: true,
+        biotype: 'protein_coding',
+        exons: [
+          { start: 500, end: 700, cdsStart: 503, cdsEnd: 700 },
+          { start: 2500, end: 2519, cdsStart: 2500, cdsEnd: 2519 },
+          { start: 5000, end: 5151, cdsStart: 5000, cdsEnd: 5151 },
+          { start: 5900, end: 6000, cdsStart: 5900, cdsEnd: 5959 },
+        ],
+      },
+    ],
+  },
+  ENSDARG00000001: {
+    region: '5',
+    strand: 1,
+    start: 200,
+    end: 5500,
+    canonicalTranscriptId: 'ENSDART_tp53.1',
+    name: 'tp53',
+    transcripts: [
+      {
+        id: 'ENSDART_tp53.1',
+        isCanonical: true,
+        biotype: 'protein_coding',
+        exons: [
+          { start: 200, end: 320, cdsStart: 261, cdsEnd: 320 },   // 5'UTR + 60 cds nt
+          { start: 2000, end: 2089, cdsStart: 2000, cdsEnd: 2089 }, // 90 cds nt
+          { start: 4000, end: 4029, cdsStart: 4000, cdsEnd: 4029 }, // 30 cds nt
+          { start: 5400, end: 5500, cdsStart: 5400, cdsEnd: 5402 }, // stop + 3'UTR
+        ],
+      },
+    ],
+  },
+};
+
+// Sample proximal genome features for a couple of leaves — TFBS clusters
+// around the human and chimp TP53 promoters, plus a CpG island.
+export const sampleGenomeFeatures: Record<string, GenomeFeature[]> = {
+  ENSG00000000001: [
+    { id: 'tfbs-1', kind: 'TFBS', start: 950, end: 970, label: 'SP1' },
+    { id: 'tfbs-2', kind: 'TFBS', start: 1020, end: 1035, label: 'NF-Y' },
+    { id: 'cpg-1', kind: 'CpG', start: 980, end: 1080, label: 'CpG island' },
+  ],
+  ENSPTRG00000001: [
+    { id: 'tfbs-1', kind: 'TFBS', start: 950, end: 970, label: 'SP1' },
+    { id: 'tfbs-2', kind: 'TFBS', start: 1020, end: 1035, label: 'NF-Y' },
+  ],
 };

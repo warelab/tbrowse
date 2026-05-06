@@ -1,12 +1,15 @@
 import type {
+  Exon,
   GeneId,
   GeneMetadata,
+  GeneStructure,
   MSA,
   Neighborhood,
   NeighborhoodGene,
   NodeId,
   ProteinDomain,
   Taxonomy,
+  Transcript,
   Tree,
   TreeNode,
 } from '../types';
@@ -388,6 +391,206 @@ export function fromGrameneNeighborhood(
         downstream: arr.slice(i + 1, hi).map(toGene),
       };
     }
+  }
+  return out;
+}
+
+// ─── Gene structure (`/genes?fl=_id,location,gene_structure,...`) ───────────
+
+interface GrameneRelExon {
+  id?: string;
+  start?: number;
+  end?: number;
+}
+
+interface GrameneTranscriptDoc {
+  exons?: string[];
+  length?: number;
+  /** CDS bounds in cDNA (transcript) coordinates, 1-based inclusive. */
+  cds?: { start?: number; end?: number };
+  translation?: { id?: string; length?: number };
+  biotype?: string;
+}
+
+interface GrameneGeneStructureDoc {
+  _id?: string;
+  name?: string;
+  /** Absolute genome location of the whole gene. `start <= end` regardless
+   *  of strand; `strand` distinguishes 5'→3' direction. */
+  location?: {
+    region?: string;
+    start?: number;
+    end?: number;
+    strand?: number;
+    map?: string;
+  };
+  gene_structure?: {
+    exons?: GrameneRelExon[];
+    transcripts?: GrameneTranscriptDoc[];
+  };
+  /** When present, names the canonical transcript by translation id. The
+   *  /genes endpoint does NOT always return this — fall back to the
+   *  longest-CDS transcript when missing. */
+  canonical_transcript?: string;
+}
+
+/**
+ * Convert one or more Gramene `/genes` documents (each carrying
+ * `location` + `gene_structure`) into the normalized
+ * `GeneStructure` shape the genome browser zone consumes.
+ *
+ * Gramene encodes exon coordinates RELATIVE to the gene's 5' end, in
+ * transcript direction — relative position 1 is the 5'-most base of the
+ * gene. We turn them into absolute genomic coordinates (always
+ * `start <= end`) so the renderer doesn't have to know about Gramene's
+ * convention. CDS bounds, given in cDNA (spliced-transcript) coords,
+ * are walked through the exon list to mark the per-exon
+ * `cdsStart`/`cdsEnd` ranges in genomic coords.
+ *
+ * Skips genes that lack `location` or `gene_structure`. Pure: callers
+ * own the network fetch.
+ */
+export function fromGrameneGeneStructures(
+  json: unknown,
+): Record<GeneId, GeneStructure> {
+  if (!Array.isArray(json)) return {};
+  const out: Record<GeneId, GeneStructure> = {};
+  for (const docRaw of json) {
+    const doc = docRaw as GrameneGeneStructureDoc;
+    if (typeof doc._id !== 'string' || doc._id === '') continue;
+    const loc = doc.location;
+    const gs = doc.gene_structure;
+    if (!loc || !gs) continue;
+    if (
+      typeof loc.region !== 'string' ||
+      loc.region === '' ||
+      typeof loc.start !== 'number' ||
+      typeof loc.end !== 'number' ||
+      loc.end < loc.start
+    ) {
+      continue;
+    }
+    const strand: 1 | -1 = loc.strand === -1 ? -1 : 1;
+
+    const exonsById = new Map<string, GrameneRelExon>();
+    for (const e of gs.exons ?? []) {
+      if (
+        typeof e.id === 'string' &&
+        typeof e.start === 'number' &&
+        typeof e.end === 'number' &&
+        e.end >= e.start
+      ) {
+        exonsById.set(e.id, e);
+      }
+    }
+    if (exonsById.size === 0) continue;
+
+    const transcripts: Transcript[] = [];
+    for (const t of gs.transcripts ?? []) {
+      if (!Array.isArray(t.exons) || t.exons.length === 0) continue;
+      const orderedRel: GrameneRelExon[] = [];
+      for (const eid of t.exons) {
+        const rel = exonsById.get(eid);
+        if (rel) orderedRel.push(rel);
+      }
+      if (orderedRel.length === 0) continue;
+
+      const cdsCs = t.cds?.start;
+      const cdsCe = t.cds?.end;
+      const useCds =
+        typeof cdsCs === 'number' &&
+        typeof cdsCe === 'number' &&
+        cdsCe >= cdsCs;
+
+      const exonsOut: Exon[] = [];
+      let cdnaCursor = 0;
+      for (const rel of orderedRel) {
+        const exonLen = rel.end! - rel.start! + 1;
+        const exonCdnaStart = cdnaCursor + 1;
+        const exonCdnaEnd = cdnaCursor + exonLen;
+        let gStart: number;
+        let gEnd: number;
+        if (strand === 1) {
+          gStart = loc.start + rel.start! - 1;
+          gEnd = loc.start + rel.end! - 1;
+        } else {
+          gStart = loc.end - rel.end! + 1;
+          gEnd = loc.end - rel.start! + 1;
+        }
+        let cdsStart: number | undefined;
+        let cdsEnd: number | undefined;
+        if (useCds) {
+          const ovS = Math.max(exonCdnaStart, cdsCs!);
+          const ovE = Math.min(exonCdnaEnd, cdsCe!);
+          if (ovE >= ovS) {
+            const localStart = ovS - exonCdnaStart; // 0-based offset in exon
+            const localEnd = ovE - exonCdnaStart;
+            if (strand === 1) {
+              cdsStart = gStart + localStart;
+              cdsEnd = gStart + localEnd;
+            } else {
+              cdsStart = gEnd - localEnd;
+              cdsEnd = gEnd - localStart;
+            }
+          }
+        }
+        exonsOut.push({ start: gStart, end: gEnd, cdsStart, cdsEnd });
+        cdnaCursor = exonCdnaEnd;
+      }
+
+      // Renderer expects exons in genomic-ascending order.
+      exonsOut.sort((a, b) => a.start - b.start);
+
+      const tid =
+        t.translation?.id && t.translation.id !== ''
+          ? t.translation.id
+          : `${doc._id}_t${transcripts.length + 1}`;
+      transcripts.push({
+        id: tid,
+        biotype: useCds ? 'protein_coding' : t.biotype,
+        exons: exonsOut,
+      });
+    }
+    if (transcripts.length === 0) continue;
+
+    let canonical = transcripts[0];
+    if (typeof doc.canonical_transcript === 'string') {
+      const named = transcripts.find((tr) => tr.id === doc.canonical_transcript);
+      if (named) canonical = named;
+    } else {
+      // Fall back: longest CDS wins. Ties broken by total exon length.
+      let bestCds = -1;
+      let bestExonLen = -1;
+      for (const tr of transcripts) {
+        let cdsLen = 0;
+        let exonLen = 0;
+        for (const e of tr.exons) {
+          if (e.cdsStart !== undefined && e.cdsEnd !== undefined) {
+            cdsLen += e.cdsEnd - e.cdsStart + 1;
+          }
+          exonLen += e.end - e.start + 1;
+        }
+        if (
+          cdsLen > bestCds ||
+          (cdsLen === bestCds && exonLen > bestExonLen)
+        ) {
+          bestCds = cdsLen;
+          bestExonLen = exonLen;
+          canonical = tr;
+        }
+      }
+    }
+    canonical.isCanonical = true;
+
+    out[doc._id] = {
+      region: loc.region,
+      strand,
+      start: loc.start,
+      end: loc.end,
+      canonicalTranscriptId: canonical.id,
+      transcripts,
+      name: typeof doc.name === 'string' && doc.name !== '' ? doc.name : undefined,
+    };
   }
   return out;
 }
