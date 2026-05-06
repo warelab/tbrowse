@@ -86,6 +86,54 @@ interface RowCandidate {
    *  away from its automatic display. Drives the +/- glyph so the
    *  indicator reflects the natural strand by default. */
   userFlipped: boolean;
+  /** Eff-coord shift applied to this row's display so its first MSA
+   *  position shared with the NoI aligns horizontally with the NoI's
+   *  residue at that column. Zero for the NoI itself and for rows
+   *  without an MSA-driven anchor. Uses the simple `(M-N)*3` rule —
+   *  ignores intron-eff costs in the first N codons of either gene. */
+  shiftEff: number;
+  /** Eff coord at which to draw the per-row "anchor" tick — the gene's
+   *  genomic position corresponding to the first shared MSA column
+   *  with the NoI. Falls back to the start codon (or `effMin` for
+   *  non-coding rows) when no shared column exists. */
+  anchorEff: number;
+}
+
+const GAP_DASH = '-';
+const GAP_DOT = '.';
+function isGap(ch: string): boolean {
+  return ch === GAP_DASH || ch === GAP_DOT;
+}
+
+/** Count non-gap characters in `seq[0..col]` (inclusive). 1-based result. */
+function peptidePosAt(seq: string, col: number): number {
+  let n = 0;
+  const upto = Math.min(col, seq.length - 1);
+  for (let i = 0; i <= upto; i++) if (!isGap(seq[i])) n++;
+  return n;
+}
+
+/**
+ * Find the first MSA column ≥ the gene's first non-gap column where
+ * BOTH the gene and the NoI carry a residue. Returns -1 if no such
+ * column exists (e.g. the gene's residues never overlap any of the
+ * NoI's residues — happens occasionally when one of the sequences is
+ * truncated). Pure helper used to compute the per-row alignment shift.
+ */
+function firstSharedAaCol(geneSeq: string, noiSeq: string): number {
+  const len = Math.min(geneSeq.length, noiSeq.length);
+  let geneFirst = -1;
+  for (let c = 0; c < len; c++) {
+    if (!isGap(geneSeq[c])) {
+      geneFirst = c;
+      break;
+    }
+  }
+  if (geneFirst < 0) return -1;
+  for (let c = geneFirst; c < len; c++) {
+    if (!isGap(geneSeq[c]) && !isGap(noiSeq[c])) return c;
+  }
+  return -1;
 }
 
 /**
@@ -318,6 +366,19 @@ export function createGenomeZone(
 
     const rows = visibleRows.slice(rowRange.startIndex, rowRange.endIndex);
 
+    // NoI sequence (when both an NoI is set and an MSA is present) drives
+    // the per-row alignment shift. Resolved once so each row's
+    // sharedCol calc reads from a stable string.
+    const noiGeneId = useMemo<string | null>(() => {
+      const id = props.nodeOfInterestId;
+      if (!id) return null;
+      return data.tree.nodes[id]?.geneId ?? null;
+    }, [props.nodeOfInterestId, data.tree.nodes]);
+    const noiSeq = useMemo<string | null>(() => {
+      if (!data.msa || !noiGeneId) return null;
+      return data.msa.sequences[noiGeneId] ?? null;
+    }, [data.msa, noiGeneId]);
+
     // Per-row candidate layouts keyed by node id. Built once for the visible
     // slice so the global-scale pass can read max 5'/3' extents without
     // re-computing.
@@ -343,12 +404,50 @@ export function createGenomeZone(
         const autoFlip = gs.strand === -1;
         const userFlipped = flippedSet.has(r.nodeId);
         const flipped = autoFlip !== userFlipped;
+
+        // MSA-driven alignment: shift this row so its first shared MSA
+        // residue with the NoI lines up at NoI's residue at that column.
+        // The simple shift = 3 * (M - N) — the eff-distance approximation
+        // ignores introns within the first N codons but stays correct
+        // when both genes have similar intron structure (the typical
+        // case). The anchor tick is drawn at gene's peptide pos N's
+        // genomic coord, which is close to start codon ± 3*(N-1) in eff
+        // for short, intron-free 5' segments.
+        const startEff = layout.startCodonEff ?? layout.effMin;
+        let shiftEff = 0;
+        let anchorEff = startEff;
+        const geneSeq = data.msa?.sequences[node.geneId];
+        if (
+          noiSeq &&
+          geneSeq &&
+          noiGeneId !== null &&
+          node.geneId !== noiGeneId
+        ) {
+          const colShared = firstSharedAaCol(geneSeq, noiSeq);
+          if (colShared >= 0) {
+            const N = peptidePosAt(geneSeq, colShared);
+            const M = peptidePosAt(noiSeq, colShared);
+            shiftEff = 3 * (M - N);
+            // Eff coord of gene's peptide pos N (first nt of codon N).
+            // On + strand the genomic coord increases with peptide pos;
+            // on - strand it decreases. Eff is genomic-ascending so we
+            // translate accordingly. Approximation: assumes the first N
+            // codons sit in CDS-only territory (no compressed-intron
+            // step before them).
+            const offset = 3 * (N - 1);
+            anchorEff =
+              gs.strand === 1 ? startEff + offset : startEff - offset;
+          }
+        }
+
         map.set(r.nodeId, {
           geneStructure: gs,
           transcript,
           layout,
           flipped,
           userFlipped,
+          shiftEff,
+          anchorEff,
         });
       }
       return map;
@@ -356,6 +455,9 @@ export function createGenomeZone(
       rows,
       data.tree.nodes,
       data.geneStructures,
+      data.msa,
+      noiGeneId,
+      noiSeq,
       state.paddingMode,
       state.paddingKb,
       state.compressIntrons,
@@ -459,18 +561,6 @@ export function createGenomeZone(
           height={totalHeight}
           style={{ display: 'block', shapeRendering: 'crispEdges' }}
         >
-          {scale && (
-            <line
-              x1={drawingX + scale.startCodonPx}
-              y1={0}
-              x2={drawingX + scale.startCodonPx}
-              y2={totalHeight}
-              stroke="var(--tbrowse-accent)"
-              strokeOpacity={0.18}
-              strokeWidth={1}
-              pointerEvents="none"
-            />
-          )}
           {rows.map((r) => {
             if (r.kind !== 'leaf') return null;
             const node = data.tree.nodes[r.nodeId];
@@ -523,6 +613,8 @@ export function createGenomeZone(
                     indicatorH: r.height,
                     scale,
                     panPx: state.panPx ?? 0,
+                    shiftEff: candidate.shiftEff,
+                    anchorEff: candidate.anchorEff,
                     state,
                     data,
                     onToggleIntron: toggleIntron,
@@ -582,6 +674,8 @@ interface RenderRowArgs {
   indicatorH: number;
   scale: { pxPerEff: number; startCodonPx: number } | null;
   panPx: number;
+  shiftEff: number;
+  anchorEff: number;
   state: GenomeZoneState;
   data: HostData;
   onToggleIntron: (key: string) => void;
@@ -623,12 +717,16 @@ function renderRow(args: RenderRowArgs): JSX.Element {
   let startPx: number;
   if (scale) {
     pxPerEff = scale.pxPerEff;
-    startPx = drawingX + scale.startCodonPx + args.panPx;
+    startPx =
+      drawingX + scale.startCodonPx + args.panPx + args.shiftEff * scale.pxPerEff;
   } else {
     const span = Math.max(1, layout.effMax - layout.effMin);
     pxPerEff = drawingWidth / span;
     startPx =
-      drawingX + (startEff - layout.effMin) * pxPerEff + args.panPx;
+      drawingX +
+      (startEff - layout.effMin) * pxPerEff +
+      args.panPx +
+      args.shiftEff * pxPerEff;
   }
 
   const effToPx = (eff: number): number =>
@@ -657,6 +755,28 @@ function renderRow(args: RenderRowArgs): JSX.Element {
       pointerEvents="none"
     />,
   );
+
+  // Per-row anchor tick — marks the genomic coord that lines up with the
+  // NoI in the MSA. For the NoI itself this is its start codon; for
+  // every other row it's the gene's residue at the first MSA column the
+  // gene shares with the NoI. The tick is what visually "ties" each
+  // gene to the NoI's coordinate system.
+  if (layout.startCodonEff !== undefined) {
+    const anchorPx = effToPx(args.anchorEff);
+    elements.push(
+      <line
+        key="anchor"
+        x1={anchorPx}
+        y1={rowY - 1}
+        x2={anchorPx}
+        y2={rowY + rowH + 1}
+        stroke="var(--tbrowse-accent)"
+        strokeOpacity={0.55}
+        strokeWidth={1}
+        pointerEvents="none"
+      />,
+    );
+  }
 
   // Genome features track — drawn slightly below the baseline as small bars.
   const features = data.genomeFeatures?.[geneId];

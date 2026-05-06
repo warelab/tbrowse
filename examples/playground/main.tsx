@@ -1,4 +1,4 @@
-import { StrictMode, useMemo, useState } from 'react';
+import { StrictMode, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   TBrowse,
@@ -71,6 +71,42 @@ const INITIAL_ZONE_FR: Record<string, number> = {
   'table-scores': 10,
 };
 
+/**
+ * URL-hash round-tripping for the playground's full state — the data
+ * source (sample / ensembl / gramene), any source-specific selector
+ * (currently only Gramene's gene-id input), and the TBrowse `viewState`
+ * prop. Encoded as `#<percent-encoded JSON>` with `history.replaceState`
+ * so the back button stays uncluttered. A page reload rehydrates the
+ * data source (re-fetching Gramene if needed), then re-applies the
+ * stored viewState — collapsed/pruned subtrees, NoI, MSA viewport,
+ * label fields, search, zone widths/order, and per-zone state.
+ */
+interface UrlState {
+  source?: DataSource;
+  /** Gene id used to load the Gramene tree — only meaningful when
+   *  source === 'gramene'. */
+  grameneGeneId?: string;
+  viewState?: Partial<ViewState>;
+}
+
+function decodeUrlState(): UrlState | null {
+  if (typeof window === 'undefined') return null;
+  const h = window.location.hash;
+  if (!h || h.length < 2) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(h.slice(1))) as unknown;
+    if (parsed && typeof parsed === 'object') return parsed as UrlState;
+  } catch {
+    // Malformed hash — silently ignore so the user lands on a fresh view
+    // rather than a blank screen.
+  }
+  return null;
+}
+
+function encodeUrlState(s: UrlState): string {
+  return '#' + encodeURIComponent(JSON.stringify(s));
+}
+
 function buildInitialViewState(zoneIds: string[]): ViewState {
   return {
     selectedNodeId: null,
@@ -87,6 +123,15 @@ function buildInitialViewState(zoneIds: string[]): ViewState {
     zoneStates: {},
     search: null,
   };
+}
+
+/** Mount-time helper: prefers viewState encoded in the URL hash, falls
+ *  back to a fresh `buildInitialViewState`. Only used at first render —
+ *  the app's reset / data-source-switch paths build fresh state. */
+function buildBootstrapViewState(zoneIds: string[]): ViewState {
+  const url = decodeUrlState();
+  const base = buildInitialViewState(zoneIds);
+  return url?.viewState ? { ...base, ...url.viewState } : base;
 }
 
 type DataSource = 'sample' | 'ensembl' | 'gramene';
@@ -149,9 +194,13 @@ function App() {
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
   const [tree, setTree] = useState(sampleTree);
-  const [viewState, setViewState] = useState<ViewState>(() => buildInitialViewState(zoneIds));
+  const [viewState, setViewState] = useState<ViewState>(() => buildBootstrapViewState(zoneIds));
 
-  const [dataSource, setDataSource] = useState<DataSource>('sample');
+  const bootstrappedUrl = useMemo(() => decodeUrlState(), []);
+
+  const [dataSource, setDataSource] = useState<DataSource>(
+    bootstrappedUrl?.source ?? 'sample',
+  );
   const [ensemblData, setEnsemblData] = useState<FromEnsemblResult | null>(null);
   const [ensemblStatus, setEnsemblStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [ensemblError, setEnsemblError] = useState<string | null>(null);
@@ -165,7 +214,11 @@ function App() {
     error?: string;
   }>({ state: 'idle' });
 
-  const [grameneGeneInput, setGrameneGeneInput] = useState(GRAMENE_DEFAULT_GENE);
+  const [grameneGeneInput, setGrameneGeneInput] = useState(
+    bootstrappedUrl?.source === 'gramene' && bootstrappedUrl.grameneGeneId
+      ? bootstrappedUrl.grameneGeneId
+      : GRAMENE_DEFAULT_GENE,
+  );
   const [grameneData, setGrameneData] = useState<FromGrameneGenetreeResult | null>(null);
   const [grameneNeighborhood, setGrameneNeighborhood] = useState<
     Record<string, Neighborhood> | null
@@ -352,7 +405,17 @@ function App() {
     }
   };
 
-  const loadGramene = async (geneId: string) => {
+  /** Track which Gramene gene is currently loaded so the URL hash can
+   *  reflect it. Set on success, cleared when the user switches away. */
+  const [loadedGrameneGeneId, setLoadedGrameneGeneId] = useState<string | null>(
+    null,
+  );
+
+  const loadGramene = async (
+    geneId: string,
+    opts: { applyPivot?: boolean } = {},
+  ) => {
+    const applyPivot = opts.applyPivot ?? true;
     setGrameneStatus({ state: 'loading' });
     try {
       const geneRes = await fetch(
@@ -387,19 +450,25 @@ function App() {
         void loadGrameneGeneStructures(leafIds);
       }
       setDataSource('gramene');
-      // Center on the originating gene so the user lands looking at it.
-      const initial = buildInitialViewState(zoneIds);
-      const pivot = computePivotState(data.tree, gene.geneId);
-      setViewState(
-        pivot
-          ? {
-              ...initial,
-              collapsedNodeIds: pivot.collapsedNodeIds,
-              swappedNodeIds: pivot.swappedNodeIds,
-              nodeOfInterestId: pivot.targetId,
-            }
-          : initial,
-      );
+      setLoadedGrameneGeneId(gene.geneId);
+      if (applyPivot) {
+        // Center on the originating gene so the user lands looking at it.
+        const initial = buildInitialViewState(zoneIds);
+        const pivot = computePivotState(data.tree, gene.geneId);
+        setViewState(
+          pivot
+            ? {
+                ...initial,
+                collapsedNodeIds: pivot.collapsedNodeIds,
+                swappedNodeIds: pivot.swappedNodeIds,
+                nodeOfInterestId: pivot.targetId,
+              }
+            : initial,
+        );
+      }
+      // When applyPivot is false, the URL-restored viewState that was
+      // applied at mount stays untouched — collapsed/pruned/NoI/etc.
+      // resolve against the just-loaded tree.
       setGrameneStatus({ state: 'idle' });
     } catch (err) {
       setGrameneStatus({
@@ -411,8 +480,42 @@ function App() {
 
   const switchToSample = () => {
     setDataSource('sample');
+    setLoadedGrameneGeneId(null);
     setViewState(buildInitialViewState(zoneIds));
   };
+
+  // On mount, if the URL hash says we should be looking at a Gramene
+  // gene, kick off the load with `applyPivot: false` so the URL's
+  // viewState (already restored by buildBootstrapViewState) wins. The
+  // ref guard prevents StrictMode's double-mount from firing twice.
+  const bootstrappedRef = useRef(false);
+  useEffect(() => {
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+    if (
+      bootstrappedUrl?.source === 'gramene' &&
+      bootstrappedUrl.grameneGeneId
+    ) {
+      void loadGramene(bootstrappedUrl.grameneGeneId, { applyPivot: false });
+    }
+  }, [bootstrappedUrl]);
+
+  // Mirror data source + Gramene gene + viewState into the URL hash so
+  // the playground state is shareable. `replaceState` keeps the back
+  // button uncluttered.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const next = encodeUrlState({
+      source: dataSource,
+      grameneGeneId: loadedGrameneGeneId ?? undefined,
+      viewState,
+    });
+    if (window.location.hash !== next) {
+      const url =
+        window.location.pathname + window.location.search + next;
+      window.history.replaceState(null, '', url);
+    }
+  }, [dataSource, loadedGrameneGeneId, viewState]);
 
   const handleUploadedFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
