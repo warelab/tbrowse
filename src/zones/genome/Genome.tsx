@@ -153,7 +153,7 @@ function computeGlobalScale(
   let max5 = 0;
   let max3 = 0;
   for (const c of candidates) {
-    const { layout, flipped } = c;
+    const { layout, flipped, shiftEff } = c;
     const startEff = layout.startCodonEff ?? layout.effMin;
     // 5' side eff distance and 3' side eff distance, accounting for
     // the visual flip on reverse-strand rows.
@@ -161,8 +161,15 @@ function computeGlobalScale(
     const highSide = layout.effMax - startEff;
     const fivePrime = flipped ? highSide : lowSide;
     const threePrime = flipped ? lowSide : highSide;
-    if (fivePrime > max5) max5 = fivePrime;
-    if (threePrime > max3) max3 = threePrime;
+    // The MSA-driven shift translates pixels post-flip: positive
+    // shiftEff moves the start-codon line RIGHT, so the row needs
+    // more 3' room (threePrime + shift) and less 5' room (fivePrime
+    // - shift). A row whose 5' demand goes negative just contributes
+    // nothing on that side; another row still drives max5.
+    const eff5 = fivePrime - shiftEff;
+    const eff3 = threePrime + shiftEff;
+    if (eff5 > max5) max5 = eff5;
+    if (eff3 > max3) max3 = eff3;
   }
   const totalEff = Math.max(1, max5 + max3);
   const pxPerEff = drawingWidth / totalEff;
@@ -379,12 +386,17 @@ export function createGenomeZone(
       return data.msa.sequences[noiGeneId] ?? null;
     }, [data.msa, noiGeneId]);
 
-    // Per-row candidate layouts keyed by node id. Built once for the visible
-    // slice so the global-scale pass can read max 5'/3' extents without
-    // re-computing.
+    // Per-row candidate layouts keyed by node id. Built for every
+    // CURRENTLY-VISIBLE leaf — `visibleRows` already reflects collapse
+    // / prune / swap, but is independent of viewport scroll (the
+    // chassis scrolls a virtualised slice of these rows). That gives
+    // us two desirable behaviours at once: the global scale doesn't
+    // jump as the user scrolls (because `visibleRows` is stable
+    // across scroll), AND it adapts when the user changes topology
+    // (because `visibleRows` does change then).
     const candidates = useMemo(() => {
       const map = new Map<NodeId, RowCandidate>();
-      for (const r of rows) {
+      for (const r of visibleRows) {
         if (r.kind !== 'leaf') continue;
         const node = data.tree.nodes[r.nodeId];
         if (!node?.geneId) continue;
@@ -452,7 +464,7 @@ export function createGenomeZone(
       }
       return map;
     }, [
-      rows,
+      visibleRows,
       data.tree.nodes,
       data.geneStructures,
       data.msa,
