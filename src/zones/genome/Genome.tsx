@@ -57,6 +57,8 @@ export interface GenomeZoneState {
   visibleFeatureKinds: string[] | null;
   /** Horizontal pan in pixels — set by drag, reset by the "fit" button. */
   panPx: number;
+  /** Multiplier on the auto-fit `pxPerEff`. 1 = fits drawing area. */
+  zoom: number;
 }
 
 const DEFAULT_STATE: GenomeZoneState = {
@@ -67,7 +69,13 @@ const DEFAULT_STATE: GenomeZoneState = {
   flippedNodeIds: [],
   visibleFeatureKinds: null,
   panPx: 0,
+  zoom: 1,
 };
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 64;
+/** Each `+` / `−` click multiplies / divides zoom by this factor. */
+const BUTTON_ZOOM_FACTOR = 1.5;
 
 export interface CreateGenomeZoneOptions {
   id: string;
@@ -297,16 +305,68 @@ export function createGenomeZone(
           <button
             type="button"
             onClick={() =>
-              setZoneState((s) => ({ ...(s ?? initialState), panPx: 0 }))
+              setZoneState((s) => {
+                const cur = s ?? initialState;
+                const oldZoom = cur.zoom ?? 1;
+                const newZoom = Math.min(MAX_ZOOM, oldZoom * BUTTON_ZOOM_FACTOR);
+                if (newZoom === oldZoom) return cur;
+                // Anchor at the center so the visible centre stays put.
+                const oldPan = cur.panPx ?? 0;
+                const newPan = oldPan * (newZoom / oldZoom);
+                return { ...cur, zoom: newZoom, panPx: newPan };
+              })
             }
-            disabled={(state.panPx ?? 0) === 0}
-            style={{
-              ...btnStyle((state.panPx ?? 0) !== 0),
-              opacity: (state.panPx ?? 0) === 0 ? 0.5 : 1,
-            }}
-            title="Reset pan"
+            disabled={(state.zoom ?? 1) >= MAX_ZOOM - 1e-6}
+            style={btnStyle(false)}
+            title="Zoom in"
           >
-            fit
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setZoneState((s) => {
+                const cur = s ?? initialState;
+                const oldZoom = cur.zoom ?? 1;
+                const newZoom = Math.max(MIN_ZOOM, oldZoom / BUTTON_ZOOM_FACTOR);
+                if (newZoom === oldZoom) return cur;
+                const oldPan = cur.panPx ?? 0;
+                const newPan = oldPan * (newZoom / oldZoom);
+                return { ...cur, zoom: newZoom, panPx: newPan };
+              })
+            }
+            disabled={(state.zoom ?? 1) <= MIN_ZOOM + 1e-6}
+            style={btnStyle(false)}
+            title="Zoom out"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setZoneState((s) => ({
+                ...(s ?? initialState),
+                panPx: 0,
+                zoom: 1,
+              }))
+            }
+            disabled={
+              (state.panPx ?? 0) === 0 && (state.zoom ?? 1) === 1
+            }
+            style={{
+              ...btnStyle(
+                (state.panPx ?? 0) !== 0 || (state.zoom ?? 1) !== 1,
+              ),
+              opacity:
+                (state.panPx ?? 0) === 0 && (state.zoom ?? 1) === 1
+                  ? 0.5
+                  : 1,
+            }}
+            title="Reset pan and zoom"
+          >
+            {(state.zoom ?? 1) !== 1
+              ? `${(state.zoom ?? 1).toFixed(2).replace(/\.?0+$/, '')}×`
+              : 'fit'}
           </button>
         </div>
         <div
@@ -482,6 +542,45 @@ export function createGenomeZone(
       [candidates, drawingWidth],
     );
 
+    // Trackpad pinch-zoom. The browser delivers a pinch gesture as a
+    // `wheel` event with `ctrlKey: true` (synthesized regardless of
+    // whether the physical Control key is held). Plain scroll-wheel
+    // events have ctrlKey === false and pass through unhandled, so the
+    // host page scrolls normally over this zone.
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el || !scale) return;
+      const handler = (e: WheelEvent) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        const rect = el.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const factor = Math.exp(-e.deltaY * 0.01);
+        setZoneState((s) => {
+          const cur = s ?? initialState;
+          const oldZoom = cur.zoom ?? 1;
+          const oldPan = cur.panPx ?? 0;
+          const newZoom = Math.max(
+            MIN_ZOOM,
+            Math.min(MAX_ZOOM, oldZoom * factor),
+          );
+          if (newZoom === oldZoom) return cur;
+          // Anchor zoom at the cursor position so the genomic content
+          // under the pointer stays put. The anchor reference is the
+          // global start-codon line drawingX + scale.startCodonPx —
+          // panPx encodes the row's position relative to it.
+          const anchorPx = drawingX + scale.startCodonPx;
+          const cursorOffset = cursorX - anchorPx;
+          const deltaOld = cursorOffset - oldPan;
+          const deltaNew = deltaOld * (newZoom / oldZoom);
+          const newPan = cursorOffset - deltaNew;
+          return { ...cur, zoom: newZoom, panPx: newPan };
+        });
+      };
+      el.addEventListener('wheel', handler, { passive: false });
+      return () => el.removeEventListener('wheel', handler);
+    }, [scale, drawingX, setZoneState]);
+
     // Mouse-drag panning. Tracks document-level mousemove/mouseup so
     // dragging past the zone edges keeps panning instead of stalling.
     // Movement under DRAG_THRESHOLD px is ignored so a brief click
@@ -625,6 +724,7 @@ export function createGenomeZone(
                     indicatorH: r.height,
                     scale,
                     panPx: state.panPx ?? 0,
+                    zoom: state.zoom ?? 1,
                     shiftEff: candidate.shiftEff,
                     anchorEff: candidate.anchorEff,
                     state,
@@ -686,6 +786,7 @@ interface RenderRowArgs {
   indicatorH: number;
   scale: { pxPerEff: number; startCodonPx: number } | null;
   panPx: number;
+  zoom: number;
   shiftEff: number;
   anchorEff: number;
   state: GenomeZoneState;
@@ -728,12 +829,12 @@ function renderRow(args: RenderRowArgs): JSX.Element {
   let pxPerEff: number;
   let startPx: number;
   if (scale) {
-    pxPerEff = scale.pxPerEff;
+    pxPerEff = scale.pxPerEff * args.zoom;
     startPx =
-      drawingX + scale.startCodonPx + args.panPx + args.shiftEff * scale.pxPerEff;
+      drawingX + scale.startCodonPx + args.panPx + args.shiftEff * pxPerEff;
   } else {
     const span = Math.max(1, layout.effMax - layout.effMin);
-    pxPerEff = drawingWidth / span;
+    pxPerEff = (drawingWidth / span) * args.zoom;
     startPx =
       drawingX +
       (startEff - layout.effMin) * pxPerEff +
