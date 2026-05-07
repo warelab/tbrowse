@@ -54,6 +54,11 @@ import {
   sampleTree,
 } from './sampleTree';
 import { parseTableFile } from './parseTableFile';
+import {
+  parseTreeFile,
+  type ParsedTreeFile,
+  type TreeFileFormat,
+} from './parseTreeFile';
 
 const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
 const ensemblUrlFor = (geneId: string) =>
@@ -138,7 +143,7 @@ function buildBootstrapViewState(zoneIds: string[]): ViewState {
   return url?.viewState ? { ...base, ...url.viewState } : base;
 }
 
-type DataSource = 'sample' | 'ensembl' | 'gramene';
+type DataSource = 'sample' | 'ensembl' | 'gramene' | 'uploaded';
 
 const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
 const GRAMENE_BASE = 'https://data.gramene.org/v69';
@@ -194,7 +199,7 @@ function App() {
    *  partitioned avoids stale entries from cluttering the Zones list. */
   const [uploadedZonesBySource, setUploadedZonesBySource] = useState<
     Record<DataSource, ZoneDefinition[]>
-  >({ sample: [], ensembl: [], gramene: [] });
+  >({ sample: [], ensembl: [], gramene: [], uploaded: [] });
   const [uploadStatus, setUploadStatus] = useState<{
     state: 'idle' | 'error';
     message?: string;
@@ -260,6 +265,14 @@ function App() {
     state: 'idle' | 'loading' | 'error';
     error?: string;
   }>({ state: 'idle' });
+
+  // Uploaded-tree state. The parser auto-detects format and returns
+  // either a `Tree` (always) plus an optional `taxonomy` (PhyloXML).
+  const [uploadedTree, setUploadedTree] = useState<ParsedTreeFile | null>(null);
+  const [uploadedTreeFilename, setUploadedTreeFilename] = useState<string | null>(
+    null,
+  );
+  const [uploadTreeError, setUploadTreeError] = useState<string | null>(null);
 
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
@@ -513,9 +526,55 @@ function App() {
     }
   };
 
+  /** Soft reset on data-source switches — clears per-tree fields
+   *  (selection, collapse, prune, NoI, search) but preserves the
+   *  `zones` list and per-zone state. Avoids two issues:
+   *   (a) `zoneIds` closure-stales so a fresh `buildInitialViewState`
+   *       drops the zones registered only for the new source.
+   *   (b) The chassis's `autoEnabledRef` won't re-add a zone that's
+   *       previously been auto-enabled, so wiping its entry leaves
+   *       the zone hidden until the user re-enables it manually. */
+  const softResetForSourceSwitch = () =>
+    setViewState((vs) => ({
+      ...vs,
+      selectedNodeId: null,
+      collapsedNodeIds: [],
+      prunedNodeIds: [],
+      swappedNodeIds: [],
+      compressedNodeIds: [],
+      nodeOfInterestId: null,
+      search: null,
+    }));
+
   const switchToSample = () => {
     setDataSource('sample');
-    setViewState(buildInitialViewState(zoneIds));
+    softResetForSourceSwitch();
+  };
+
+  /** Take a Newick / Nexus / PhyloXML file off an <input type=file>,
+   *  parse + validate it, and switch the chassis to the new tree. The
+   *  parser throws on hard failures (unknown format, malformed Newick)
+   *  — those are surfaced in the toolbar's error span; soft warnings
+   *  (duplicate labels, trailing junk) flow through `parsed.warnings`
+   *  and become a status line so the user knows the tree came up but
+   *  with caveats. */
+  const handleUploadedTree = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setUploadTreeError(null);
+    try {
+      const text = await file.text();
+      const parsed = parseTreeFile(text, file.name);
+      setUploadedTree(parsed);
+      setUploadedTreeFilename(file.name);
+      setDataSource('uploaded');
+      softResetForSourceSwitch();
+      if (parsed.warnings.length > 0) {
+        setUploadTreeError(parsed.warnings.join('; '));
+      }
+    } catch (err) {
+      setUploadTreeError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   // On mount, if the URL hash says we should be looking at a Gramene
@@ -641,7 +700,9 @@ function App() {
         ? tree
         : dataSource === 'ensembl'
           ? ensemblData?.tree
-          : grameneData?.tree;
+          : dataSource === 'gramene'
+            ? grameneData?.tree
+            : uploadedTree?.tree;
     if (!treeForPivot) return;
     const pivot = computePivotState(treeForPivot, identifier);
     if (!pivot) return;
@@ -677,16 +738,22 @@ function App() {
             proteinDomains: ensemblDomains ?? undefined,
             labelProviders: undefined,
           }
-        : {
-            tree,
-            taxonomy: sampleTaxonomy,
-            geneMetadata: sampleGeneMetadata,
-            msa: sampleMSA,
-            proteinDomains: sampleProteinDomains,
-            geneStructures: sampleGeneStructures,
-            genomeFeatures: sampleGenomeFeatures,
-            labelProviders: [sampleGoProvider],
-          };
+        : dataSource === 'uploaded' && uploadedTree
+          ? {
+              tree: uploadedTree.tree,
+              taxonomy: uploadedTree.taxonomy,
+              labelProviders: undefined,
+            }
+          : {
+              tree,
+              taxonomy: sampleTaxonomy,
+              geneMetadata: sampleGeneMetadata,
+              msa: sampleMSA,
+              proteinDomains: sampleProteinDomains,
+              geneStructures: sampleGeneStructures,
+              genomeFeatures: sampleGenomeFeatures,
+              labelProviders: [sampleGoProvider],
+            };
 
   const statsTree =
     dataSource === 'ensembl' && ensemblData
@@ -874,7 +941,64 @@ function App() {
           )}
         </ToolbarRow>
 
-        {/* 4 — global controls + status readouts */}
+        {/* 4 — host-uploaded tree + uploaded-source data uploads */}
+        <ToolbarRow label="Upload tree">
+          <span
+            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+            title="Upload a tree file (Newick, Nexus, or PhyloXML). Format is auto-detected."
+          >
+            <label
+              style={{
+                fontSize: 12,
+                padding: '2px 8px',
+                border: '1px solid var(--tbrowse-border)',
+                borderRadius: 3,
+                cursor: 'pointer',
+                background: 'var(--tbrowse-bg-input)',
+              }}
+            >
+              Upload tree…
+              <input
+                type="file"
+                accept=".nwk,.newick,.tree,.tre,.nex,.nexus,.xml,.phyloxml,.txt,text/plain,application/xml,text/xml"
+                onChange={(e) => {
+                  handleUploadedTree(e.target.files);
+                  e.target.value = '';
+                }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {uploadedTree && uploadedTreeFilename && (
+              <span style={{ fontSize: 11, color: 'var(--tbrowse-text-muted)' }}>
+                {uploadedTreeFilename} ({describeFormat(uploadedTree.format)},
+                {' '}{countLeaves(uploadedTree)} leaves)
+              </span>
+            )}
+          </span>
+          {uploadedTree && (
+            <button
+              onClick={() => {
+                setDataSource('uploaded');
+                softResetForSourceSwitch();
+              }}
+              disabled={dataSource === 'uploaded'}
+            >
+              View uploaded
+            </button>
+          )}
+          <UploadDataLabel
+            source="uploaded"
+            count={uploadedZonesBySource.uploaded.length}
+            onFiles={handleUploadedFiles}
+          />
+          {uploadTreeError && (
+            <span style={{ color: '#c0392b', fontSize: 12 }}>
+              tree: {uploadTreeError}
+            </span>
+          )}
+        </ToolbarRow>
+
+        {/* 5 — global controls + status readouts */}
         <ToolbarRow label="Controls">
           <button onClick={reset}>reset</button>
           <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
@@ -928,6 +1052,16 @@ function App() {
       </div>
     </div>
   );
+}
+
+function describeFormat(f: TreeFileFormat): string {
+  return f === 'phyloxml' ? 'PhyloXML' : f === 'nexus' ? 'Nexus' : 'Newick';
+}
+
+function countLeaves(p: ParsedTreeFile): number {
+  let n = 0;
+  for (const node of Object.values(p.tree.nodes)) if (node.isLeaf) n++;
+  return n;
 }
 
 /** Upload-CSV-as-table-zone control. Shared between the Ensembl and
