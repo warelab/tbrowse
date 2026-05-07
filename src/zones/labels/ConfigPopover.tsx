@@ -3,26 +3,47 @@ import { createPortal } from 'react-dom';
 import { useTBrowseStore } from '../../store';
 import type { LabelField } from './fields';
 
-interface FieldPickerProps {
+interface LabelsConfigPopoverProps {
   fields: LabelField[];
   visibleFields: string[];
   onChange: (next: string[]) => void;
 }
 
-export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProps) {
+/**
+ * Standardised gear-icon popover for picking which Labels-zone fields
+ * are visible. Anchored to the host zone's bounds (matching the
+ * table + MSA zones) — its right edge lines up with the zone's right
+ * edge and its width is capped at the zone's width.
+ */
+export function LabelsConfigPopover({
+  fields,
+  visibleFields,
+  onChange,
+}: LabelsConfigPopoverProps) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<{
+    right: number;
+    top: number;
+    maxWidth: number;
+  } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  // Read theme from the store so the portaled popover can re-attach
-  // the `tbrowse-theme-*` class and resolve our CSS variables.
   const theme = useTBrowseStore((s) => s.theme);
 
   const visibleSet = new Set(visibleFields);
 
-  const togglePicker = () => {
+  const togglePopover = () => {
     if (!open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setPos({ x: rect.left, y: rect.bottom + 4 });
+      const btnRect = buttonRef.current.getBoundingClientRect();
+      const zoneEl = buttonRef.current.closest<HTMLElement>(
+        '[data-labels-zone-header]',
+      );
+      const zoneRect = zoneEl?.getBoundingClientRect();
+      const right = zoneRect
+        ? Math.max(0, window.innerWidth - zoneRect.right)
+        : Math.max(0, window.innerWidth - btnRect.right);
+      const zoneWidth = zoneRect ? zoneRect.right - zoneRect.left : 240;
+      const maxWidth = Math.max(220, zoneWidth);
+      setAnchor({ right, top: btnRect.bottom + 4, maxWidth });
     }
     setOpen((o) => !o);
   };
@@ -32,7 +53,7 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node;
       if (buttonRef.current?.contains(target)) return;
-      const popover = document.querySelector('.tbrowse-fieldpicker');
+      const popover = document.querySelector('.tbrowse-labels-config');
       if (popover?.contains(target)) return;
       setOpen(false);
     };
@@ -51,65 +72,75 @@ export function FieldPicker({ fields, visibleFields, onChange }: FieldPickerProp
     if (visibleSet.has(id)) {
       onChange(visibleFields.filter((f) => f !== id));
     } else {
-      // Preserve the ordering of `fields` rather than the click order, so
-      // visible fields render in a stable canonical order.
+      // Preserve the canonical ordering of `fields` rather than the
+      // click order, so visible fields always render in stable order.
       const set = new Set([...visibleFields, id]);
       onChange(fields.filter((f) => set.has(f.id)).map((f) => f.id));
     }
   };
+
+  const builtins = fields.filter((f) => f.kind === 'builtin');
+  const externals = fields.filter((f) => f.kind === 'provider');
 
   return (
     <>
       <button
         ref={buttonRef}
         type="button"
-        onClick={togglePicker}
+        onClick={togglePopover}
+        title="Configure visible label fields"
         style={{
-          fontSize: 11,
-          padding: '2px 8px',
+          fontSize: 16,
+          lineHeight: 1,
+          padding: '2px 6px',
           borderRadius: 3,
           border: '1px solid var(--tbrowse-border)',
-          background: open ? 'var(--tbrowse-accent-soft)' : 'var(--tbrowse-bg-input)',
+          background: open
+            ? 'var(--tbrowse-accent-soft)'
+            : 'var(--tbrowse-bg-input)',
           color: 'var(--tbrowse-text)',
           cursor: 'pointer',
         }}
       >
-        Fields ({visibleFields.length})
+        ⚙
       </button>
       {open &&
-        pos &&
+        anchor &&
         createPortal(
           <div className={`tbrowse-root tbrowse-theme-${theme}`}>
-          <div
-            className="tbrowse-fieldpicker"
-            style={{
-              position: 'fixed',
-              left: pos.x,
-              top: pos.y,
-              background: 'var(--tbrowse-bg-elevated)',
-              border: '1px solid var(--tbrowse-border)',
-              color: 'var(--tbrowse-text)',
-              borderRadius: 6,
-              boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
-              padding: '6px 0',
-              zIndex: 1000,
-              minWidth: 200,
-            }}
-          >
-            {renderGroup('Built-in', fields.filter((f) => f.kind === 'builtin'), visibleSet, toggleField)}
-            {fields.some((f) => f.kind === 'provider') && (
-              <>
-                <div
-                  style={{
-                    height: 1,
-                    background: 'var(--tbrowse-border-soft)',
-                    margin: '4px 0',
-                  }}
-                />
-                {renderGroup('External', fields.filter((f) => f.kind === 'provider'), visibleSet, toggleField)}
-              </>
-            )}
-          </div>
+            <div
+              className="tbrowse-labels-config"
+              style={{
+                position: 'fixed',
+                right: anchor.right,
+                top: anchor.top,
+                width: anchor.maxWidth,
+                maxWidth: anchor.maxWidth,
+                boxSizing: 'border-box',
+                background: 'var(--tbrowse-bg-elevated)',
+                border: '1px solid var(--tbrowse-border)',
+                color: 'var(--tbrowse-text)',
+                borderRadius: 6,
+                boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
+                padding: '8px 0',
+                zIndex: 1000,
+                fontSize: 12,
+              }}
+            >
+              {renderGroup('Built-in', builtins, visibleSet, toggleField)}
+              {externals.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      height: 1,
+                      background: 'var(--tbrowse-border-soft)',
+                      margin: '4px 0',
+                    }}
+                  />
+                  {renderGroup('External', externals, visibleSet, toggleField)}
+                </>
+              )}
+            </div>
           </div>,
           document.body,
         )}

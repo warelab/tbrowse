@@ -320,8 +320,9 @@ export function ConfigPopover({
         onClick={togglePopover}
         title="Configure columns"
         style={{
-          fontSize: 11,
-          padding: '2px 8px',
+          fontSize: 16,
+          lineHeight: 1,
+          padding: '2px 6px',
           borderRadius: 3,
           border: '1px solid var(--tbrowse-border)',
           background: open ? 'var(--tbrowse-accent-soft)' : 'var(--tbrowse-bg-input)',
@@ -329,7 +330,7 @@ export function ConfigPopover({
           cursor: 'pointer',
         }}
       >
-        ⚙ Configure
+        ⚙
       </button>
       {open &&
         anchor &&

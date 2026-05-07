@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { EditableZoneName } from '../EditableZoneName';
 import type {
   GeneId,
   Neighborhood,
@@ -54,6 +55,8 @@ const NO_FAMILY_COLOR = 'rgba(150, 150, 160, 0.55)';
  * appears.
  */
 export interface NeighborhoodZoneState {
+  /** User-set zone name; falls back to the factory default when undefined. */
+  name?: string;
   flippedNodeIds: NodeId[];
   gapOverrideKeys: string[];
   compressIntergenic: boolean;
@@ -347,7 +350,6 @@ function centerColor(similarity: number): string {
 }
 
 const NeighborhoodHeader = ({
-  width,
   hoveredNodeId,
   data,
   zoneState,
@@ -404,7 +406,13 @@ const NeighborhoodHeader = ({
           padding: '0 10px 0 18px',
         }}
       >
-        <span style={{ fontWeight: 600 }}>Neighborhood</span>
+        <EditableZoneName
+          defaultName="Neighborhood"
+          customName={zoneState?.name}
+          onChange={(next) =>
+            setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), name: next }))
+          }
+        />
         <span
           style={{
             fontWeight: 400,
@@ -412,15 +420,15 @@ const NeighborhoodHeader = ({
             fontSize: 11,
           }}
         >
-          ±10 flanking genes · {width.toFixed(0)}px
+          ±10 flanking genes
         </span>
         <button
           type="button"
           onClick={toggleCompress}
           title={
             compressIntergenic
-              ? 'Long intergenic regions are compressed by default — click to expand all by default'
-              : 'Long intergenic regions are expanded by default — click to compress all by default'
+              ? 'Long intergenic regions compressed — click to expand all'
+              : 'Long intergenic regions expanded — click to compress all'
           }
           style={{
             fontSize: 11,
@@ -436,7 +444,7 @@ const NeighborhoodHeader = ({
             cursor: 'pointer',
           }}
         >
-          Compress gaps{compressIntergenic ? ' ✓' : ''}
+          //
         </button>
       </div>
       {/* Live readout of the hovered row's central gene location. */}

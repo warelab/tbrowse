@@ -5,6 +5,8 @@ import {
   countLeavesInSubtree,
   EMPTY_NODE_ID_SET,
 } from '../../treeIndex';
+import { describeHoveredNodeForHeader } from '../headerInfo';
+import { EditableZoneName } from '../EditableZoneName';
 import type { NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
 import { computeTreeLayout, type TreeLayoutNode } from './layout';
 import { Tooltip } from './Tooltip';
@@ -134,6 +136,8 @@ export type PrunedNodeStyle =
   | 'bracket';
 
 export interface TreeZoneState {
+  /** User-set zone name; falls back to the factory default when undefined. */
+  name?: string;
   prunedNodeStyle?: PrunedNodeStyle;
   /** When true (default), an unbranched chain of internal nodes
    *  from the root down to the first visible "real" content (a
@@ -143,15 +147,33 @@ export interface TreeZoneState {
    *  except a single deep subtree so the spine connecting that
    *  subtree back to the root is just a long single-child run. */
   rerootCompression?: boolean;
+  /** When true (default), branches longer than ~5× the median branch
+   *  length get visually shortened (with a `//` cut mark) so the rest of
+   *  the tree doesn't get squished. Per-branch overrides via
+   *  `ViewState.compressedNodeIds` still XOR with this flag. Toggled
+   *  zone-wide by the header `//` button. */
+  autoCompressLongBranches?: boolean;
 }
 
 const DEFAULT_PRUNED_STYLE: PrunedNodeStyle = 'triangle';
 
-const TreeHeader = ({ hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => {
+const TreeHeader = ({
+  hoveredNodeId,
+  data,
+  zoneState,
+  setZoneState,
+}: ZoneRenderProps<TreeZoneState>) => {
+  const childrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
   const hoveredInfo = useMemo(
-    () => describeHoveredNode(hoveredNodeId, data),
-    [hoveredNodeId, data],
+    () => describeHoveredNodeForHeader(hoveredNodeId, data, childrenIndex),
+    [hoveredNodeId, data, childrenIndex],
   );
+  const compress = zoneState?.autoCompressLongBranches ?? true;
+  const toggleCompress = () =>
+    setZoneState((s) => ({
+      ...(s ?? {}),
+      autoCompressLongBranches: !(s?.autoCompressLongBranches ?? true),
+    }));
   return (
     <div
       style={{
@@ -173,7 +195,37 @@ const TreeHeader = ({ hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => 
           padding: '0 10px 0 18px',
         }}
       >
-        <span style={{ fontWeight: 600 }}>Tree</span>
+        <EditableZoneName
+          defaultName="Tree"
+          customName={zoneState?.name}
+          onChange={(next) =>
+            setZoneState((s) => ({ ...(s ?? {}), name: next }))
+          }
+        />
+        <button
+          type="button"
+          onClick={toggleCompress}
+          title={
+            compress
+              ? 'Long branches compressed — click to show full lengths'
+              : 'Long branches at full length — click to compress outliers'
+          }
+          style={{
+            fontSize: 11,
+            padding: '1px 6px',
+            border: `1px solid ${compress ? 'var(--tbrowse-accent)' : 'var(--tbrowse-border)'}`,
+            background: compress
+              ? 'var(--tbrowse-accent-soft)'
+              : 'var(--tbrowse-bg-input)',
+            color: compress
+              ? 'var(--tbrowse-accent-strong)'
+              : 'var(--tbrowse-text)',
+            borderRadius: 3,
+            cursor: 'pointer',
+          }}
+        >
+          //
+        </button>
       </div>
       {/* Second row: live readout of the hovered node. */}
       <div
@@ -197,34 +249,6 @@ const TreeHeader = ({ hoveredNodeId, data }: ZoneRenderProps<TreeZoneState>) => 
     </div>
   );
 };
-
-function describeHoveredNode(
-  nodeId: NodeId | null,
-  data: ZoneRenderProps['data'],
-): string | null {
-  if (!nodeId) return null;
-  const node = data.tree.nodes[nodeId];
-  if (!node) return nodeId;
-  const parts: string[] = [];
-  if (node.isLeaf) {
-    parts.push('leaf');
-    parts.push(node.geneId ?? node.id);
-    if (node.taxonomyId !== undefined && data.taxonomy?.[node.taxonomyId]) {
-      const tax = data.taxonomy[node.taxonomyId];
-      const taxName = tax.commonName ?? tax.scientificName;
-      if (taxName) parts.push(taxName);
-    }
-  } else {
-    parts.push(node.eventType ?? 'internal');
-    if (node.taxonomyId !== undefined && data.taxonomy?.[node.taxonomyId]) {
-      const tax = data.taxonomy[node.taxonomyId];
-      const taxName = tax.scientificName ?? tax.commonName;
-      if (taxName) parts.push(taxName);
-      if (tax.rank) parts.push(tax.rank);
-    }
-  }
-  return parts.join(' · ');
-}
 
 const TreeBody = ({
   data,
@@ -264,7 +288,9 @@ const TreeBody = ({
   // tooltip; the override flips whatever the auto rule decided
   // (XOR semantics). The actual shortening happens later, in pixel space,
   // post-layout.
+  const autoCompressEnabled = zoneState.autoCompressLongBranches ?? true;
   const autoCompressed = useMemo(() => {
+    if (!autoCompressEnabled) return new Set<NodeId>();
     const distances: number[] = [];
     for (const n of Object.values(data.tree.nodes)) {
       if (n.parentId !== null && n.distance > 0) distances.push(n.distance);
@@ -279,7 +305,7 @@ const TreeBody = ({
       if (n.parentId !== null && n.distance > threshold) out.add(n.id);
     }
     return out;
-  }, [data.tree]);
+  }, [data.tree, autoCompressEnabled]);
 
   // Effective compression set = auto-detected XOR per-node overrides.
   const effectiveCompressed = useMemo(() => {

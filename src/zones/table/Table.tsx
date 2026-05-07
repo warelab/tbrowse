@@ -3,6 +3,7 @@ import type { NodeId, Tree, ZoneDefinition, ZoneRenderProps } from '../../types'
 import { buildChildrenIndex, type ChildrenIndex } from '../../treeIndex';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 import { useTBrowseStore } from '../../store';
+import { EditableZoneName } from '../EditableZoneName';
 import {
   AGGREGATE_METHODS,
   DEFAULT_METHOD_ID,
@@ -249,7 +250,6 @@ export function createTableZone(
   const Header = (props: ZoneRenderProps<TableZoneState>) => {
     const { zoneState, setZoneState, width, bodyScrollLeft } = props;
     const state = zoneState ?? DEFAULT_STATE;
-    const name = state.name ?? opts.defaultName;
     const { effective, orderedIds } = useMemo(
       () => resolveColumns(factoryColumns, state, heatmapDomains),
       [state],
@@ -258,32 +258,6 @@ export function createTableZone(
       () => computeOffsets(effective),
       [effective],
     );
-
-    const [editing, setEditing] = useState(false);
-    const [draft, setDraft] = useState(name);
-    const inputRef = useRef<HTMLInputElement | null>(null);
-
-    useEffect(() => {
-      if (!editing) setDraft(name);
-    }, [editing, name]);
-
-    useEffect(() => {
-      if (editing && inputRef.current) {
-        inputRef.current.focus();
-        inputRef.current.select();
-      }
-    }, [editing]);
-
-    const commit = () => {
-      const trimmed = draft.trim();
-      const next = trimmed === '' ? undefined : trimmed;
-      setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), name: next }));
-      setEditing(false);
-    };
-    const cancel = () => {
-      setDraft(name);
-      setEditing(false);
-    };
 
     const visibleColRange = visibleColumnsRange(width, bodyScrollLeft);
 
@@ -308,44 +282,13 @@ export function createTableZone(
             padding: '0 10px 0 14px',
           }}
         >
-          {editing ? (
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commit}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commit();
-                else if (e.key === 'Escape') cancel();
-              }}
-              style={{
-                fontWeight: 600,
-                fontSize: 13,
-                background: 'var(--tbrowse-bg-input)',
-                color: 'var(--tbrowse-text)',
-                border: '1px solid var(--tbrowse-border)',
-                borderRadius: 3,
-                padding: '1px 4px',
-                minWidth: 60,
-                maxWidth: 160,
-              }}
-            />
-          ) : (
-            <span
-              onClick={() => setEditing(true)}
-              title="Click to rename"
-              style={{
-                fontWeight: 600,
-                cursor: 'text',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: 160,
-              }}
-            >
-              {name}
-            </span>
-          )}
+          <EditableZoneName
+            defaultName={opts.defaultName}
+            customName={state.name}
+            onChange={(next) =>
+              setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), name: next }))
+            }
+          />
           <span
             style={{
               color: 'var(--tbrowse-text-subtle)',
@@ -678,7 +621,21 @@ export function createTableZone(
       opts.defaultWidth ?? Math.min(40, Math.max(10, fallbackContentWidth / 20)),
     minWidth: opts.minWidth ?? 80,
     defaultZoneState: DEFAULT_STATE,
-    isAvailable: () => true,
+    isAvailable: (data) => {
+      // The zone keeps its rows keyed by GeneId at factory time; if the
+      // currently-loaded tree has no leaves whose `geneId` appears in
+      // the table, every row would render an empty cell. Treat the zone
+      // as unavailable in that case so the chassis hides it (and the
+      // toggle button greys out) until a tree with matching gene ids is
+      // loaded. Cheap O(N_leaves) hash lookup — early-exits on the
+      // first match.
+      for (const node of Object.values(data.tree.nodes)) {
+        if (node.isLeaf && node.geneId && opts.table[node.geneId]) {
+          return true;
+        }
+      }
+      return false;
+    },
     defaultVisible: opts.defaultVisible,
     getSearchFields: (state, _data) => {
       const overrides = state?.columnOverrides ?? {};

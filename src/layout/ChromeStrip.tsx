@@ -14,6 +14,7 @@ interface ZoneTogglesProps {
  */
 export function ZoneToggles({ zones, data }: ZoneTogglesProps) {
   const zoneStates = useTBrowseStore((s) => s.viewState.zones);
+  const zoneSlots = useTBrowseStore((s) => s.viewState.zoneStates);
   const setViewState = useTBrowseStore((s) => s.setViewState);
 
   const visibleById: Record<string, boolean> = {};
@@ -75,7 +76,17 @@ export function ZoneToggles({ zones, data }: ZoneTogglesProps) {
               cursor: available ? 'pointer' : 'not-allowed',
             }}
           >
-            {def.displayName}
+            {(() => {
+              // Each zone state may carry a user-set `name`; honour it
+              // here so the toggle button matches the live header
+              // label. Falls back to the factory display name.
+              const slot = zoneSlots?.[def.id] as
+                | { name?: string }
+                | undefined;
+              return slot?.name && slot.name !== ''
+                ? slot.name
+                : def.displayName;
+            })()}
           </button>
         );
       })}

@@ -14,6 +14,7 @@ import {
   pickCanonicalTranscript,
   type RowLayout,
 } from './layout';
+import { EditableZoneName } from '../EditableZoneName';
 
 /** Padding either side of the row's drawing area. */
 const PAD_X = 4;
@@ -46,6 +47,8 @@ function stableHash(s: string): number {
 }
 
 export interface GenomeZoneState {
+  /** User-set zone name; falls back to the factory default when undefined. */
+  name?: string;
   paddingMode: 'cds' | 'gene' | 'kb';
   paddingKb: number;
   compressIntrons: boolean;
@@ -193,7 +196,7 @@ export function createGenomeZone(
   const initialState: GenomeZoneState = { ...DEFAULT_STATE, ...opts.initial };
 
   const Header = (props: ZoneRenderProps<GenomeZoneState>) => {
-    const { zoneState, setZoneState, hoveredNodeId, data, width } = props;
+    const { zoneState, setZoneState, hoveredNodeId, data } = props;
     const state = zoneState ?? initialState;
     const setMode = (mode: GenomeZoneState['paddingMode']) =>
       setZoneState((s) => ({ ...(s ?? initialState), paddingMode: mode }));
@@ -208,16 +211,19 @@ export function createGenomeZone(
       if (!node?.geneId) return null;
       const gs = data.geneStructures?.[node.geneId];
       if (!gs) return null;
-      const strandSign = gs.strand === -1 ? '−' : '+';
       const tax = node.taxonomyId ? data.taxonomy?.[node.taxonomyId] : undefined;
       const taxName = tax?.scientificName ?? tax?.commonName;
       const transcriptCount = gs.transcripts.length;
+      // Exon count comes from the canonical transcript when present —
+      // it's the visible track. Falls back to the first transcript.
+      const canonical =
+        gs.transcripts.find((t) => t.id === gs.canonicalTranscriptId) ??
+        gs.transcripts[0];
+      const exonCount = canonical?.exons.length ?? 0;
       const parts: string[] = [];
       if (taxName) parts.push(taxName);
       if (gs.name) parts.push(gs.name);
-      parts.push(
-        `${gs.region}:${gs.start.toLocaleString()}–${gs.end.toLocaleString()} (${strandSign})`,
-      );
+      parts.push(`${exonCount} exon${exonCount === 1 ? '' : 's'}`);
       parts.push(
         `${transcriptCount} transcript${transcriptCount === 1 ? '' : 's'}`,
       );
@@ -232,6 +238,36 @@ export function createGenomeZone(
       color: active ? 'var(--tbrowse-accent-strong)' : 'var(--tbrowse-text)',
       borderRadius: 3,
       cursor: 'pointer',
+    });
+
+    /** Segmented-control wrapper: rounded outer corners + a single
+     *  outer border. Inner buttons render flush with no rounding. */
+    const segGroupStyle: React.CSSProperties = {
+      display: 'inline-flex',
+      border: '1px solid var(--tbrowse-border)',
+      borderRadius: 3,
+      overflow: 'hidden',
+    };
+    /** Style for one segmented-control inner button. `position` drives
+     *  the inner-divider line: 'first' / 'middle' get a 1-px right
+     *  border, 'last' has no right border. */
+    const segBtnStyle = (
+      active: boolean,
+      position: 'first' | 'middle' | 'last',
+    ): React.CSSProperties => ({
+      fontSize: 11,
+      padding: '1px 6px',
+      border: 'none',
+      borderRight:
+        position !== 'last' ? '1px solid var(--tbrowse-border)' : 'none',
+      background: active
+        ? 'var(--tbrowse-accent-soft)'
+        : 'var(--tbrowse-bg-input)',
+      color: active
+        ? 'var(--tbrowse-accent-strong)'
+        : 'var(--tbrowse-text)',
+      cursor: 'pointer',
+      fontFamily: 'inherit',
     });
 
     return (
@@ -256,40 +292,39 @@ export function createGenomeZone(
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontWeight: 600 }}>{displayName}</span>
-          <span
-            style={{
-              fontWeight: 400,
-              color: 'var(--tbrowse-text-muted)',
-              fontSize: 11,
-            }}
-          >
-            {width.toFixed(0)}px
-          </span>
-          <button
-            type="button"
-            onClick={() => setMode('cds')}
-            style={btnStyle(state.paddingMode === 'cds')}
-            title="Window covers the CDS only"
-          >
-            CDS
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('gene')}
-            style={btnStyle(state.paddingMode === 'gene')}
-            title="Window covers the full gene span (UTRs included)"
-          >
-            Gene
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('kb')}
-            style={btnStyle(state.paddingMode === 'kb')}
-            title={`Window covers gene span ± ${state.paddingKb} kb`}
-          >
-            ±{state.paddingKb}kb
-          </button>
+          <EditableZoneName
+            defaultName={displayName}
+            customName={state.name}
+            onChange={(next) =>
+              setZoneState((s) => ({ ...(s ?? initialState), name: next }))
+            }
+          />
+          <div style={segGroupStyle} role="group" aria-label="Window mode">
+            <button
+              type="button"
+              onClick={() => setMode('cds')}
+              style={segBtnStyle(state.paddingMode === 'cds', 'first')}
+              title="Window covers the CDS only"
+            >
+              CDS
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('gene')}
+              style={segBtnStyle(state.paddingMode === 'gene', 'middle')}
+              title="Window covers the full gene span (UTRs included)"
+            >
+              Gene
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('kb')}
+              style={segBtnStyle(state.paddingMode === 'kb', 'last')}
+              title={`Window covers gene span ± ${state.paddingKb} kb`}
+            >
+              ±{state.paddingKb}kb
+            </button>
+          </div>
           <button
             type="button"
             onClick={toggleCompress}
@@ -302,45 +337,52 @@ export function createGenomeZone(
           >
             //
           </button>
-          <button
-            type="button"
-            onClick={() =>
-              setZoneState((s) => {
-                const cur = s ?? initialState;
-                const oldZoom = cur.zoom ?? 1;
-                const newZoom = Math.min(MAX_ZOOM, oldZoom * BUTTON_ZOOM_FACTOR);
-                if (newZoom === oldZoom) return cur;
-                // Anchor at the center so the visible centre stays put.
-                const oldPan = cur.panPx ?? 0;
-                const newPan = oldPan * (newZoom / oldZoom);
-                return { ...cur, zoom: newZoom, panPx: newPan };
-              })
-            }
-            disabled={(state.zoom ?? 1) >= MAX_ZOOM - 1e-6}
-            style={btnStyle(false)}
-            title="Zoom in"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              setZoneState((s) => {
-                const cur = s ?? initialState;
-                const oldZoom = cur.zoom ?? 1;
-                const newZoom = Math.max(MIN_ZOOM, oldZoom / BUTTON_ZOOM_FACTOR);
-                if (newZoom === oldZoom) return cur;
-                const oldPan = cur.panPx ?? 0;
-                const newPan = oldPan * (newZoom / oldZoom);
-                return { ...cur, zoom: newZoom, panPx: newPan };
-              })
-            }
-            disabled={(state.zoom ?? 1) <= MIN_ZOOM + 1e-6}
-            style={btnStyle(false)}
-            title="Zoom out"
-          >
-            −
-          </button>
+          <div style={segGroupStyle} role="group" aria-label="Zoom">
+            <button
+              type="button"
+              onClick={() =>
+                setZoneState((s) => {
+                  const cur = s ?? initialState;
+                  const oldZoom = cur.zoom ?? 1;
+                  const newZoom = Math.max(
+                    MIN_ZOOM,
+                    oldZoom / BUTTON_ZOOM_FACTOR,
+                  );
+                  if (newZoom === oldZoom) return cur;
+                  const oldPan = cur.panPx ?? 0;
+                  const newPan = oldPan * (newZoom / oldZoom);
+                  return { ...cur, zoom: newZoom, panPx: newPan };
+                })
+              }
+              disabled={(state.zoom ?? 1) <= MIN_ZOOM + 1e-6}
+              style={segBtnStyle(false, 'first')}
+              title="Zoom out"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setZoneState((s) => {
+                  const cur = s ?? initialState;
+                  const oldZoom = cur.zoom ?? 1;
+                  const newZoom = Math.min(
+                    MAX_ZOOM,
+                    oldZoom * BUTTON_ZOOM_FACTOR,
+                  );
+                  if (newZoom === oldZoom) return cur;
+                  const oldPan = cur.panPx ?? 0;
+                  const newPan = oldPan * (newZoom / oldZoom);
+                  return { ...cur, zoom: newZoom, panPx: newPan };
+                })
+              }
+              disabled={(state.zoom ?? 1) >= MAX_ZOOM - 1e-6}
+              style={segBtnStyle(false, 'last')}
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
           <button
             type="button"
             onClick={() =>

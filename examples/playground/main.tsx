@@ -55,8 +55,9 @@ import {
 } from './sampleTree';
 import { parseTableFile } from './parseTableFile';
 
-const ENSEMBL_GENE_OF_INTEREST = 'ENSG00000139618'; // BRCA2 (human)
-const ENSEMBL_URL = `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${ENSEMBL_GENE_OF_INTEREST}?aligned=1&sequence=protein`;
+const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
+const ensemblUrlFor = (geneId: string) =>
+  `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${geneId}?aligned=1&sequence=protein`;
 
 // Initial fr-share per zone id. The chassis treats zone widths as
 // fractions of the container so this gives tree 30 % / labels 20 % /
@@ -86,6 +87,9 @@ interface UrlState {
   /** Gene id used to load the Gramene tree — only meaningful when
    *  source === 'gramene'. */
   grameneGeneId?: string;
+  /** Gene id used to load the Ensembl tree — only meaningful when
+   *  source === 'ensembl'. */
+  ensemblGeneId?: string;
   viewState?: Partial<ViewState>;
 }
 
@@ -173,7 +177,24 @@ function App() {
       }),
     [],
   );
-  const [uploadedZones, setUploadedZones] = useState<ZoneDefinition[]>([]);
+  // The data-source state has to be declared BEFORE the `zones` useMemo
+  // because that memo's factory references `dataSource` synchronously
+  // on the first render — JS const declarations live in a temporal
+  // dead zone until their declaration line, so reading them earlier
+  // throws.
+  const bootstrappedUrl = useMemo(() => decodeUrlState(), []);
+  const [dataSource, setDataSource] = useState<DataSource>(
+    bootstrappedUrl?.source ?? 'sample',
+  );
+  /** Uploads are scoped to the data source they were added under, so a
+   *  CSV uploaded while looking at the sample tree doesn't follow the
+   *  user into Gramene mode (where its gene ids would resolve to
+   *  nothing) and vice versa. The chassis hides any zone whose
+   *  `isAvailable(data)` returns false anyway, but keeping uploads
+   *  partitioned avoids stale entries from cluttering the Zones list. */
+  const [uploadedZonesBySource, setUploadedZonesBySource] = useState<
+    Record<DataSource, ZoneDefinition[]>
+  >({ sample: [], ensembl: [], gramene: [] });
   const [uploadStatus, setUploadStatus] = useState<{
     state: 'idle' | 'error';
     message?: string;
@@ -185,21 +206,30 @@ function App() {
       msaZone,
       neighborhoodZone,
       genomeZone,
-      expressionZone,
-      scoresZone,
-      ...uploadedZones,
+      // The sample-scoped factory tables live alongside the sample's
+      // own uploads under the 'sample' bucket; together they're only
+      // wired in when the active source is 'sample'.
+      ...(dataSource === 'sample' ? [expressionZone, scoresZone] : []),
+      ...(uploadedZonesBySource[dataSource] ?? []),
     ],
-    [genomeZone, expressionZone, scoresZone, uploadedZones],
+    [genomeZone, expressionZone, scoresZone, uploadedZonesBySource, dataSource],
   );
   const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
   const [tree, setTree] = useState(sampleTree);
   const [viewState, setViewState] = useState<ViewState>(() => buildBootstrapViewState(zoneIds));
-
-  const bootstrappedUrl = useMemo(() => decodeUrlState(), []);
-
-  const [dataSource, setDataSource] = useState<DataSource>(
-    bootstrappedUrl?.source ?? 'sample',
+  const [ensemblGeneInput, setEnsemblGeneInput] = useState(
+    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblGeneId
+      ? bootstrappedUrl.ensemblGeneId
+      : ENSEMBL_DEFAULT_GENE,
+  );
+  /** Tracks the gene id that successfully drove the most recent
+   *  Ensembl fetch. Drives the URL hash, the NoI prop, and the
+   *  pivot-on-load logic. */
+  const [loadedEnsemblGeneId, setLoadedEnsemblGeneId] = useState<string | null>(
+    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblGeneId
+      ? bootstrappedUrl.ensemblGeneId
+      : null,
   );
   const [ensemblData, setEnsemblData] = useState<FromEnsemblResult | null>(null);
   const [ensemblStatus, setEnsemblStatus] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -233,8 +263,8 @@ function App() {
 
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  const applyEnsemblViewState = (data: FromEnsemblResult) => {
-    const pivot = computePivotState(data.tree, ENSEMBL_GENE_OF_INTEREST);
+  const applyEnsemblViewState = (data: FromEnsemblResult, geneId: string) => {
+    const pivot = computePivotState(data.tree, geneId);
     const initial = buildInitialViewState(zoneIds);
     setViewState(
       pivot
@@ -248,22 +278,27 @@ function App() {
     );
   };
 
-  const loadEnsembl = async () => {
-    if (ensemblData) {
-      setDataSource('ensembl');
-      applyEnsemblViewState(ensemblData);
-      return;
-    }
+  const loadEnsembl = async (
+    geneIdRaw: string,
+    opts: { applyPivot?: boolean } = {},
+  ) => {
+    const geneId = geneIdRaw.trim();
+    if (geneId === '') return;
+    const applyPivot = opts.applyPivot ?? true;
     setEnsemblStatus('loading');
     setEnsemblError(null);
     try {
-      const res = await fetch(ENSEMBL_URL, { headers: { Accept: 'application/json' } });
+      const res = await fetch(ensemblUrlFor(geneId), {
+        headers: { Accept: 'application/json' },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as unknown;
       const data = fromEnsemblGeneTree(json);
       setEnsemblData(data);
+      setEnsemblDomains(null);
+      setLoadedEnsemblGeneId(geneId);
       setDataSource('ensembl');
-      applyEnsemblViewState(data);
+      if (applyPivot) applyEnsemblViewState(data, geneId);
       setEnsemblStatus('idle');
     } catch (err) {
       setEnsemblError(err instanceof Error ? err.message : String(err));
@@ -480,14 +515,14 @@ function App() {
 
   const switchToSample = () => {
     setDataSource('sample');
-    setLoadedGrameneGeneId(null);
     setViewState(buildInitialViewState(zoneIds));
   };
 
   // On mount, if the URL hash says we should be looking at a Gramene
-  // gene, kick off the load with `applyPivot: false` so the URL's
-  // viewState (already restored by buildBootstrapViewState) wins. The
-  // ref guard prevents StrictMode's double-mount from firing twice.
+  // or Ensembl gene, kick off the load with `applyPivot: false` so the
+  // URL's viewState (already restored by buildBootstrapViewState)
+  // wins. The ref guard prevents StrictMode's double-mount from firing
+  // twice.
   const bootstrappedRef = useRef(false);
   useEffect(() => {
     if (bootstrappedRef.current) return;
@@ -497,17 +532,23 @@ function App() {
       bootstrappedUrl.grameneGeneId
     ) {
       void loadGramene(bootstrappedUrl.grameneGeneId, { applyPivot: false });
+    } else if (
+      bootstrappedUrl?.source === 'ensembl' &&
+      bootstrappedUrl.ensemblGeneId
+    ) {
+      void loadEnsembl(bootstrappedUrl.ensemblGeneId, { applyPivot: false });
     }
   }, [bootstrappedUrl]);
 
-  // Mirror data source + Gramene gene + viewState into the URL hash so
-  // the playground state is shareable. `replaceState` keeps the back
-  // button uncluttered.
+  // Mirror data source + per-source gene id + viewState into the URL
+  // hash so the playground state is shareable. `replaceState` keeps
+  // the back button uncluttered.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const next = encodeUrlState({
       source: dataSource,
       grameneGeneId: loadedGrameneGeneId ?? undefined,
+      ensemblGeneId: loadedEnsemblGeneId ?? undefined,
       viewState,
     });
     if (window.location.hash !== next) {
@@ -515,9 +556,12 @@ function App() {
         window.location.pathname + window.location.search + next;
       window.history.replaceState(null, '', url);
     }
-  }, [dataSource, loadedGrameneGeneId, viewState]);
+  }, [dataSource, loadedGrameneGeneId, loadedEnsemblGeneId, viewState]);
 
-  const handleUploadedFiles = async (files: FileList | null) => {
+  const handleUploadedFiles = async (
+    files: FileList | null,
+    source: DataSource,
+  ) => {
     if (!files || files.length === 0) return;
     setUploadStatus({ state: 'idle' });
     for (const file of Array.from(files)) {
@@ -532,7 +576,7 @@ function App() {
           continue;
         }
         const stem = file.name.replace(/\.[^.]+$/, '');
-        const id = `upload-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const id = `upload-${source}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         const zone = createTableZone({
           id,
           defaultName: stem,
@@ -541,16 +585,23 @@ function App() {
           defaultWidth: 14,
           minWidth: 140,
         });
-        setUploadedZones((prev) => [...prev, zone]);
-        // Append zoneState entry so the chassis lays the new zone out
-        // immediately instead of waiting for an interaction.
-        setViewState((vs) => ({
-          ...vs,
-          zones: [
-            ...vs.zones,
-            { id, width: zone.defaultWidth, visible: true },
-          ],
+        setUploadedZonesBySource((prev) => ({
+          ...prev,
+          [source]: [...(prev[source] ?? []), zone],
         }));
+        // Append zoneState entry so the chassis lays the new zone out
+        // immediately. Only does so when the user is currently viewing
+        // the source the upload was scoped to, so the new column
+        // doesn't pop into a tree it doesn't apply to.
+        if (source === dataSource) {
+          setViewState((vs) => ({
+            ...vs,
+            zones: [
+              ...vs.zones,
+              { id, width: zone.defaultWidth, visible: true },
+            ],
+          }));
+        }
         if (parsed.warnings.length > 0) {
           setUploadStatus({
             state: 'error',
@@ -728,17 +779,28 @@ function App() {
           </button>
         </ToolbarRow>
 
-        {/* 2 — Ensembl tree + Pfam domains fan-out */}
+        {/* 2 — Ensembl tree + Pfam domains fan-out + ensembl-scoped uploads */}
         <ToolbarRow label="Ensembl">
+          <input
+            type="text"
+            value={ensemblGeneInput}
+            onChange={(e) => setEnsemblGeneInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && ensemblGeneInput.trim()) {
+                loadEnsembl(ensemblGeneInput.trim());
+              }
+            }}
+            placeholder="Ensembl gene id"
+            style={{ width: 180, fontSize: 12 }}
+            disabled={ensemblStatus === 'loading'}
+          />
           <button
-            onClick={loadEnsembl}
-            disabled={dataSource === 'ensembl' || ensemblStatus === 'loading'}
+            onClick={() => loadEnsembl(ensemblGeneInput.trim())}
+            disabled={
+              ensemblStatus === 'loading' || !ensemblGeneInput.trim()
+            }
           >
-            {ensemblStatus === 'loading'
-              ? 'Loading…'
-              : ensemblData
-                ? 'Ensembl (cached)'
-                : 'Load Ensembl tree'}
+            {ensemblStatus === 'loading' ? 'Loading…' : 'Load Ensembl tree'}
           </button>
           <button
             onClick={loadEnsemblDomains}
@@ -756,6 +818,11 @@ function App() {
                 ? 'Pfam domains (cached)'
                 : 'Load Pfam domains'}
           </button>
+          <UploadDataLabel
+            source="ensembl"
+            count={uploadedZonesBySource.ensembl.length}
+            onFiles={handleUploadedFiles}
+          />
           {domainStatus.state === 'error' && (
             <span style={{ color: '#c0392b', fontSize: 12 }}>
               domains error: {domainStatus.error}
@@ -768,8 +835,8 @@ function App() {
           )}
         </ToolbarRow>
 
-        {/* 3 — Gramene tree + user data uploads */}
-        <ToolbarRow label="Gramene & data">
+        {/* 3 — Gramene tree + gramene-scoped data uploads */}
+        <ToolbarRow label="Gramene">
           <input
             type="text"
             value={grameneGeneInput}
@@ -780,7 +847,7 @@ function App() {
               }
             }}
             placeholder="Gramene gene id"
-            style={{ width: 160, fontSize: 12 }}
+            style={{ width: 180, fontSize: 12 }}
             disabled={grameneStatus.state === 'loading'}
           />
           <button
@@ -790,38 +857,11 @@ function App() {
           >
             {grameneStatus.state === 'loading' ? 'Loading…' : 'Load Gramene'}
           </button>
-          <span
-            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
-            title="Upload a CSV/TSV with a gene_id column — each upload creates a new table zone keyed by gene id, so it links directly to whichever tree is loaded (e.g. the Gramene tree)."
-          >
-            <label
-              style={{
-                fontSize: 12,
-                padding: '2px 8px',
-                border: '1px solid var(--tbrowse-border)',
-                borderRadius: 3,
-                cursor: 'pointer',
-                background: 'var(--tbrowse-bg-input)',
-              }}
-            >
-              Upload data…
-              <input
-                type="file"
-                accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
-                multiple
-                onChange={(e) => {
-                  handleUploadedFiles(e.target.files);
-                  e.target.value = '';
-                }}
-                style={{ display: 'none' }}
-              />
-            </label>
-            {uploadedZones.length > 0 && (
-              <span style={{ fontSize: 11, color: 'var(--tbrowse-text-muted)' }}>
-                {uploadedZones.length} uploaded
-              </span>
-            )}
-          </span>
+          <UploadDataLabel
+            source="gramene"
+            count={uploadedZonesBySource.gramene.length}
+            onFiles={handleUploadedFiles}
+          />
           {grameneStatus.state === 'error' && (
             <span style={{ color: '#c0392b', fontSize: 12 }}>
               gramene error: {grameneStatus.error}
@@ -875,7 +915,11 @@ function App() {
       <div style={{ flex: 1, minHeight: 0 }}>
         <TBrowse
           {...dataProps}
-          nodeOfInterest={dataSource === 'ensembl' ? ENSEMBL_GENE_OF_INTEREST : undefined}
+          nodeOfInterest={
+            dataSource === 'ensembl' && loadedEnsemblGeneId
+              ? loadedEnsemblGeneId
+              : undefined
+          }
           zones={zones}
           viewState={viewState}
           onViewStateChange={setViewState}
@@ -883,6 +927,55 @@ function App() {
         />
       </div>
     </div>
+  );
+}
+
+/** Upload-CSV-as-table-zone control. Shared between the Ensembl and
+ *  Gramene toolbar rows; passes its `source` to the host so the new
+ *  table zone is filed under the right per-source bucket and only
+ *  shows up when the user is actually viewing that source's tree. */
+function UploadDataLabel({
+  source,
+  count,
+  onFiles,
+}: {
+  source: DataSource;
+  count: number;
+  onFiles: (files: FileList | null, source: DataSource) => void;
+}) {
+  return (
+    <span
+      style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+      title={`Upload a CSV/TSV with a gene_id column — adds a table zone scoped to the ${source} tree.`}
+    >
+      <label
+        style={{
+          fontSize: 12,
+          padding: '2px 8px',
+          border: '1px solid var(--tbrowse-border)',
+          borderRadius: 3,
+          cursor: 'pointer',
+          background: 'var(--tbrowse-bg-input)',
+        }}
+      >
+        Upload data…
+        <input
+          type="file"
+          accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+          multiple
+          onChange={(e) => {
+            onFiles(e.target.files, source);
+            e.target.value = '';
+          }}
+          style={{ display: 'none' }}
+        />
+      </label>
+      {count > 0 && (
+        <span style={{ fontSize: 11, color: 'var(--tbrowse-text-muted)' }}>
+          {count} uploaded
+        </span>
+      )}
+    </span>
   );
 }
 

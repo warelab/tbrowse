@@ -1,12 +1,17 @@
 import { useMemo, type ReactNode } from 'react';
 import type { ZoneDefinition, ZoneRenderProps } from '../../types';
 import { allFields, builtInFields, providerFields, type LabelField } from './fields';
-import { FieldPicker } from './FieldPicker';
+import { LabelsConfigPopover } from './ConfigPopover';
+import { EditableZoneName } from '../EditableZoneName';
 import { useProviderCache } from './providerCache';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 import { compileStringMatcher } from '../../search/fields';
+import { buildChildrenIndex } from '../../treeIndex';
+import { describeHoveredNodeForHeader } from '../headerInfo';
 
 export interface LabelsZoneState {
+  /** User-set zone name; falls back to the factory default when undefined. */
+  name?: string;
   visibleFields: string[];
 }
 
@@ -21,10 +26,18 @@ const LabelsHeader = ({
   zoneState,
   setZoneState,
   data,
+  hoveredNodeId,
 }: ZoneRenderProps<LabelsZoneState>) => {
   const fields = useMemo(() => allFields(data), [data]);
+  const childrenIndex = useMemo(() => buildChildrenIndex(data.tree), [data.tree]);
+  const hoveredInfo = useMemo(
+    () => describeHoveredNodeForHeader(hoveredNodeId, data, childrenIndex),
+    [hoveredNodeId, data, childrenIndex],
+  );
+  const visibleCount = zoneState.visibleFields.length;
   return (
     <div
+      data-labels-zone-header
       style={{
         height: '100%',
         display: 'flex',
@@ -44,17 +57,54 @@ const LabelsHeader = ({
           padding: '0 10px 0 18px',
         }}
       >
-        <span style={{ fontWeight: 600 }}>Labels</span>
-        <FieldPicker
-          fields={fields}
-          visibleFields={zoneState.visibleFields}
+        <EditableZoneName
+          defaultName="Labels"
+          customName={zoneState?.name}
           onChange={(next) =>
-            setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), visibleFields: next }))
+            setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), name: next }))
           }
         />
+        <span
+          style={{
+            fontWeight: 400,
+            color: 'var(--tbrowse-text-muted)',
+            fontSize: 11,
+          }}
+        >
+          {visibleCount}/{fields.length} field{fields.length === 1 ? '' : 's'}
+        </span>
+        <span style={{ marginLeft: 'auto' }}>
+          <LabelsConfigPopover
+            fields={fields}
+            visibleFields={zoneState.visibleFields}
+            onChange={(next) =>
+              setZoneState((s) => ({ ...(s ?? DEFAULT_STATE), visibleFields: next }))
+            }
+          />
+        </span>
       </div>
-      {/* Reserved second row, kept empty for visual alignment with other zone headers. */}
-      <div style={{ flex: `0 0 ${LEAF_ROW_HEIGHT}px`, minHeight: 0 }} />
+      <div
+        style={{
+          flex: `0 0 ${LEAF_ROW_HEIGHT}px`,
+          minHeight: 0,
+          padding: '0 10px 0 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 11,
+          color: 'var(--tbrowse-text-muted)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+        title={hoveredInfo ?? ''}
+      >
+        {hoveredInfo ?? (
+          <span style={{ color: 'var(--tbrowse-text-subtle)' }}>
+            hover a node…
+          </span>
+        )}
+      </div>
     </div>
   );
 };

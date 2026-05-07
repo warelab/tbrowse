@@ -8,15 +8,11 @@ import type {
   ZoneDefinition,
   ZoneRenderProps,
 } from '../../types';
-import {
-  applicableSchemes,
-  defaultSchemeFor,
-  getScheme,
-  type ColorSchemeId,
-} from './coloring';
+import { defaultSchemeFor, getScheme, type ColorSchemeId } from './coloring';
 import { computeMSAMask, unmaskedMSA, type MSAMask } from './mask';
-import { MaskPanel } from './MaskPanel';
+import { MSAConfigPopover } from './ConfigPopover';
 import { Minimap } from './Minimap';
+import { EditableZoneName } from '../EditableZoneName';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 import {
   buildResidueToColumn,
@@ -26,6 +22,8 @@ import {
 } from './domains';
 
 export interface MSAZoneState {
+  /** User-set zone name; falls back to the factory default when undefined. */
+  name?: string;
   /** First visible-column (inclusive) of the viewport. */
   viewportStart: number;
   /** Last visible-column (exclusive). When <= viewportStart, treat as "full alignment". */
@@ -343,6 +341,7 @@ const MSAHeader = ({
     : 2;
   return (
     <div
+      data-msa-zone-header
       style={{
         position: 'relative',
         height: '100%',
@@ -363,30 +362,15 @@ const MSAHeader = ({
           paddingLeft: 8, // clear the chassis-level reorder handle in the top-left
         }}
       >
-        <span style={{ fontWeight: 600 }}>MSA</span>
+        <EditableZoneName
+          defaultName="MSA"
+          customName={zoneState.name}
+          onChange={(next) =>
+            setZoneState((s) => ({ ...s, name: next }))
+          }
+        />
         {msa && vp && (
           <>
-            <span style={{ fontWeight: 400, color: 'var(--tbrowse-text-muted)', fontSize: 11 }}>{msa.alphabet}</span>
-            <span
-              style={{
-                fontWeight: 400,
-                color: 'var(--tbrowse-text-muted)',
-                fontSize: 11,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {vp.start + 1}–{vp.end} / {totalVisible}
-              {mask && totalVisible < msa.length ? ` (of ${msa.length})` : ''}
-            </span>
-            <SchemeSelect
-              msa={msa}
-              zoneState={zoneState}
-              setZoneState={setZoneState}
-              hasDomains={
-                !!data.proteinDomains &&
-                Object.keys(data.proteinDomains).length > 0
-              }
-            />
             <button
               type="button"
               onClick={zoomToLetters}
@@ -407,13 +391,43 @@ const MSAHeader = ({
             >
               Aa
             </button>
-            <MaskPanel
-              params={maskParams}
-              maxCoverage={activeGeneIds.size}
-              hiddenCols={msa.length - totalVisible}
-              totalCols={msa.length}
-              onChange={(next) => setZoneState((s) => ({ ...s, mask: next }))}
-            />
+            <button
+              type="button"
+              onClick={() => setViewport(0, totalVisible)}
+              disabled={vp.start === 0 && vp.end === totalVisible}
+              title="Zoom out to the full alignment"
+              style={{
+                fontSize: 11,
+                padding: '2px 6px',
+                border: '1px solid var(--tbrowse-border)',
+                background: 'var(--tbrowse-bg-input)',
+                color: 'var(--tbrowse-text)',
+                borderRadius: 3,
+                cursor: 'pointer',
+                fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+              }}
+            >
+              {'<->'}
+            </button>
+            <span style={{ marginLeft: 'auto' }}>
+              <MSAConfigPopover
+                msa={msa}
+                zoneState={zoneState}
+                setZoneState={setZoneState}
+                hasDomains={
+                  !!data.proteinDomains &&
+                  Object.keys(data.proteinDomains).length > 0
+                }
+                mask={{
+                  params: maskParams,
+                  maxCoverage: activeGeneIds.size,
+                  hiddenCols: msa.length - totalVisible,
+                  totalCols: msa.length,
+                  onChange: (next) =>
+                    setZoneState((s) => ({ ...s, mask: next })),
+                }}
+              />
+            </span>
           </>
         )}
       </div>
@@ -441,50 +455,6 @@ const MSAHeader = ({
     </div>
   );
 };
-
-function SchemeSelect({
-  msa,
-  zoneState,
-  setZoneState,
-  hasDomains,
-}: {
-  msa: MSA;
-  zoneState: MSAZoneState;
-  setZoneState: ZoneRenderProps<MSAZoneState>['setZoneState'];
-  /** True when the host has supplied any protein-domain hits. Switches the
-   *  built-in "Plain" scheme's label to "Domains" so its meaning (colour
-   *  by domain coverage) is obvious. */
-  hasDomains: boolean;
-}) {
-  const schemes = applicableSchemes(msa.alphabet);
-  const selectedId = zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet);
-  const labelFor = (id: ColorSchemeId, fallback: string) =>
-    id === 'plain' && hasDomains ? 'Domains' : fallback;
-  return (
-    <select
-      value={selectedId}
-      onChange={(e) =>
-        setZoneState((s) => ({ ...s, colorSchemeId: e.target.value as ColorSchemeId }))
-      }
-      style={{
-        fontSize: 11,
-        padding: '1px 4px',
-        border: '1px solid var(--tbrowse-border)',
-        borderRadius: 3,
-        background: 'var(--tbrowse-bg-input)',
-        color: 'var(--tbrowse-text)',
-        cursor: 'pointer',
-      }}
-      title="Color scheme"
-    >
-      {schemes.map((s) => (
-        <option key={s.id} value={s.id}>
-          {labelFor(s.id, s.label)}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 const MSABody = ({
   data,

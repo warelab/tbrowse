@@ -9,7 +9,11 @@
       .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 24px; }
       .panel { border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #fafafa; }
       h1 { font-size: 16px; margin: 0 0 12px; }
-      button { margin-right: 8px; }
+      /* Spacing rule scoped to the playground toolbar — TBrowse zones
+         (which also use <button>) handle their own spacing via flex
+         `gap`, and would otherwise inherit a stray right-margin that
+         breaks segmented-control layouts. */
+      .panel button { margin-right: 8px; }
     </style>
   </head>
   <body>
