@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTBrowseStore } from '../../store';
+import { GearIcon } from '../../icons/GearIcon';
 import { AGGREGATE_METHODS, methodForKind } from './aggregators';
 import {
   autoPalette,
@@ -320,9 +321,9 @@ export function ConfigPopover({
         onClick={togglePopover}
         title="Configure columns"
         style={{
-          fontSize: 16,
-          lineHeight: 1,
-          padding: '2px 6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '3px 6px',
           borderRadius: 3,
           border: '1px solid var(--tbrowse-border)',
           background: open ? 'var(--tbrowse-accent-soft)' : 'var(--tbrowse-bg-input)',
@@ -330,7 +331,7 @@ export function ConfigPopover({
           cursor: 'pointer',
         }}
       >
-        ⚙
+        <GearIcon />
       </button>
       {open &&
         anchor &&

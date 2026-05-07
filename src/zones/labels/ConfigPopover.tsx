@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTBrowseStore } from '../../store';
 import type { LabelField } from './fields';
+import { GearIcon } from '../../icons/GearIcon';
 
 interface LabelsConfigPopoverProps {
   fields: LabelField[];
@@ -90,9 +91,9 @@ export function LabelsConfigPopover({
         onClick={togglePopover}
         title="Configure visible label fields"
         style={{
-          fontSize: 16,
-          lineHeight: 1,
-          padding: '2px 6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '3px 6px',
           borderRadius: 3,
           border: '1px solid var(--tbrowse-border)',
           background: open
@@ -102,7 +103,7 @@ export function LabelsConfigPopover({
           cursor: 'pointer',
         }}
       >
-        ⚙
+        <GearIcon />
       </button>
       {open &&
         anchor &&

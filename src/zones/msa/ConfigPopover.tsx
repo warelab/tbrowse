@@ -8,6 +8,7 @@ import {
 } from './coloring';
 import type { MSA, ZoneRenderProps } from '../../types';
 import type { MSAZoneState } from './MSA';
+import { GearIcon } from '../../icons/GearIcon';
 
 export interface MaskParams {
   enabled: boolean;
@@ -102,7 +103,6 @@ export function MSAConfigPopover({
     id === 'plain' && hasDomains ? 'Domains' : fallback;
 
   const params = mask.params;
-  const maskActive = params.enabled && params.minCoverage > 0;
 
   return (
     <>
@@ -112,23 +112,19 @@ export function MSAConfigPopover({
         onClick={togglePopover}
         title="Configure colours and column mask"
         style={{
-          fontSize: 16,
-          lineHeight: 1,
-          padding: '2px 6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '3px 6px',
           borderRadius: 3,
-          border: `1px solid ${maskActive ? 'var(--tbrowse-accent)' : 'var(--tbrowse-border)'}`,
+          border: '1px solid var(--tbrowse-border)',
           background: open
             ? 'var(--tbrowse-accent-soft)'
-            : maskActive
-              ? 'var(--tbrowse-accent-soft)'
-              : 'var(--tbrowse-bg-input)',
-          color: maskActive
-            ? 'var(--tbrowse-accent-strong)'
-            : 'var(--tbrowse-text)',
+            : 'var(--tbrowse-bg-input)',
+          color: 'var(--tbrowse-text)',
           cursor: 'pointer',
         }}
       >
-        ⚙
+        <GearIcon />
       </button>
       {open &&
         anchor &&
