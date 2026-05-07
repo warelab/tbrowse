@@ -7,6 +7,8 @@ import {
 } from 'react';
 import { SearchControls } from './SearchBar';
 import { ZoneToggles } from './ChromeStrip';
+import { TBrowseLogo } from '../icons/TBrowseLogo';
+import { useTBrowseStore } from '../store';
 import type { SearchField } from '../search/fields';
 import type {
   HostData,
@@ -151,7 +153,7 @@ export function Toolbar({
         fontSize: 12,
       }}
     >
-      <TBrowseLogo />
+      <ToolbarBrand />
       <Section
         id="tbrowse-toolbar-search"
         label="Search"
@@ -190,68 +192,32 @@ export function Toolbar({
 }
 
 /**
- * Small phylogenetic-tree mark next to the wordmark. Inline SVG so
- * the icon picks up the active accent colour and stays sharp at
- * any DPI. The four leaf dots double as a visual hint for the
- * row-aligned data-zone metaphor TBrowse uses throughout.
+ * Top-left wordmark — Clustal-coloured "TBrowse" rendered inline as
+ * SVG so it stays crisp at any DPI and ships with the bundle. Picks
+ * the dark or light palette to match the chassis's active theme.
+ * Wrapped in a link to tbrowse.org so users can click through to
+ * project home.
  */
-function TBrowseLogo() {
-  const stroke = 'var(--tbrowse-accent)';
+function ToolbarBrand() {
+  const theme = useTBrowseStore((s) => s.theme);
   return (
-    <div
+    <a
       className="tbrowse-toolbar-logo"
+      href="https://tbrowse.org"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="TBrowse — open tbrowse.org"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 6,
         padding: '0 12px',
         borderRight: '1px solid var(--tbrowse-divider)',
         userSelect: 'none',
+        textDecoration: 'none',
       }}
-      aria-label="TBrowse"
     >
-      <svg
-        width={22}
-        height={16}
-        viewBox="0 0 22 16"
-        aria-hidden="true"
-        fill="none"
-      >
-        <g stroke={stroke} strokeWidth={1.25} strokeLinecap="round">
-          {/* root stem */}
-          <line x1={1} y1={8} x2={4} y2={8} />
-          {/* first split */}
-          <line x1={4} y1={3} x2={4} y2={13} />
-          {/* upper / lower halves */}
-          <line x1={4} y1={3} x2={8} y2={3} />
-          <line x1={4} y1={13} x2={8} y2={13} />
-          {/* second-level splits */}
-          <line x1={8} y1={1} x2={8} y2={5} />
-          <line x1={8} y1={11} x2={8} y2={15} />
-          {/* leaf branches */}
-          <line x1={8} y1={1} x2={18} y2={1} />
-          <line x1={8} y1={5} x2={18} y2={5} />
-          <line x1={8} y1={11} x2={18} y2={11} />
-          <line x1={8} y1={15} x2={18} y2={15} />
-        </g>
-        <g fill={stroke}>
-          <circle cx={18.5} cy={1} r={1.5} />
-          <circle cx={18.5} cy={5} r={1.5} />
-          <circle cx={18.5} cy={11} r={1.5} />
-          <circle cx={18.5} cy={15} r={1.5} />
-        </g>
-      </svg>
-      <span
-        style={{
-          fontWeight: 700,
-          fontSize: 13,
-          letterSpacing: 0.2,
-          color: 'var(--tbrowse-text)',
-        }}
-      >
-        TBrowse
-      </span>
-    </div>
+      <TBrowseLogo height={24} variant={theme} />
+    </a>
   );
 }
 

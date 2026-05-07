@@ -1541,7 +1541,7 @@ function DomainTooltip({
         position: 'fixed',
         left,
         top,
-        zIndex: 1000,
+        zIndex: 2000,
         background: 'var(--tbrowse-bg-elevated)',
         border: '1px solid var(--tbrowse-border)',
         borderRadius: 6,

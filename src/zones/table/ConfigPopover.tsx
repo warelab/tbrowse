@@ -352,7 +352,7 @@ export function ConfigPopover({
                 borderRadius: 6,
                 boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
                 padding: 8,
-                zIndex: 1000,
+                zIndex: 2000,
                 fontSize: 11,
                 display: 'flex',
                 flexDirection: 'column',

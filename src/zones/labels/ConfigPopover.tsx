@@ -124,7 +124,7 @@ export function LabelsConfigPopover({
                 borderRadius: 6,
                 boxShadow: '0 4px 16px var(--tbrowse-tooltip-shadow)',
                 padding: '8px 0',
-                zIndex: 1000,
+                zIndex: 2000,
                 fontSize: 12,
               }}
             >

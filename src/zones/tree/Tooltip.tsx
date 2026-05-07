@@ -194,7 +194,7 @@ export function Tooltip({
         fontSize: 12,
         lineHeight: 1.45,
         color: 'var(--tbrowse-text)',
-        zIndex: 1000,
+        zIndex: 2000,
       }}
       onClick={(e) => e.stopPropagation()}
     >

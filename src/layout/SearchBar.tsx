@@ -426,7 +426,7 @@ function ConfigPopoverButton({
         position: 'fixed',
         top: pos.top,
         right: pos.right,
-        zIndex: 1000,
+        zIndex: 2000,
         minWidth: 240,
         padding: 6,
         background: 'var(--tbrowse-bg-elevated)',
