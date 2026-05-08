@@ -11,10 +11,12 @@ import type {
 import {
   buildRowLayout,
   COMPRESSED_INTRON_NT,
+  genomicToEff,
   pickCanonicalTranscript,
   type RowLayout,
 } from './layout';
 import { EditableZoneName } from '../EditableZoneName';
+import { GenomeConfigPopover } from './ConfigPopover';
 
 /** Padding either side of the row's drawing area. */
 const PAD_X = 4;
@@ -272,6 +274,7 @@ export function createGenomeZone(
 
     return (
       <div
+        data-genome-zone-header
         style={{
           height: '100%',
           display: 'flex',
@@ -410,6 +413,13 @@ export function createGenomeZone(
               ? `${(state.zoom ?? 1).toFixed(2).replace(/\.?0+$/, '')}×`
               : 'fit'}
           </button>
+          <span style={{ marginLeft: 'auto' }}>
+            <GenomeConfigPopover
+              zoneState={state}
+              setZoneState={setZoneState}
+              genomeFeatures={data.genomeFeatures}
+            />
+          </span>
         </div>
         <div
           style={{
@@ -506,6 +516,18 @@ export function createGenomeZone(
         if (!gs) continue;
         const transcript = pickCanonicalTranscript(gs);
         if (!transcript) continue;
+        // Feed the row's visible features into the layout so they
+        // block gap compression alongside exons. Filter to the
+        // currently-visible kinds first — features the user hid
+        // shouldn't influence the warp.
+        const allFeatures = data.genomeFeatures?.[node.geneId];
+        const visibleFeatures = allFeatures
+          ? state.visibleFeatureKinds
+            ? allFeatures.filter((f) =>
+                state.visibleFeatureKinds!.includes(f.kind),
+              )
+            : allFeatures
+          : undefined;
         const layout = buildRowLayout({
           geneStructure: gs,
           transcript,
@@ -514,6 +536,7 @@ export function createGenomeZone(
           overrideKeys: overrideSet,
           compressDefault: state.compressIntrons,
           rowKey: r.nodeId,
+          features: visibleFeatures,
         });
         const autoFlip = gs.strand === -1;
         const userFlipped = flippedSet.has(r.nodeId);
@@ -569,12 +592,14 @@ export function createGenomeZone(
       visibleRows,
       data.tree.nodes,
       data.geneStructures,
+      data.genomeFeatures,
       data.msa,
       noiGeneId,
       noiSeq,
       state.paddingMode,
       state.paddingKb,
       state.compressIntrons,
+      state.visibleFeatureKinds,
       overrideSet,
       flippedSet,
     ]);
@@ -775,19 +800,57 @@ export function createGenomeZone(
                     onToggleFlip: toggleFlip,
                     onTip: setTip,
                   })}
-                {!candidate && (
-                  <text
-                    x={drawingX + drawingWidth / 2}
-                    y={midY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontSize={11}
-                    fill="var(--tbrowse-text-subtle)"
-                    pointerEvents="none"
-                  >
-                    no gene structure
-                  </text>
-                )}
+                {!candidate && (() => {
+                  // Distinguish "host hasn't reported anything for this
+                  // gene yet" (the unset / not-attempted case) from
+                  // "host tried to fetch but failed". In the failed
+                  // case we paint a small ⚠ glyph in the strand-
+                  // indicator slot so the user can tell which rows
+                  // are missing data because of upstream errors.
+                  const errMsg = node.geneId
+                    ? data.geneStructureErrors?.[node.geneId]
+                    : undefined;
+                  if (errMsg) {
+                    return (
+                      <g>
+                        <text
+                          x={indicatorCx}
+                          y={midY + 0.5}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={13}
+                          fontWeight={700}
+                          fill="var(--tbrowse-danger)"
+                          pointerEvents="none"
+                        >
+                          ⚠
+                        </text>
+                        <rect
+                          x={PAD_X}
+                          y={r.y}
+                          width={INDICATOR_WIDTH}
+                          height={r.height}
+                          fill="transparent"
+                        >
+                          <title>error fetching features</title>
+                        </rect>
+                      </g>
+                    );
+                  }
+                  return (
+                    <text
+                      x={drawingX + drawingWidth / 2}
+                      y={midY}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={11}
+                      fill="var(--tbrowse-text-subtle)"
+                      pointerEvents="none"
+                    >
+                      no gene structure
+                    </text>
+                  );
+                })()}
               </g>
             );
           })}
@@ -944,17 +1007,16 @@ function renderRow(args: RenderRowArgs): JSX.Element {
       if (visibleKinds && !visibleKinds.includes(f.kind)) continue;
       // Only render when the feature falls inside the row's window.
       if (f.end < layout.gMin || f.start > layout.gMax) continue;
-      // Map the genomic coords through the warp using the nearest exon
-      // segment. Cheap heuristic: features outside any exon use the
-      // window edges' compression, which we approximate by linear
-      // interpolation between effMin and effMax.
-      const rawSpan = layout.gMax - layout.gMin;
-      const effSpan = layout.effMax - layout.effMin;
-      const ratio = effSpan / Math.max(1, rawSpan);
+      // Walk the layout's piecewise warp so a feature sitting on a
+      // compressed intron lands at the matching squashed eff range,
+      // not somewhere along the row's average compression. Same call
+      // for both endpoints — features that span a compressed intron
+      // visually shrink, which is the correct behaviour: the intron
+      // they cover IS shorter on screen.
       const fStart = Math.max(f.start, layout.gMin);
       const fEnd = Math.min(f.end, layout.gMax);
-      const effFStart = layout.effMin + (fStart - layout.gMin) * ratio;
-      const effFEnd = layout.effMin + (fEnd - layout.gMin) * ratio;
+      const effFStart = genomicToEff(layout, fStart);
+      const effFEnd = genomicToEff(layout, fEnd);
       let x1 = effToPx(effFStart);
       let x2 = effToPx(effFEnd);
       if (x2 < x1) [x1, x2] = [x2, x1];
@@ -987,17 +1049,23 @@ function renderRow(args: RenderRowArgs): JSX.Element {
     }
   }
 
-  // Introns (drawn under exons).
-  for (const intron of layout.introns) {
-    const x1raw = effToPx(intron.effStart);
-    const x2raw = effToPx(intron.effEnd);
+  // Connector lines spanning the entire span between adjacent exons.
+  // Drawn before the per-gap chevrons + glyphs so the line is
+  // continuous even when a feature splits the gap into multiple
+  // `IntronSegment` entries — without this, the dark connector
+  // would appear "broken" at every feature region and the lighter
+  // baseline would show through.
+  for (let i = 1; i < layout.exons.length; i++) {
+    const prev = layout.exons[i - 1];
+    const curr = layout.exons[i];
+    const x1raw = effToPx(prev.effEnd);
+    const x2raw = effToPx(curr.effStart);
     const x1 = Math.min(x1raw, x2raw);
     const x2 = Math.max(x1raw, x2raw);
-    const w = Math.max(0, x2 - x1);
-    // Connector line + chevron in the middle.
+    if (x2 <= x1) continue;
     elements.push(
       <line
-        key={`intron-${intron.key}-l`}
+        key={`intron-line-${prev.exonIndex}-${curr.exonIndex}`}
         x1={x1}
         y1={midY}
         x2={x2}
@@ -1007,6 +1075,16 @@ function renderRow(args: RenderRowArgs): JSX.Element {
         pointerEvents="none"
       />,
     );
+  }
+
+  // Per-gap chevrons + // glyph + click hit area. Each `IntronSegment`
+  // is one compressible (or short) gap between merged blockers.
+  for (const intron of layout.introns) {
+    const x1raw = effToPx(intron.effStart);
+    const x2raw = effToPx(intron.effEnd);
+    const x1 = Math.min(x1raw, x2raw);
+    const x2 = Math.max(x1raw, x2raw);
+    const w = Math.max(0, x2 - x1);
     const cx = (x1 + x2) / 2;
     const chevronW = Math.min(4, Math.max(2, w / 4));
     if (w > 6) {

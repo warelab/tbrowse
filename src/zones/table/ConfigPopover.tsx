@@ -343,8 +343,6 @@ export function ConfigPopover({
                 position: 'fixed',
                 right: anchor.right,
                 top: anchor.top,
-                width: anchor.maxWidth,
-                maxWidth: anchor.maxWidth,
                 boxSizing: 'border-box',
                 background: 'var(--tbrowse-bg-elevated)',
                 border: '1px solid var(--tbrowse-border)',

@@ -1,6 +1,8 @@
 export { TBrowse } from './TBrowse';
 export {
   fromEnsemblGeneTree,
+  fromEnsemblGeneStructure,
+  fromEnsemblGenomeFeatures,
   fromEnsemblProteinFeatures,
   type FromEnsemblOptions,
   type FromEnsemblResult,

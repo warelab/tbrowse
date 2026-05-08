@@ -7,6 +7,8 @@ import {
   createTableZone,
   type ZoneDefinition,
   fromEnsemblGeneTree,
+  fromEnsemblGeneStructure,
+  fromEnsemblGenomeFeatures,
   fromEnsemblProteinFeatures,
   fromGrameneGene,
   fromGrameneGenetree,
@@ -248,6 +250,21 @@ function App() {
     total?: number;
     error?: string;
   }>({ state: 'idle' });
+  const [ensemblGeneStructures, setEnsemblGeneStructures] = useState<
+    Record<string, GeneStructure> | null
+  >(null);
+  const [ensemblGenomeFeatures, setEnsemblGenomeFeatures] = useState<
+    Record<string, GenomeFeature[]> | null
+  >(null);
+  const [ensemblGeneStructureErrors, setEnsemblGeneStructureErrors] = useState<
+    Record<string, string> | null
+  >(null);
+  const [overlapStatus, setOverlapStatus] = useState<{
+    state: 'idle' | 'loading' | 'error';
+    done?: number;
+    total?: number;
+    error?: string;
+  }>({ state: 'idle' });
 
   const [grameneGeneInput, setGrameneGeneInput] = useState(
     bootstrappedUrl?.source === 'gramene' && bootstrappedUrl.grameneGeneId
@@ -309,6 +326,10 @@ function App() {
       const data = fromEnsemblGeneTree(json);
       setEnsemblData(data);
       setEnsemblDomains(null);
+      setEnsemblGeneStructures(null);
+      setEnsemblGenomeFeatures(null);
+      setEnsemblGeneStructureErrors(null);
+      setOverlapStatus({ state: 'idle' });
       setLoadedEnsemblGeneId(geneId);
       setDataSource('ensembl');
       if (applyPivot) applyEnsemblViewState(data, geneId);
@@ -373,6 +394,79 @@ function App() {
     if (aborted) return;
     setEnsemblDomains(result);
     setDomainStatus({ state: 'idle', done, total: entries.length });
+  };
+
+  /**
+   * Fan out to /overlap/id/{geneId}?feature=transcript;feature=exon;
+   * feature=cds;feature=regulatory;feature=motif for every leaf in the
+   * loaded tree. The single endpoint produces both `GeneStructure` (gene
+   * model exons + CDS) and `GenomeFeature[]` (regulatory + motif
+   * elements) — they're split out by the two converter functions so
+   * the playground can wire them into the matching TBrowse props.
+   *
+   * Same concurrency-capped pattern as `loadEnsemblDomains` — protects
+   * the Ensembl REST API's 15 req/s limit and surfaces failures
+   * inline rather than silently retrying.
+   */
+  const loadEnsemblOverlap = async () => {
+    if (!ensemblData) return;
+    if (ensemblGeneStructures) return;
+    const leaves = Object.values(ensemblData.tree.nodes)
+      .filter((n) => n.isLeaf && typeof n.geneId === 'string')
+      .map((n) => n.geneId as string);
+    if (leaves.length === 0) {
+      setOverlapStatus({ state: 'error', error: 'No leaves on this tree' });
+      return;
+    }
+    setOverlapStatus({ state: 'loading', done: 0, total: leaves.length });
+    const structures: Record<string, GeneStructure> = {};
+    const features: Record<string, GenomeFeature[]> = {};
+    const errors: Record<string, string> = {};
+    let done = 0;
+    const concurrency = 6;
+    let cursor = 0;
+    // Per-gene failures (HTTP 4xx, parse errors, dropped connections)
+    // are recorded in `errors` rather than aborting the whole batch —
+    // some genes legitimately 400 from Ensembl (deprecated ids, region
+    // misalignments) and we still want partial results for the rest of
+    // the tree. The genome zone reads `geneStructureErrors` and paints
+    // a ⚠ glyph in the strand-indicator slot for those rows.
+    const worker = async () => {
+      while (cursor < leaves.length) {
+        const idx = cursor++;
+        const geneId = leaves[idx];
+        try {
+          const url =
+            `https://rest.ensembl.org/overlap/id/${geneId}` +
+            `?feature=transcript;feature=exon;feature=cds` +
+            `;feature=regulatory;feature=motif`;
+          const res = await fetch(url, {
+            headers: { Accept: 'application/json' },
+          });
+          if (!res.ok) {
+            errors[geneId] = `HTTP ${res.status}`;
+          } else {
+            const json = (await res.json()) as unknown;
+            const gs = fromEnsemblGeneStructure(json, geneId);
+            if (gs) structures[geneId] = gs;
+            else errors[geneId] = 'no gene structure in response';
+            const gf = fromEnsemblGenomeFeatures(json);
+            if (gf.length > 0) features[geneId] = gf;
+          }
+        } catch (err) {
+          errors[geneId] = err instanceof Error ? err.message : String(err);
+        }
+        done++;
+        setOverlapStatus({ state: 'loading', done, total: leaves.length });
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    setEnsemblGeneStructures(structures);
+    setEnsemblGenomeFeatures(Object.keys(features).length > 0 ? features : null);
+    setEnsemblGeneStructureErrors(
+      Object.keys(errors).length > 0 ? errors : null,
+    );
+    setOverlapStatus({ state: 'idle', done, total: leaves.length });
   };
 
   /**
@@ -736,6 +830,10 @@ function App() {
             geneMetadata: ensemblData.geneMetadata,
             msa: ensemblData.msa,
             proteinDomains: ensemblDomains ?? undefined,
+            geneStructures: ensemblGeneStructures ?? undefined,
+            genomeFeatures: ensemblGenomeFeatures ?? undefined,
+            geneStructureErrors:
+              ensemblGeneStructureErrors ?? undefined,
             labelProviders: undefined,
           }
         : dataSource === 'uploaded' && uploadedTree
@@ -885,6 +983,22 @@ function App() {
                 ? 'Pfam domains (cached)'
                 : 'Load Pfam domains'}
           </button>
+          <button
+            onClick={loadEnsemblOverlap}
+            disabled={
+              dataSource !== 'ensembl' ||
+              !ensemblData ||
+              !!ensemblGeneStructures ||
+              overlapStatus.state === 'loading'
+            }
+            title="Fan out to /overlap/id/{geneId} for each leaf — drives the Genome zone (gene structure + regulatory features)."
+          >
+            {overlapStatus.state === 'loading'
+              ? `Loading gene structures ${overlapStatus.done ?? 0}/${overlapStatus.total ?? 0}…`
+              : ensemblGeneStructures
+                ? 'Gene structures (cached)'
+                : 'Load gene structures'}
+          </button>
           <UploadDataLabel
             source="ensembl"
             count={uploadedZonesBySource.ensembl.length}
@@ -893,6 +1007,11 @@ function App() {
           {domainStatus.state === 'error' && (
             <span style={{ color: '#c0392b', fontSize: 12 }}>
               domains error: {domainStatus.error}
+            </span>
+          )}
+          {overlapStatus.state === 'error' && (
+            <span style={{ color: '#c0392b', fontSize: 12 }}>
+              overlap error: {overlapStatus.error}
             </span>
           )}
           {ensemblError && (

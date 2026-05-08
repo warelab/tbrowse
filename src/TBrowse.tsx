@@ -74,6 +74,7 @@ function TBrowseShell(props: TBrowseProps) {
     neighborhood: props.neighborhood,
     geneStructures: props.geneStructures,
     genomeFeatures: props.genomeFeatures,
+    geneStructureErrors: props.geneStructureErrors,
   };
 
   return (

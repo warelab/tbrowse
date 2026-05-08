@@ -1,4 +1,8 @@
-import type { GeneStructure, Transcript } from '../../types';
+import type {
+  GeneStructure,
+  GenomeFeature,
+  Transcript,
+} from '../../types';
 
 /** Long introns get squashed to this many "effective nt" of width
  *  (50 + // glyph + 50, conceptually). Anything shorter is left alone. */
@@ -60,6 +64,21 @@ export interface ExonSegment {
   cdsEffEnd?: number;
 }
 
+/**
+ * One uncompressible region in the row's piecewise warp. Each blocker
+ * is the union of overlapping exon + feature intervals; consecutive
+ * blockers are separated by `IntronSegment` entries (compressed or
+ * not). Inside a blocker the `g → eff` map runs at slope 1, so
+ * `genomicToEff` resolves any coord within a feature region (whether
+ * or not the feature touches an exon) to the right effective x.
+ */
+export interface BlockerSegment {
+  gStart: number;
+  gEnd: number;
+  effStart: number;
+  effEnd: number;
+}
+
 export interface IntronSegment {
   /** Stable key per (row, intron) — drives override toggling. */
   key: string;
@@ -74,6 +93,10 @@ export interface IntronSegment {
 export interface RowLayout {
   exons: ExonSegment[];
   introns: IntronSegment[];
+  /** Merged uncompressible regions (exons ∪ visible features). Used
+   *  by `genomicToEff` so coords inside a feature-only sub-range
+   *  still map at slope 1. */
+  blockers: BlockerSegment[];
   /** Effective extent of the rendered window. */
   effMin: number;
   effMax: number;
@@ -95,8 +118,19 @@ export interface BuildRowLayoutOpts {
   paddingKb?: number;
   overrideKeys: ReadonlySet<string>;
   compressDefault: boolean;
-  /** Stable per-row prefix used inside intron keys. */
+  /** Stable per-row prefix used inside gap keys. */
   rowKey: string;
+  /**
+   * Visible genome features. Treated as additional uncompressible
+   * regions when deciding gap compression — a feature spanning what
+   * would otherwise be a long intron prevents that intron from
+   * collapsing, so the feature stays at full readable width. The
+   * caller should pre-filter to only the kinds the user wants
+   * displayed (per `visibleFeatureKinds`); features filtered out at
+   * render time should NOT be passed in here, otherwise hidden
+   * features would silently keep their gaps from compressing.
+   */
+  features?: GenomeFeature[];
 }
 
 /**
@@ -114,6 +148,7 @@ export function buildRowLayout(opts: BuildRowLayoutOpts): RowLayout {
     overrideKeys,
     compressDefault,
     rowKey,
+    features,
   } = opts;
   const strand = geneStructure.strand;
   const cdsMap = buildCdsMap(transcript, strand);
@@ -138,44 +173,125 @@ export function buildRowLayout(opts: BuildRowLayoutOpts): RowLayout {
     (e) => e.end >= gMin && e.start <= gMax,
   );
 
-  const introns: IntronSegment[] = [];
-  const exonSegments: ExonSegment[] = [];
-  let compressed = 0;
+  // Build the merged "uncompressible" set: every visible exon plus
+  // every visible feature, clipped to the window. The gaps BETWEEN
+  // adjacent merged blockers are the only candidates for compression.
+  // A regulatory element overlapping a long intron will therefore
+  // prevent the intron from collapsing, leaving the feature visible
+  // at its full width.
+  type Interval = { gStart: number; gEnd: number };
+  const blockers: Interval[] = [];
+  for (const e of visibleExons) {
+    blockers.push({
+      gStart: Math.max(e.start, gMin),
+      gEnd: Math.min(e.end, gMax),
+    });
+  }
+  if (features) {
+    for (const f of features) {
+      if (f.end < gMin || f.start > gMax) continue;
+      blockers.push({
+        gStart: Math.max(f.start, gMin),
+        gEnd: Math.min(f.end, gMax),
+      });
+    }
+  }
+  blockers.sort((a, b) => a.gStart - b.gStart);
+  const merged: Interval[] = [];
+  for (const iv of blockers) {
+    const prev = merged[merged.length - 1];
+    // Adjacent intervals (gap of 0) collapse into one — keeps the
+    // gap-finding loop from emitting 0-length entries.
+    if (!prev || iv.gStart > prev.gEnd + 1) {
+      merged.push({ gStart: iv.gStart, gEnd: iv.gEnd });
+    } else if (iv.gEnd > prev.gEnd) {
+      prev.gEnd = iv.gEnd;
+    }
+  }
 
-  for (let i = 0; i < visibleExons.length; i++) {
-    const e = visibleExons[i];
+  // First pass — emit one IntronSegment per gap between merged
+  // blockers, deciding compression up front. Track the running
+  // savings so the second pass can map each exon's eff coords by
+  // subtracting the savings accumulated up to that exon's gStart.
+  const introns: IntronSegment[] = [];
+  let compressed = 0;
+  for (let i = 1; i < merged.length; i++) {
+    const prev = merged[i - 1];
+    const curr = merged[i];
+    const gStart = prev.gEnd + 1;
+    const gEnd = curr.gStart - 1;
+    const realLen = gEnd - gStart + 1;
+    if (realLen <= 0) continue;
+    // Key on genomic coords so toggles survive feature visibility
+    // changes that don't shift this particular gap. If the gap's
+    // boundaries DO shift (a feature appearing/disappearing inside
+    // the gap), the key resets — acceptable since the gap topology
+    // changed underneath the user.
+    const key = `${rowKey}:gap:${gStart}-${gEnd}`;
+    const isLong = realLen > LONG_INTRON_THRESHOLD_NT;
+    const overridden = overrideKeys.has(key);
+    const isCompressed = isLong && compressDefault !== overridden;
+    const effStart = gStart - compressed;
+    if (isCompressed) {
+      compressed += realLen - COMPRESSED_INTRON_NT;
+    }
+    const effEnd = gEnd - compressed;
+    introns.push({
+      key,
+      gStart,
+      gEnd,
+      effStart,
+      effEnd,
+      realLength: realLen,
+      isCompressed,
+    });
+  }
+
+  // Map merged blockers (exons ∪ features) and exons through the
+  // warp. `g→eff` slope is 1 inside any blocker; the accumulator
+  // advances only across compressed gaps that fully precede the
+  // current segment. Both passes walk the same `introns` list
+  // because blockers and introns alternate by construction.
+  const blockerSegments: BlockerSegment[] = [];
+  let bCompressed = 0;
+  let bIntronIdx = 0;
+  for (const m of merged) {
+    while (
+      bIntronIdx < introns.length &&
+      introns[bIntronIdx].gEnd < m.gStart
+    ) {
+      const it = introns[bIntronIdx];
+      if (it.isCompressed) {
+        bCompressed += it.realLength - COMPRESSED_INTRON_NT;
+      }
+      bIntronIdx++;
+    }
+    blockerSegments.push({
+      gStart: m.gStart,
+      gEnd: m.gEnd,
+      effStart: m.gStart - bCompressed,
+      effEnd: m.gEnd - bCompressed,
+    });
+  }
+
+  const exonSegments: ExonSegment[] = [];
+  let exonCompressed = 0;
+  let intronIdx = 0;
+  for (const e of visibleExons) {
     const eStart = Math.max(e.start, gMin);
     const eEnd = Math.min(e.end, gMax);
-
-    if (i > 0) {
-      const prev = visibleExons[i - 1];
-      const intronGStart = Math.max(prev.end + 1, gMin);
-      const intronGEnd = Math.min(e.start - 1, gMax);
-      const realLen = Math.max(0, intronGEnd - intronGStart + 1);
-      if (realLen > 0) {
-        const key = `${rowKey}:intron:${prev.originalIndex}-${e.originalIndex}`;
-        const isLong = realLen > LONG_INTRON_THRESHOLD_NT;
-        const overridden = overrideKeys.has(key);
-        const isCompressed = isLong && compressDefault !== overridden;
-        const effStart = intronGStart - compressed;
-        if (isCompressed) {
-          compressed += realLen - COMPRESSED_INTRON_NT;
-        }
-        const effEnd = intronGEnd - compressed;
-        introns.push({
-          key,
-          gStart: intronGStart,
-          gEnd: intronGEnd,
-          effStart,
-          effEnd,
-          realLength: realLen,
-          isCompressed,
-        });
+    while (
+      intronIdx < introns.length &&
+      introns[intronIdx].gEnd < eStart
+    ) {
+      const it = introns[intronIdx];
+      if (it.isCompressed) {
+        exonCompressed += it.realLength - COMPRESSED_INTRON_NT;
       }
+      intronIdx++;
     }
-
-    const effStart = eStart - compressed;
-    const effEnd = eEnd - compressed;
+    const effStart = eStart - exonCompressed;
+    const effEnd = eEnd - exonCompressed;
     let cdsGStart: number | undefined;
     let cdsGEnd: number | undefined;
     let cdsEffStart: number | undefined;
@@ -186,11 +302,10 @@ export function buildRowLayout(opts: BuildRowLayoutOpts): RowLayout {
       if (ce >= cs) {
         cdsGStart = cs;
         cdsGEnd = ce;
-        cdsEffStart = cs - compressed;
-        cdsEffEnd = ce - compressed;
+        cdsEffStart = cs - exonCompressed;
+        cdsEffEnd = ce - exonCompressed;
       }
     }
-
     exonSegments.push({
       exonIndex: e.originalIndex,
       gStart: eStart,
@@ -231,6 +346,7 @@ export function buildRowLayout(opts: BuildRowLayoutOpts): RowLayout {
   return {
     exons: exonSegments,
     introns,
+    blockers: blockerSegments,
     effMin,
     effMax,
     gMin,
@@ -242,6 +358,60 @@ export function buildRowLayout(opts: BuildRowLayoutOpts): RowLayout {
     peptideLength: cdsMap?.peptideLength,
     cdsLength: cdsMap?.cdsLength,
   };
+}
+
+/**
+ * Map a genomic coordinate into the row's effective-coordinate space,
+ * honouring intron compression.
+ *
+ * The row's transformation is piecewise linear: exons and uncompressed
+ * introns map at slope 1; compressed introns squash a long real
+ * interval into a short effective interval at slope
+ * `(COMPRESSED_INTRON_NT / realLength)`. Padding regions outside the
+ * outermost exons map at slope 1 (they sit before the first / after
+ * the last accumulated compression step). Coords outside `[gMin, gMax]`
+ * are projected with slope 1 off the nearest edge, which is what the
+ * renderer wants for genome features that lie just past the rendered
+ * window — they appear in line with the padding region.
+ *
+ * Used by the genome zone to place `genomeFeatures` (regulatory
+ * elements, motifs, etc.) on the correct effective-x so they sit on
+ * top of the matching exon / intron / padding region instead of
+ * being smeared by a single uniform linear map.
+ */
+export function genomicToEff(layout: RowLayout, g: number): number {
+  // Inside any uncompressible region — exon, feature, or merged
+  // exon+feature — slope is 1.
+  for (const b of layout.blockers) {
+    if (g >= b.gStart && g <= b.gEnd) {
+      return b.effStart + (g - b.gStart);
+    }
+  }
+  // Inside an intron — slope = effLen / realLen. For compressed
+  // introns this collapses a long real interval into a short
+  // effective interval; for short / uncompressed introns the slope
+  // is 1.
+  for (const it of layout.introns) {
+    if (g >= it.gStart && g <= it.gEnd) {
+      const realSpan = Math.max(1, it.gEnd - it.gStart);
+      const effSpan = it.effEnd - it.effStart;
+      return it.effStart + ((g - it.gStart) * effSpan) / realSpan;
+    }
+  }
+  // 5' / 3' padding (or `g` past the rendered window). Project off
+  // the outermost blocker at slope 1.
+  if (layout.blockers.length > 0) {
+    const first = layout.blockers[0];
+    if (g < first.gStart) return first.effStart - (first.gStart - g);
+    const last = layout.blockers[layout.blockers.length - 1];
+    if (g > last.gEnd) return last.effEnd + (g - last.gEnd);
+  }
+  // Fallback when there are no blockers — shouldn't happen in practice
+  // since the renderer skips rows with empty layouts, but stay safe
+  // and project through the window.
+  const realSpan = Math.max(1, layout.gMax - layout.gMin);
+  const effSpan = layout.effMax - layout.effMin;
+  return layout.effMin + ((g - layout.gMin) * effSpan) / realSpan;
 }
 
 /** Pick the canonical transcript from a gene structure, falling back

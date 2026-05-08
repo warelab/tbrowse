@@ -3,6 +3,7 @@ import {
   buildCdsMap,
   buildRowLayout,
   COMPRESSED_INTRON_NT,
+  genomicToEff,
 } from './layout';
 import type { GeneStructure, Transcript } from '../../types';
 
@@ -166,5 +167,143 @@ describe('buildRowLayout', () => {
     });
     expect(layout.gMin).toBe(150);
     expect(layout.gMax).toBe(2049);
+  });
+
+  it('lets a feature spanning a long intron block its compression', () => {
+    // First intron sits at 201..999 (real length 799, > 100 nt threshold).
+    const noFeatures = buildRowLayout({
+      geneStructure: fwdGene,
+      transcript: forwardTranscript,
+      paddingMode: 'gene',
+      overrideKeys: new Set(),
+      compressDefault: true,
+      rowKey: 'r',
+    });
+    const firstIntronNoFeat = noFeatures.introns[0];
+    expect(firstIntronNoFeat.isCompressed).toBe(true);
+
+    // Drop a feature that spans the entirety of the first intron and
+    // overlaps the flanking exons. The merger should treat exon1 +
+    // feature + exon2 as one big blocker, leaving NO compressible
+    // gap between them.
+    const withFeature = buildRowLayout({
+      geneStructure: fwdGene,
+      transcript: forwardTranscript,
+      paddingMode: 'gene',
+      overrideKeys: new Set(),
+      compressDefault: true,
+      rowKey: 'r',
+      features: [
+        { id: 'f1', kind: 'TFBS', start: 150, end: 1050 },
+      ],
+    });
+    // The original first-intron gap is gone (merged into the blocker)
+    // — the only remaining gap should be the SECOND intron at
+    // 1100..1999.
+    const compressed = withFeature.introns.filter((i) => i.isCompressed);
+    expect(compressed).toHaveLength(1);
+    expect(compressed[0].gStart).toBeGreaterThanOrEqual(1100);
+  });
+
+  it('still compresses gaps between disjoint features', () => {
+    // Two short features that DON'T span the gap between exons —
+    // the long intron remains compressible because the feature
+    // doesn't bridge the exons.
+    const layout = buildRowLayout({
+      geneStructure: fwdGene,
+      transcript: forwardTranscript,
+      paddingMode: 'gene',
+      overrideKeys: new Set(),
+      compressDefault: true,
+      rowKey: 'r',
+      features: [{ id: 'f-short', kind: 'TFBS', start: 250, end: 260 }],
+    });
+    // First-exon-end is at 200; this feature starts at 250 leaving a
+    // 49 nt gap (short) but the gap from 261..999 is still 739 nt
+    // (long), so it should still compress.
+    const compressed = layout.introns.filter((i) => i.isCompressed);
+    expect(compressed.length).toBeGreaterThan(0);
+  });
+});
+
+describe('genomicToEff', () => {
+  const layout = buildRowLayout({
+    geneStructure: fwdGene,
+    transcript: forwardTranscript,
+    paddingMode: 'gene',
+    overrideKeys: new Set(),
+    compressDefault: true,
+    rowKey: 'r',
+  });
+
+  it('maps exon-interior coords with slope 1', () => {
+    const e = layout.exons[0];
+    expect(genomicToEff(layout, e.gStart)).toBe(e.effStart);
+    expect(genomicToEff(layout, e.gEnd)).toBe(e.effEnd);
+    // Midway through the exon
+    const mid = Math.floor((e.gStart + e.gEnd) / 2);
+    expect(genomicToEff(layout, mid)).toBe(e.effStart + (mid - e.gStart));
+  });
+
+  it('squashes a compressed intron to its effective span', () => {
+    // First intron in the forward gene: realLength 800, compressed to 100.
+    const intron = layout.introns.find((i) => i.isCompressed);
+    expect(intron).toBeDefined();
+    expect(intron!.realLength).toBeGreaterThan(COMPRESSED_INTRON_NT);
+    const startEff = genomicToEff(layout, intron!.gStart);
+    const endEff = genomicToEff(layout, intron!.gEnd);
+    expect(startEff).toBe(intron!.effStart);
+    expect(endEff).toBe(intron!.effEnd);
+    // A coord halfway through the intron should land halfway through
+    // the squashed eff interval — NOT at half the real-coord ratio.
+    const midG = Math.floor((intron!.gStart + intron!.gEnd) / 2);
+    const midEff = genomicToEff(layout, midG);
+    const midRatio = (midEff - intron!.effStart) /
+      (intron!.effEnd - intron!.effStart);
+    expect(midRatio).toBeCloseTo(0.5, 3);
+    // And the squashed eff span is much smaller than the real span.
+    expect(intron!.effEnd - intron!.effStart).toBeLessThan(
+      (intron!.gEnd - intron!.gStart) / 4,
+    );
+  });
+
+  it('maps feature-region coords at slope 1 (matching exon mapping)', () => {
+    // A feature wholly inside what would otherwise be a long intron.
+    // With the feature acting as a blocker, the bracketing gaps
+    // remain compressible but the FEATURE'S OWN region stays
+    // uncompressed — coords inside the feature should map at slope
+    // 1, not via the linear-fallback ratio.
+    const layoutWithFeature = buildRowLayout({
+      geneStructure: fwdGene,
+      transcript: forwardTranscript,
+      paddingMode: 'gene',
+      overrideKeys: new Set(),
+      compressDefault: true,
+      rowKey: 'r',
+      features: [{ id: 'f', kind: 'TFBS', start: 500, end: 600 }],
+    });
+    const fStart = genomicToEff(layoutWithFeature, 500);
+    const fEnd = genomicToEff(layoutWithFeature, 600);
+    // 600 - 500 = 100 nt, slope 1 ⇒ 100 eff units. The old linear
+    // fallback would have used (effMax-effMin)/(gMax-gMin) which is
+    // far less than 1.
+    expect(fEnd - fStart).toBe(100);
+    // And both endpoints should land OUTSIDE every intron's eff
+    // interval — they sit on the feature's own blocker segment.
+    for (const it of layoutWithFeature.introns) {
+      expect(fStart < it.effStart || fStart > it.effEnd).toBe(true);
+      expect(fEnd < it.effStart || fEnd > it.effEnd).toBe(true);
+    }
+  });
+
+  it('maps adjacent exons monotonically across the intron compression', () => {
+    // Coords increase monotonically through gMin → gMax → effMax.
+    const samples = [];
+    for (let g = layout.gMin; g <= layout.gMax; g += 50) {
+      samples.push(genomicToEff(layout, g));
+    }
+    for (let i = 1; i < samples.length; i++) {
+      expect(samples[i]).toBeGreaterThanOrEqual(samples[i - 1]);
+    }
   });
 });

@@ -308,6 +308,15 @@ export interface HostData {
    * displayed as a track within the genome browser zone.
    */
   genomeFeatures?: Record<GeneId, GenomeFeature[]>;
+  /**
+   * Per-leaf fetch-error map for the genome browser zone. When a leaf's
+   * geneId appears here AND is missing from `geneStructures`, the zone
+   * renders an error glyph in the strand-indicator slot whose tooltip
+   * surfaces this string. Lets a host serve a partial result when some
+   * upstream lookups failed (network, 4xx, malformed payload) without
+   * dropping the entire row.
+   */
+  geneStructureErrors?: Record<GeneId, string>;
 }
 
 export interface ZoneRenderProps<S = unknown> {
@@ -448,6 +457,9 @@ export interface TBrowseProps {
   geneStructures?: Record<GeneId, GeneStructure>;
   /** Optional per-leaf proximal genome features (TFBS, enhancers, etc.). */
   genomeFeatures?: Record<GeneId, GenomeFeature[]>;
+  /** Optional per-leaf fetch-error map; rows with an entry here but no
+   *  `geneStructures` entry render a warning glyph with this message. */
+  geneStructureErrors?: Record<GeneId, string>;
   /**
    * If provided, the initial view collapses every subtree except the path
    * to this node and swaps siblings so the node sits at the top of the
