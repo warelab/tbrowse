@@ -1,7 +1,9 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createBrowserRouter, Link, RouterProvider } from 'react-router-dom';
 import {
   TBrowse,
+  ensureThemeStylesInjected,
   computePivotState,
   createGenomeZone,
   createTableZone,
@@ -61,6 +63,9 @@ import {
   type ParsedTreeFile,
   type TreeFileFormat,
 } from './parseTreeFile';
+import { Layout } from './Layout';
+import { AboutPage } from './AboutPage';
+import { DevelopersPage } from './DevelopersPage';
 
 const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
 const ensemblUrlFor = (geneId: string) =>
@@ -150,7 +155,7 @@ type DataSource = 'sample' | 'ensembl' | 'gramene' | 'uploaded';
 const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
 const GRAMENE_BASE = 'https://data.gramene.org/v69';
 
-function App() {
+export function Playground() {
   const expressionZone = useMemo(
     () =>
       createTableZone({
@@ -877,16 +882,18 @@ function App() {
     <div
       // Wrap in tbrowse-root + tbrowse-theme-* so the toolbar and panel
       // pick up the same CSS vars TBrowse uses, and the page background
-      // flips with the theme toggle.
+      // flips with the theme toggle. `height: 100%` fills the routed
+      // <main>; the navbar lives in the shared Layout above this.
       className={`tbrowse-root tbrowse-theme-${theme}`}
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100vh',
+        height: '100%',
         background: 'var(--tbrowse-bg)',
         color: 'var(--tbrowse-text)',
       }}
     >
+      <PlaygroundIntro />
       <div
         className="panel"
         style={{
@@ -1217,6 +1224,40 @@ function App() {
   );
 }
 
+/** Intro banner shown at the top of the playground, below the navbar.
+ *  Orients first-time visitors before they reach the dense toolbar. */
+function PlaygroundIntro() {
+  return (
+    <div
+      style={{
+        flex: '0 0 auto',
+        padding: '10px 16px',
+        borderBottom: '1px solid var(--tbrowse-divider)',
+        background: 'var(--tbrowse-bg)',
+        color: 'var(--tbrowse-text)',
+        fontSize: 13,
+        lineHeight: 1.5,
+      }}
+    >
+      <strong style={{ fontSize: 14 }}>Playground</strong> — a live sandbox for
+      TBrowse. Start with the bundled <em>Sample</em> tree, or load a real gene
+      tree from <strong>Ensembl</strong> or <strong>Gramene</strong> by id, or
+      upload your own Newick / PhyloXML / Nexus file. Then explore: collapse and
+      prune subtrees, search, resize and reorder zones, and toggle the
+      light/dark theme. Your view is encoded into the URL, so you can copy the
+      link to share an exact state. New here?{' '}
+      <Link to="/" style={{ color: 'var(--tbrowse-accent)' }}>
+        Read about TBrowse
+      </Link>{' '}
+      or see the{' '}
+      <Link to="/developers" style={{ color: 'var(--tbrowse-accent)' }}>
+        developer guide
+      </Link>
+      .
+    </div>
+  );
+}
+
 /** Sticky bottom bar pinned to the playground's flex column. The
  *  parent `.tbrowse-root` is `display: flex; flex-direction: column`
  *  with a `flex: 1` child wrapping <TBrowse>, so a `flex: 0 0 auto`
@@ -1366,9 +1407,33 @@ function ToolbarRow({
   );
 }
 
+// Make the `--tbrowse-*` theme tokens available on every route, including
+// the marketing pages where no <TBrowse> mounts to inject them itself.
+ensureThemeStylesInjected();
+
+// BrowserRouter so the playground keeps `location.hash` for its own
+// shareable view-state encoding. `basename` tracks Vite's base path
+// (`/` in dev, `/tbrowse/` for the GitHub Pages build).
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const router = createBrowserRouter(
+  [
+    {
+      element: <Layout />,
+      children: [
+        { index: true, element: <AboutPage /> },
+        { path: 'playground', element: <Playground /> },
+        { path: 'developers', element: <DevelopersPage /> },
+        { path: '*', element: <AboutPage /> },
+      ],
+    },
+  ],
+  { basename },
+);
+
 const root = createRoot(document.getElementById('root')!);
 root.render(
   <StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </StrictMode>,
 );

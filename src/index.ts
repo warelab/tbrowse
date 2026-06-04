@@ -1,4 +1,6 @@
 export { TBrowse } from './TBrowse';
+export { ensureThemeStylesInjected } from './theme';
+export { TBrowseLogo } from './icons/TBrowseLogo';
 export {
   fromEnsemblGeneTree,
   fromEnsemblGeneStructure,

@@ -1,7 +1,26 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import dts from 'vite-plugin-dts';
+import { copyFileSync } from 'fs';
 import { resolve } from 'path';
+
+/**
+ * GitHub Pages has no SPA rewrite, so a hard refresh on a client route
+ * like `/tbrowse/playground` 404s. Copying the built index.html to
+ * 404.html makes Pages serve the app shell for any unknown path, and
+ * react-router then renders the right route. (The dev server already
+ * does history-API fallback, so this only matters for the static build.)
+ */
+function spaFallback(): Plugin {
+  return {
+    name: 'tbrowse-spa-404-fallback',
+    apply: 'build',
+    closeBundle() {
+      const dir = resolve(__dirname, 'dist-playground');
+      copyFileSync(resolve(dir, 'index.html'), resolve(dir, '404.html'));
+    },
+  };
+}
 
 /**
  * Three vite configurations live here:
@@ -60,6 +79,7 @@ export default defineConfig(({ command, mode }) => {
   if (isPlaygroundBuild) {
     return {
       ...playgroundConfig,
+      plugins: [...playgroundConfig.plugins, spaFallback()],
       // GitHub Pages serves project sites under `/<repo>/`; override via
       // PLAYGROUND_BASE for non-default deployments.
       base: process.env.PLAYGROUND_BASE ?? '/tbrowse/',
