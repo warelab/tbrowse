@@ -29,6 +29,14 @@ interface ToolbarProps {
   onCollapseToMatches: () => void;
   /** Hotkey opt-out — see `TBrowseProps.hotkeys`. */
   hotkeys?: { search?: boolean };
+  /** Initial open state of each disclosure section. Defaults: search
+   *  follows `hasActiveSearch`, zones is closed. See
+   *  `TBrowseProps.defaultOpenSections`. */
+  defaultOpenSections?: { search?: boolean; zones?: boolean };
+  /** Per-zone load status — forwarded from `TBrowseProps.zoneStatus`. */
+  zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
+  /** Host controls rendered right-aligned in the toolbar. */
+  headerActions?: ReactNode;
   /** Ref to the chassis-root element so the global keydown listener
    *  can gate on "user is interacting with our chassis" rather than
    *  greedily stealing every `/` keypress on the page. */
@@ -64,11 +72,23 @@ export function Toolbar({
   searchFields,
   onCollapseToMatches,
   hotkeys,
+  defaultOpenSections,
+  zoneStatus,
+  headerActions,
   containerRef,
 }: ToolbarProps) {
   const hasActiveSearch = !!search?.query;
-  const [searchOpen, setSearchOpen] = useState(hasActiveSearch);
-  const [zonesOpen, setZonesOpen] = useState(false);
+  // The host can pre-open each section; if unspecified, fall back to the
+  // existing behaviour (search auto-opens when there's a query; zones
+  // starts closed). The `useEffect` below still auto-opens search when a
+  // controlled-host viewState change adds a query later, regardless of
+  // the initial value picked here.
+  const [searchOpen, setSearchOpen] = useState(
+    defaultOpenSections?.search ?? hasActiveSearch,
+  );
+  const [zonesOpen, setZonesOpen] = useState(
+    defaultOpenSections?.zones ?? false,
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchHotkey = hotkeys?.search ?? true;
 
@@ -185,8 +205,22 @@ export function Toolbar({
         open={zonesOpen}
         onToggle={() => setZonesOpen((o) => !o)}
       >
-        <ZoneToggles zones={zones} data={data} />
+        <ZoneToggles zones={zones} data={data} zoneStatus={zoneStatus} />
       </Section>
+      {headerActions && (
+        <div
+          className="tbrowse-toolbar-actions"
+          style={{
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '0 10px',
+          }}
+        >
+          {headerActions}
+        </div>
+      )}
     </div>
   );
 }

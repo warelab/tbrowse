@@ -13,10 +13,21 @@ export interface TBrowseState {
    * `tbrowse-theme-*` class and pick up the CSS custom properties.
    */
   theme: 'light' | 'dark';
+  /**
+   * Base font size in px, mirrored from the host's `fontSize` prop. DOM zone
+   * text reads it via the `--tbrowse-font-size` CSS var; canvas-drawn zones
+   * (e.g. the MSA residue grid) read this numeric value directly since a
+   * canvas context can't resolve CSS vars.
+   */
+  fontSize: number;
   setHoveredNodeId: (id: NodeId | null) => void;
   setViewState: (next: ViewState | ((prev: ViewState) => ViewState)) => void;
   setTheme: (theme: 'light' | 'dark') => void;
+  setFontSize: (fontSize: number) => void;
 }
+
+/** Default base font size when the host doesn't pass `fontSize`. */
+export const DEFAULT_FONT_SIZE = 12;
 
 export type TBrowseStore = StoreApi<TBrowseState>;
 
@@ -43,6 +54,9 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     proteinDomains: props.proteinDomains,
     exonJunctions: props.exonJunctions,
     neighborhood: props.neighborhood,
+    geneStructures: props.geneStructures,
+    genomeFeatures: props.genomeFeatures,
+    hostData: props.hostData,
   };
   const zoneStates: Record<string, unknown> = {};
   for (const z of props.zones) {
@@ -87,12 +101,14 @@ export function createTBrowseStore(props: TBrowseProps): TBrowseStore {
     viewState: initial,
     hoveredNodeId: null,
     theme: props.theme ?? 'light',
+    fontSize: props.fontSize ?? DEFAULT_FONT_SIZE,
     setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
     setViewState: (next) =>
       set((s) => ({
         viewState: typeof next === 'function' ? next(s.viewState) : next,
       })),
     setTheme: (theme) => set({ theme }),
+    setFontSize: (fontSize) => set({ fontSize }),
   }));
 }
 

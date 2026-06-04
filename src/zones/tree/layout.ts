@@ -25,15 +25,27 @@ export interface TreeLayoutResult {
   rootId: NodeId | null;
 }
 
+export type TreeLayoutMode = 'phylogram' | 'cladogram';
+
 export interface TreeLayoutInput {
   tree: Tree;
   visibleRows: VisibleRow[];
   drawingLeftX: number;
   drawingWidth: number;
+  /**
+   * 'phylogram' (default): x = cumulative branch-length distance from root.
+   * 'cladogram': branch lengths are ignored; x is driven by topological
+   * distance to the furthest descendant end, so all visible ends align at the
+   * right edge. Suited to rank trees (e.g. a taxonomy) with no real branch
+   * lengths.
+   */
+  layoutMode?: TreeLayoutMode;
 }
 
 /**
- * Phylogram layout. Pure function of (tree, visibleRows, drawing area).
+ * Tree layout. Pure function of (tree, visibleRows, drawing area, mode).
+ * Defaults to a phylogram; pass `layoutMode: 'cladogram'` to ignore branch
+ * lengths and align all visible ends at the right edge.
  *
  * - The set of "visible end" nodes (leaves + collapsed summaries) comes from
  *   visibleRows, and their y is the row center.
@@ -80,37 +92,65 @@ export function computeTreeLayout(input: TreeLayoutInput): TreeLayoutResult {
     arr.push(id);
   }
 
-  // Cumulative distance from root via BFS. Each branch contributes
-  // at least `MIN_BRANCH_DISTANCE` to the layout, so very-short
-  // branches (zero-length, or measured-but-tiny like 1e-7 from a
-  // gene-tree exporter) still get a visible horizontal segment
-  // instead of collapsing onto their parent's x. The underlying
-  // `tree.nodes[child].distance` is left untouched — the floor
-  // applies only to layout depth, not to the data.
-  const depth = new Map<NodeId, number>();
-  depth.set(tree.rootId, 0);
-  const queue: NodeId[] = [tree.rootId];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    const d = depth.get(id) ?? 0;
-    for (const child of childrenOf.get(id) ?? []) {
-      const raw = tree.nodes[child]?.distance ?? 0;
-      const clamped = Math.max(MIN_BRANCH_DISTANCE, raw);
-      depth.set(child, d + clamped);
-      queue.push(child);
-    }
-  }
-
-  // Scale x so the deepest visible end sits at drawingLeftX + drawingWidth.
-  let maxEndDepth = 0;
-  for (const id of endById.keys()) {
-    const d = depth.get(id) ?? 0;
-    if (d > maxEndDepth) maxEndDepth = d;
-  }
-  const xScale = maxEndDepth > 0 ? drawingWidth / maxEndDepth : 0;
-
   const xById = new Map<NodeId, number>();
-  for (const [id, d] of depth) xById.set(id, drawingLeftX + d * xScale);
+  if (input.layoutMode === 'cladogram') {
+    // Cladogram: ignore branch lengths. heightToEnd(node) = max number of
+    // edges from the node down to a visible end (0 at an end — leaf or
+    // collapsed summary). x decreases with height, so every visible end lands
+    // at the right edge and internal nodes sit left in proportion to their
+    // subtree height. A collapsed clade reads as a tip in the aligned column.
+    const heightToEnd = new Map<NodeId, number>();
+    const computeHeight = (id: NodeId): number => {
+      const cached = heightToEnd.get(id);
+      if (cached !== undefined) return cached;
+      if (endById.has(id)) {
+        heightToEnd.set(id, 0);
+        return 0;
+      }
+      let h = 0;
+      for (const k of childrenOf.get(id) ?? []) {
+        const kh = 1 + computeHeight(k);
+        if (kh > h) h = kh;
+      }
+      heightToEnd.set(id, h);
+      return h;
+    };
+    const maxHeight = computeHeight(tree.rootId);
+    const xScale = maxHeight > 0 ? drawingWidth / maxHeight : 0;
+    for (const id of visible) {
+      const h = heightToEnd.get(id) ?? 0;
+      xById.set(id, drawingLeftX + (maxHeight - h) * xScale);
+    }
+  } else {
+    // Phylogram (default): cumulative distance from root via BFS. Each branch
+    // contributes at least `MIN_BRANCH_DISTANCE` to the layout, so very-short
+    // branches (zero-length, or measured-but-tiny like 1e-7 from a gene-tree
+    // exporter) still get a visible horizontal segment instead of collapsing
+    // onto their parent's x. The underlying `tree.nodes[child].distance` is
+    // left untouched — the floor applies only to layout depth, not to data.
+    const depth = new Map<NodeId, number>();
+    depth.set(tree.rootId, 0);
+    const queue: NodeId[] = [tree.rootId];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const d = depth.get(id) ?? 0;
+      for (const child of childrenOf.get(id) ?? []) {
+        const raw = tree.nodes[child]?.distance ?? 0;
+        const clamped = Math.max(MIN_BRANCH_DISTANCE, raw);
+        depth.set(child, d + clamped);
+        queue.push(child);
+      }
+    }
+
+    // Scale x so the deepest visible end sits at drawingLeftX + drawingWidth.
+    let maxEndDepth = 0;
+    for (const id of endById.keys()) {
+      const d = depth.get(id) ?? 0;
+      if (d > maxEndDepth) maxEndDepth = d;
+    }
+    const xScale = maxEndDepth > 0 ? drawingWidth / maxEndDepth : 0;
+    for (const [id, d] of depth) xById.set(id, drawingLeftX + d * xScale);
+  }
 
   // y for ends = row centre; y for internals = midpoint of children y (postorder).
   const yById = new Map<NodeId, number>();

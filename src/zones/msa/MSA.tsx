@@ -14,6 +14,7 @@ import { MSAConfigPopover } from './ConfigPopover';
 import { Minimap } from './Minimap';
 import { EditableZoneName } from '../EditableZoneName';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { useTBrowseStore, DEFAULT_FONT_SIZE } from '../../store';
 import {
   buildResidueToColumn,
   computeDominantDomainByCol,
@@ -45,6 +46,25 @@ const DEFAULT_MASK = { enabled: true, minCoverage: 1, padding: 0, expandedRuns: 
 
 const PAD_X = 4;
 const TEXT_RENDER_MIN_PX = 7;
+
+/**
+ * Residue glyph size (px) for the MSA canvas. Scales with the host's base
+ * font size but is capped by what fits the column: a monospace glyph is
+ * ~0.6em wide, so a single letter fits when fontPx ≲ residueWidth/0.6
+ * (≈ ×1.6) and a 3-letter code when fontPx ≲ residueWidth/(3·0.6) (≈ ×0.55).
+ * At the zoom thresholds (7px single / 22px three-letter) the caps land just
+ * above the historical 11/10, so a default base of 12 reproduces the prior
+ * look and the `fontSize` prop only enlarges residues where there's room.
+ */
+export function residueGlyphPx(
+  basePx: number,
+  residueWidth: number,
+  threeLetter: boolean,
+): number {
+  return threeLetter
+    ? Math.max(6, Math.min(basePx - 2, residueWidth * 0.55))
+    : Math.max(6, Math.min(basePx - 1, residueWidth * 1.6));
+}
 /** Below this residue width, individual residue colours stop being legible —
  *  the per-column fills smear together. When the host has supplied domain
  *  data, the body silently switches to the "Domains" colouring at that zoom
@@ -472,6 +492,10 @@ const MSABody = ({
   const msa = data.msa;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Host-configurable base font size (TBrowseProps.fontSize). The residue
+  // glyphs scale with it, but are capped to the column width so adjacent
+  // letters never overlap when the base is large or the user is zoomed out.
+  const fontSize = useTBrowseStore((s) => s.fontSize);
 
   const totalHeight = useMemo(
     () =>
@@ -943,9 +967,17 @@ const MSABody = ({
     const renderThreeLetter =
       renderText && msa.alphabet === 'protein' && residueWidth >= THREE_LETTER_MIN_PX;
     if (renderText) {
-      ctx.font = renderThreeLetter
-        ? '10px ui-monospace, "SF Mono", Menlo, monospace'
-        : '11px ui-monospace, "SF Mono", Menlo, monospace';
+      // Scale residue glyphs with the host's base font size (default 12 →
+      // 11px single / 10px three-letter, preserving the prior look), then cap
+      // by what fits the column. A monospace glyph is ~0.6em wide, so a
+      // single letter fits when fontPx ≲ residueWidth/0.6 (≈ ×1.6) and a
+      // 3-letter code when fontPx ≲ residueWidth/(3·0.6) (≈ ×0.55). At the
+      // zoom thresholds (7px single / 22px three-letter) these caps land just
+      // above 11/10, so the defaults are unchanged and the prop only scales
+      // residues up where there's room.
+      const base = fontSize || DEFAULT_FONT_SIZE;
+      const glyphPx = residueGlyphPx(base, residueWidth, renderThreeLetter);
+      ctx.font = `${glyphPx}px ui-monospace, "SF Mono", Menlo, monospace`;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
     }
@@ -1055,6 +1087,7 @@ const MSABody = ({
     domainStatsByNode,
     mask,
     totalVisible,
+    fontSize,
   ]);
 
   // Wheel handler: deltaX → pan, ctrl/shift + deltaY → zoom centred on cursor.

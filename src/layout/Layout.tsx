@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { useTBrowseStore } from '../store';
@@ -51,6 +52,21 @@ interface LayoutProps {
   searchFields?: SearchField[];
   /** Hotkey opt-out forwarded from `TBrowseProps.hotkeys`. */
   hotkeys?: { search?: boolean };
+  /** Initial open state of the toolbar disclosure sections —
+   *  forwarded from `TBrowseProps.defaultOpenSections`. */
+  defaultOpenSections?: { search?: boolean; zones?: boolean };
+  /** Per-zone load status — forwarded from `TBrowseProps.zoneStatus`. */
+  zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
+  /** Show the top toolbar. Forwarded from `TBrowseProps.showHeader`. */
+  showHeader?: boolean;
+  /** Per-row height in px. Forwarded from `TBrowseProps.rowHeight`. */
+  rowHeight?: number;
+  /** Host controls rendered in the toolbar. Forwarded from
+   *  `TBrowseProps.headerActions`. */
+  headerActions?: ReactNode;
+  /** Size to content instead of filling/scrolling the container.
+   *  Forwarded from `TBrowseProps.autoHeight`. */
+  autoHeight?: boolean;
   /** Ref to the chassis-root DOM element — Toolbar uses it to scope
    *  global hotkey listeners (`/`, Cmd/Ctrl-F) so they only fire
    *  when the user is interacting with our chassis. */
@@ -62,6 +78,12 @@ export function Layout({
   zones,
   searchFields: hostSearchFields,
   hotkeys,
+  defaultOpenSections,
+  zoneStatus,
+  showHeader = true,
+  rowHeight,
+  headerActions,
+  autoHeight = false,
   containerRef,
 }: LayoutProps) {
   const viewState = useTBrowseStore((s) => s.viewState);
@@ -97,6 +119,13 @@ export function Layout({
   // toggle-off after auto-enable doesn't get clobbered the next
   // time the zone is re-checked. Always-available zones (tree,
   // labels) get added on mount and never trigger another update.
+  //
+  // The `autoEnabledRef` guard only spans the current mount, so it
+  // can't protect a deliberately-hidden zone when a persisted view
+  // re-mounts TBrowse (the ref starts empty and the zone's data then
+  // arrives). The persisted `userToggled` flag closes that gap: a zone
+  // the user has explicitly toggled is never auto-revealed, so a shared
+  // view restores its hidden zones exactly as saved.
   const autoEnabledRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const newlyAvailable: string[] = [];
@@ -110,7 +139,7 @@ export function Layout({
     if (newlyAvailable.length === 0) return;
     setViewState((vs) => {
       const next = vs.zones.map((z) =>
-        newlyAvailable.includes(z.id) && !z.visible
+        newlyAvailable.includes(z.id) && !z.visible && !z.userToggled
           ? { ...z, visible: true }
           : z,
       );
@@ -264,8 +293,9 @@ export function Layout({
         collapsedNodeIds,
         prunedNodeIds,
         swappedNodeIds,
+        rowHeight,
       }),
-    [data.tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds],
+    [data.tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds, rowHeight],
   );
 
   // Animation: lerp visibleRows between the previous and target snapshots
@@ -402,8 +432,14 @@ export function Layout({
   }, []);
 
   const rowRange = useMemo(
-    () => computeRowRange(visibleRows, scrollTop, viewportHeight),
-    [visibleRows, scrollTop, viewportHeight],
+    // In autoHeight mode there's no scroll viewport to virtualize against, so
+    // render every row — otherwise the windowing would clip rows that are
+    // "below the fold" of the (zero-derived) viewport height.
+    () =>
+      autoHeight
+        ? { startIndex: 0, endIndex: visibleRows.length }
+        : computeRowRange(visibleRows, scrollTop, viewportHeight),
+    [autoHeight, visibleRows, scrollTop, viewportHeight],
   );
 
   const onSelectNode = useCallback(
@@ -696,7 +732,7 @@ export function Layout({
       zoneState: stored === undefined ? def.defaultZoneState : stored,
       setZoneState: (next) => setZoneState(zoneId, def.defaultZoneState, next as unknown),
       width,
-      bodyHeight: viewportHeight,
+      bodyHeight: autoHeight ? totalContentHeight : viewportHeight,
       bodyScrollLeft: scrollLefts[zoneId] ?? 0,
       setBodyScrollLeft: (next) => setBodyScrollLeft(zoneId, next),
       data,
@@ -710,31 +746,39 @@ export function Layout({
         display: 'flex',
         flexDirection: 'column',
         width: '100%',
-        height: '100%',
+        height: autoHeight ? 'auto' : '100%',
         background: 'var(--tbrowse-bg)',
         color: 'var(--tbrowse-text)',
       }}
     >
-      <Toolbar
-        zones={zones}
-        data={data}
-        search={viewState.search}
-        setSearch={setSearchState}
-        searchResults={searchResults}
-        searchFields={searchFields}
-        onCollapseToMatches={onCollapseToMatches}
-        hotkeys={hotkeys}
-        containerRef={containerRef}
-      />
+      {showHeader && (
+        <Toolbar
+          zones={zones}
+          data={data}
+          search={viewState.search}
+          setSearch={setSearchState}
+          searchResults={searchResults}
+          searchFields={searchFields}
+          onCollapseToMatches={onCollapseToMatches}
+          hotkeys={hotkeys}
+          defaultOpenSections={defaultOpenSections}
+          zoneStatus={zoneStatus}
+          headerActions={headerActions}
+          containerRef={containerRef}
+        />
+      )}
       <div
         ref={outerRef}
         className="tbrowse-outer"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         style={{
           position: 'relative',
-          flex: 1,
+          // autoHeight: take the content's natural height and don't scroll
+          // internally, so the chassis grows to fit every row with no empty
+          // space below the last one. Otherwise fill the container and scroll.
+          flex: autoHeight ? 'none' : 1,
           minHeight: 0,
-          overflow: 'auto',
+          overflow: autoHeight ? 'visible' : 'auto',
         }}
       >
       <div

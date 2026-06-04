@@ -9,10 +9,14 @@ export interface VisibleRowsInput {
   prunedNodeIds: ReadonlySet<NodeId>;
   /** Internal nodes whose children should be walked in reversed order. */
   swappedNodeIds?: ReadonlySet<NodeId>;
+  /** Per-row height in px (leaf + collapsed-summary). Defaults to 24. */
+  rowHeight?: number;
 }
 
 export function computeVisibleRows(input: VisibleRowsInput): VisibleRow[] {
   const { tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds } = input;
+  const leafHeight = input.rowHeight ?? LEAF_ROW_HEIGHT;
+  const summaryHeight = input.rowHeight ?? SUMMARY_ROW_HEIGHT;
 
   const childrenOf: Record<NodeId, NodeId[]> = {};
   for (const node of Object.values(tree.nodes)) {
@@ -36,10 +40,10 @@ export function computeVisibleRows(input: VisibleRowsInput): VisibleRow[] {
         kind: 'collapsedSummary',
         nodeId,
         y,
-        height: SUMMARY_ROW_HEIGHT,
+        height: summaryHeight,
         leafCount,
       });
-      y += SUMMARY_ROW_HEIGHT;
+      y += summaryHeight;
       return;
     }
 
@@ -48,10 +52,10 @@ export function computeVisibleRows(input: VisibleRowsInput): VisibleRow[] {
         kind: 'leaf',
         nodeId,
         y,
-        height: LEAF_ROW_HEIGHT,
+        height: leafHeight,
         leafCount: 1,
       });
-      y += LEAF_ROW_HEIGHT;
+      y += leafHeight;
       return;
     }
 

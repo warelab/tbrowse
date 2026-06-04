@@ -223,7 +223,7 @@ const LabelsBody = ({
               left: 0,
               right: 0,
               height: r.height,
-              fontSize: 12,
+              fontSize: 'var(--tbrowse-font-size, 12px)',
               padding: '0 10px',
               display: 'flex',
               alignItems: 'center',

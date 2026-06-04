@@ -42,6 +42,7 @@ const THEME_CSS = `
   --tbrowse-accent-soft: #e6f0fb;
   --tbrowse-accent-fg: #ffffff;
   --tbrowse-danger: #c0392b;
+  --tbrowse-danger-soft: rgba(192, 57, 43, 0.08);
   --tbrowse-search: #d97706;
   --tbrowse-search-soft: rgba(217, 119, 6, 0.18);
   --tbrowse-tooltip-shadow: rgba(0, 0, 0, 0.12);
@@ -51,6 +52,25 @@ const THEME_CSS = `
   --tbrowse-branch: #444444;
   --tbrowse-leaf-extension: #bbbbbb;
 }
+
+/* Zone toggle status states — see ChromeStrip.tsx and
+   TBrowseProps.zoneStatus. The 'loading' class gently pulses the
+   button opacity to signal in-flight host fetches; 'error' paints a
+   red border + tinted background and overrides the visible-state
+   accent so failures are unmistakable on either theme. */
+@keyframes tbrowse-zone-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+.tbrowse-zone-loading {
+  animation: tbrowse-zone-pulse 1.4s ease-in-out infinite;
+}
+.tbrowse-zone-error {
+  border-color: var(--tbrowse-danger) !important;
+  background: var(--tbrowse-danger-soft) !important;
+  color: var(--tbrowse-danger) !important;
+}
+
 .tbrowse-theme-dark {
   --tbrowse-bg: #1c1f24;
   --tbrowse-bg-alt: #24272d;
@@ -69,6 +89,7 @@ const THEME_CSS = `
   --tbrowse-accent-soft: #1f3a5f;
   --tbrowse-accent-fg: #0e1116;
   --tbrowse-danger: #e57373;
+  --tbrowse-danger-soft: rgba(229, 115, 115, 0.16);
   --tbrowse-search: #fbbf24;
   --tbrowse-search-soft: rgba(251, 191, 36, 0.22);
   --tbrowse-tooltip-shadow: rgba(0, 0, 0, 0.6);

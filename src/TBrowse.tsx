@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { createTBrowseStore, TBrowseStoreProvider } from './store';
 import { Layout } from './layout/Layout';
 import { ensureThemeStylesInjected } from './theme';
@@ -17,31 +17,48 @@ export function TBrowse(props: TBrowseProps) {
 
   const lastEmitted = useRef(store.getState().viewState);
 
-  // Synchronously mirror a controlled `viewState` prop into the store
-  // DURING render. Doing this in a useEffect would defer the sync by one
-  // commit — long enough that the host can swap in a new tree + matching
-  // pivot view state in a single batch and have the chassis paint once
-  // with the new tree against the OLD viewState (no pivot, all leaves
-  // briefly visible) before the effect fires the second render. Setting
-  // store state during render is safe for Zustand because subscribers
-  // use useSyncExternalStore — they pick up the latest snapshot when
-  // they (re)render later in this pass.
-  if (
-    isControlled &&
-    propViewState !== undefined &&
-    store.getState().viewState !== propViewState
-  ) {
-    lastEmitted.current = propViewState;
-    store.setState({ viewState: propViewState });
-  }
+  // Mirror a controlled `viewState` prop into the store. We use
+  // useLayoutEffect (NOT plain useEffect) so the sync runs synchronously
+  // after commit and before the browser paints — preserving the
+  // single-paint guarantee when a host swaps a new tree + matching pivot
+  // viewState atomically. A plain useEffect would defer past paint and
+  // briefly show the new tree against the old viewState.
+  //
+  // The earlier "set during render" version produced the same single-
+  // paint outcome but triggered React's "Cannot update a component while
+  // rendering a different component" warning when zustand notified
+  // already-rendering subscribers mid-tree. Moving to layout effects
+  // keeps the timing tight while staying inside React's invariants.
+  const propTheme = props.theme ?? 'light';
+  useLayoutEffect(() => {
+    if (
+      isControlled &&
+      propViewState !== undefined &&
+      store.getState().viewState !== propViewState
+    ) {
+      lastEmitted.current = propViewState;
+      store.setState({ viewState: propViewState });
+    }
+  }, [isControlled, propViewState, store]);
 
   // Mirror the theme prop into the store so portaled tooltips/popovers,
   // which render outside the chassis DOM subtree, can re-apply the
   // `tbrowse-theme-*` class on their wrappers and pick up the CSS vars.
-  const propTheme = props.theme ?? 'light';
-  if (store.getState().theme !== propTheme) {
-    store.setState({ theme: propTheme });
-  }
+  useLayoutEffect(() => {
+    if (store.getState().theme !== propTheme) {
+      store.setState({ theme: propTheme });
+    }
+  }, [propTheme, store]);
+
+  // Mirror the fontSize prop into the store so canvas-drawn zones (MSA) can
+  // read the numeric value; DOM zones additionally pick up the CSS var set on
+  // the root below.
+  const propFontSize = props.fontSize;
+  useLayoutEffect(() => {
+    if (propFontSize !== undefined && store.getState().fontSize !== propFontSize) {
+      store.setState({ fontSize: propFontSize });
+    }
+  }, [propFontSize, store]);
 
   useEffect(() => {
     if (!onChange) return;
@@ -75,19 +92,35 @@ function TBrowseShell(props: TBrowseProps) {
     geneStructures: props.geneStructures,
     genomeFeatures: props.genomeFeatures,
     geneStructureErrors: props.geneStructureErrors,
+    hostData: props.hostData,
   };
+
+  const rootStyle: CSSProperties = {
+    width: '100%',
+    height: props.autoHeight ? 'auto' : '100%',
+  };
+  if (typeof props.fontSize === 'number') {
+    (rootStyle as Record<string, string | number>)['--tbrowse-font-size'] =
+      `${props.fontSize}px`;
+  }
 
   return (
     <div
       ref={containerRef}
       className={`tbrowse-root tbrowse-theme-${props.theme ?? 'light'} ${props.className ?? ''}`}
-      style={{ width: '100%', height: '100%' }}
+      style={rootStyle}
     >
       <Layout
         data={data}
         zones={props.zones}
         searchFields={props.searchFields}
         hotkeys={props.hotkeys}
+        defaultOpenSections={props.defaultOpenSections}
+        zoneStatus={props.zoneStatus}
+        showHeader={props.showHeader ?? true}
+        rowHeight={props.rowHeight}
+        headerActions={props.headerActions}
+        autoHeight={props.autoHeight}
         containerRef={containerRef}
       />
     </div>

@@ -21,6 +21,9 @@ export { computePivotState, type PivotState } from './pivot';
 export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
 export { computeRowRange } from './layout/rowRange';
 export { createStubZone } from './zones/stub';
+// Editable zone-name control, so host-defined zones can offer the same
+// rename affordance as the built-in zones.
+export { EditableZoneName, type EditableZoneNameProps } from './zones/EditableZoneName';
 export {
   treeZone,
   type TreeZoneState,

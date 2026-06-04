@@ -40,7 +40,7 @@ export function describeHoveredNodeForHeader(
     if (tax?.rank) parts.push(tax.rank);
     if (node.eventType) parts.push(node.eventType);
     const size = countLeavesInSubtree(nodeId, data.tree, childrenIndex);
-    parts.push(`${size} leaf${size === 1 ? '' : 'ves'}`);
+    parts.push(`${size} ${size === 1 ? 'leaf' : 'leaves'}`);
   }
   return parts.length > 0 ? parts.join(' · ') : null;
 }

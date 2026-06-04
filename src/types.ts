@@ -53,6 +53,16 @@ export interface ZoneViewState {
   id: string;
   width: number;
   visible: boolean;
+  /**
+   * True once the user has explicitly toggled this zone's visibility
+   * (via the Zones popover). The chassis's auto-enable effect reveals a
+   * zone the first time its data arrives, but only while the user hasn't
+   * made a choice — once `userToggled` is set, the saved `visible` flag
+   * is authoritative and auto-enable leaves it alone. This is what lets a
+   * persisted/shared view restore a deliberately-hidden zone without it
+   * popping back open when its async data lands.
+   */
+  userToggled?: boolean;
 }
 
 export interface SearchState {
@@ -317,6 +327,14 @@ export interface HostData {
    * dropping the entire row.
    */
   geneStructureErrors?: Record<GeneId, string>;
+  /**
+   * Opaque host-supplied data channel. tbrowse passes this through
+   * untouched onto `ZoneRenderProps.data.hostData`, letting a
+   * host-defined zone read arbitrary per-row data (keyed however the
+   * host likes — e.g. by taxon id) without the library knowing its
+   * shape. Built-in zones ignore it.
+   */
+  hostData?: Record<string, unknown>;
 }
 
 export interface ZoneRenderProps<S = unknown> {
@@ -489,6 +507,37 @@ export interface TBrowseProps {
     search?: boolean;
   };
   /**
+   * Initial open state for the toolbar disclosure sections. Each
+   * panel still toggles freely once the user clicks it — this only
+   * controls what's shown on first paint. Defaults: `zones: false`
+   * (the toolbar starts compact); `search: false` *unless* the
+   * initial `ViewState.search.query` is non-empty, in which case
+   * the search panel auto-opens so the user can see their query.
+   * Hosts that always want the zone-toggle row visible (e.g. for
+   * discoverability in an embedded view) can pass
+   * `defaultOpenSections: { zones: true }`.
+   */
+  defaultOpenSections?: {
+    search?: boolean;
+    zones?: boolean;
+  };
+  /**
+   * Per-zone load status, keyed by zone id. Lets the host signal that
+   * the data backing a zone is asynchronously in flight (`'loading'`),
+   * has failed (`'error'`), or has settled (`'ready'`). The Zones
+   * toggle row picks the status up visually:
+   *  - `'loading'`: button gently pulses opacity.
+   *  - `'error'`: button gains a red border + tinted background; a
+   *    tooltip surfaces the cause.
+   *  - `'ready'` / omitted: normal styling.
+   *
+   * This does NOT gate visibility — it's purely a UX affordance.
+   * Pair the status with the corresponding data prop so the existing
+   * `isAvailable(data)` predicate still decides whether the zone body
+   * has anything to render.
+   */
+  zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
+  /**
    * Additional search-bar field choices on top of the built-in set
    * (gene id, taxonomy scientific / common name, node id). Hosts can
    * use this to expose metadata- or zone-specific searches (e.g. a
@@ -499,6 +548,46 @@ export interface TBrowseProps {
   initialViewState?: Partial<ViewState>;
   onViewStateChange?: (next: ViewState) => void;
   theme?: 'light' | 'dark';
+  /**
+   * Show the top toolbar (logo + Search/Zones disclosure). Default true.
+   * Set false to embed tbrowse chrome-less — e.g. as a sub-panel inside a
+   * host view that supplies its own controls. Per-zone column headers are
+   * unaffected.
+   */
+  showHeader?: boolean;
+  /**
+   * Per-row height in px for leaf and collapsed-summary rows. Default 24.
+   * Lets a host pack more rows (e.g. a species-distribution view with many
+   * genomes) or give rows more room.
+   */
+  rowHeight?: number;
+  /**
+   * Base font size in px, exposed as the `--tbrowse-font-size` CSS variable
+   * on the chassis root. Zone text that opts into the variable scales with
+   * it. Default leaves each zone's built-in sizing.
+   */
+  fontSize?: number;
+  /**
+   * Opaque host data passed through to `ZoneRenderProps.data.hostData` for
+   * host-defined zones. See `HostData.hostData`.
+   */
+  hostData?: Record<string, unknown>;
+  /**
+   * Host-supplied controls rendered right-aligned in the toolbar (only when
+   * `showHeader` is true). Lets a host put view-specific actions inside the
+   * tbrowse chrome instead of in a separate bar above it.
+   */
+  headerActions?: ReactNode;
+  /**
+   * Size the chassis to its content instead of filling (and scrolling within)
+   * the container. When true the body grows to fit every row — no internal
+   * vertical scrollbar and no empty space below the last row — so the
+   * component's height equals header + all rows. The host's wrapper should
+   * then use `height: auto` (or a `max-height`) rather than a fixed height.
+   * All rows are rendered (row virtualization is bypassed). Default false:
+   * the chassis fills its container and scrolls overflow internally.
+   */
+  autoHeight?: boolean;
   className?: string;
   children?: ReactNode;
 }

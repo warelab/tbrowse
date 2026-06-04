@@ -38,6 +38,27 @@ describe('computeVisibleRows', () => {
     expect(rows.every((r) => r.height === LEAF_ROW_HEIGHT)).toBe(true);
   });
 
+  it('honors a custom rowHeight for leaf and summary rows', () => {
+    const rows = computeVisibleRows({
+      tree,
+      collapsedNodeIds: empty,
+      prunedNodeIds: empty,
+      rowHeight: 16,
+    });
+    expect(rows.every((r) => r.height === 16)).toBe(true);
+    expect(rows.map((r) => r.y)).toEqual([0, 16, 32, 48]);
+
+    const collapsed = computeVisibleRows({
+      tree,
+      collapsedNodeIds: new Set(['n3']),
+      prunedNodeIds: empty,
+      rowHeight: 16,
+    });
+    // n3 collapses to a summary row that must also use the custom height.
+    const summary = collapsed.find((r) => r.kind === 'collapsedSummary');
+    expect(summary?.height).toBe(16);
+  });
+
   it('replaces a collapsed subtree with a single summary row', () => {
     const rows = computeVisibleRows({
       tree,

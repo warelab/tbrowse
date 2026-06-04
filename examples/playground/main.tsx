@@ -292,6 +292,10 @@ function App() {
   const [uploadTreeError, setUploadTreeError] = useState<string | null>(null);
 
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  // Embedding / cosmetic props (TBrowseProps.showHeader / rowHeight / fontSize).
+  const [showHeader, setShowHeader] = useState(true);
+  const [rowHeight, setRowHeight] = useState(24);
+  const [fontSize, setFontSize] = useState(12);
 
   const applyEnsemblViewState = (data: FromEnsemblResult, geneId: string) => {
     const pivot = computePivotState(data.tree, geneId);
@@ -1131,6 +1135,42 @@ function App() {
               {theme === 'light' ? '☀ light' : '☾ dark'}
             </button>
           </span>
+          <label style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={showHeader}
+              onChange={(e) => setShowHeader(e.target.checked)}
+            />
+            &nbsp;header
+          </label>
+          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+            row&nbsp;
+            <input
+              type="range"
+              min={12}
+              max={48}
+              step={1}
+              value={rowHeight}
+              onChange={(e) => setRowHeight(+e.target.value)}
+              title={`row height: ${rowHeight}px`}
+              style={{ verticalAlign: 'middle', width: 90 }}
+            />
+            &nbsp;{rowHeight}px
+          </span>
+          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+            font&nbsp;
+            <input
+              type="range"
+              min={8}
+              max={20}
+              step={1}
+              value={fontSize}
+              onChange={(e) => setFontSize(+e.target.value)}
+              title={`font size: ${fontSize}px`}
+              style={{ verticalAlign: 'middle', width: 90 }}
+            />
+            &nbsp;{fontSize}px
+          </span>
           <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
             pruned-mark:&nbsp;
             <select
@@ -1167,6 +1207,9 @@ function App() {
           viewState={viewState}
           onViewStateChange={setViewState}
           theme={theme}
+          showHeader={showHeader}
+          rowHeight={rowHeight}
+          fontSize={fontSize}
         />
       </div>
       <PlaygroundFooter />

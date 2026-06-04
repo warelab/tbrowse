@@ -8,7 +8,7 @@ import {
 import { describeHoveredNodeForHeader } from '../headerInfo';
 import { EditableZoneName } from '../EditableZoneName';
 import type { NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
-import { computeTreeLayout, type TreeLayoutNode } from './layout';
+import { computeTreeLayout, type TreeLayoutNode, type TreeLayoutMode } from './layout';
 import { Tooltip } from './Tooltip';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 
@@ -24,6 +24,9 @@ const LEFT_PAD = 16;
 // off. Adds a few extra px of breathing room so the triangle's base
 // doesn't sit flush against the labels-zone divider.
 const RIGHT_PAD = 44;
+// Minimal right gutter when leaf extensions are off and no collapsed-summary
+// triangle needs room — just enough to not sit flush against the zone divider.
+const MIN_RIGHT_PAD = 6;
 
 // Theme-aware colour values: SVG presentation attributes accept var()
 // references the same way `style` does, so we string them as
@@ -146,6 +149,15 @@ export interface TreeZoneState {
    *  pipes. This kicks in when the user has pruned everything
    *  except a single deep subtree so the spine connecting that
    *  subtree back to the root is just a long single-child run. */
+  /** Tree layout mode. 'phylogram' (default) positions nodes by branch
+   *  length; 'cladogram' ignores branch lengths and aligns all visible ends
+   *  at the right edge — appropriate for rank trees (e.g. a taxonomy) that
+   *  carry no meaningful distances. */
+  layoutMode?: TreeLayoutMode;
+  /** Draw the dashed leader lines from each leaf/collapsed tip to the right
+   *  edge of the zone. Default true. Hosts that put labels in an adjacent
+   *  zone (so the dashes would run to a bare edge) can set this false. */
+  showLeafExtensions?: boolean;
   rerootCompression?: boolean;
   /** When true (default), branches longer than ~5× the median branch
    *  length get visually shortened (with a `//` cut mark) so the rest of
@@ -173,6 +185,15 @@ const TreeHeader = ({
     setZoneState((s) => ({
       ...(s ?? {}),
       autoCompressLongBranches: !(s?.autoCompressLongBranches ?? true),
+    }));
+  const cladogram = (zoneState?.layoutMode ?? 'phylogram') === 'cladogram';
+  const toggleLayoutMode = () =>
+    setZoneState((s) => ({
+      ...(s ?? {}),
+      layoutMode:
+        (s?.layoutMode ?? 'phylogram') === 'cladogram'
+          ? 'phylogram'
+          : 'cladogram',
     }));
   return (
     <div
@@ -225,6 +246,30 @@ const TreeHeader = ({
           }}
         >
           //
+        </button>
+        <button
+          type="button"
+          onClick={toggleLayoutMode}
+          title={
+            cladogram
+              ? 'Cladogram — tips aligned, branch lengths ignored. Click for phylogram.'
+              : 'Phylogram — positioned by branch length. Click for cladogram (aligned tips).'
+          }
+          style={{
+            fontSize: 11,
+            padding: '1px 6px',
+            border: `1px solid ${cladogram ? 'var(--tbrowse-accent)' : 'var(--tbrowse-border)'}`,
+            background: cladogram
+              ? 'var(--tbrowse-accent-soft)'
+              : 'var(--tbrowse-bg-input)',
+            color: cladogram
+              ? 'var(--tbrowse-accent-strong)'
+              : 'var(--tbrowse-text)',
+            borderRadius: 3,
+            cursor: 'pointer',
+          }}
+        >
+          {cladogram ? 'clad' : 'phylo'}
         </button>
       </div>
       {/* Second row: live readout of the hovered node. */}
@@ -279,7 +324,17 @@ const TreeBody = ({
   zoneState,
 }: ZoneRenderProps<TreeZoneState>) => {
   const prunedNodeStyle = zoneState.prunedNodeStyle ?? DEFAULT_PRUNED_STYLE;
-  const drawingWidth = Math.max(0, width - LEFT_PAD - RIGHT_PAD);
+  const showLeafExtensions = zoneState.showLeafExtensions ?? true;
+  // Right gutter. With extensions on we keep the full RIGHT_PAD (room for the
+  // dashes + collapsed triangles). With extensions off the dashes are gone, so
+  // reclaim that space and let the tree run to the edge — but still reserve
+  // the triangle width whenever a collapsed-summary row is actually present,
+  // since its triangle extends right of the (right-aligned) apex.
+  const hasCollapsedSummary = visibleRows.some((r) => r.kind === 'collapsedSummary');
+  const rightPad = showLeafExtensions
+    ? RIGHT_PAD
+    : (hasCollapsedSummary ? COLLAPSED_TRIANGLE_WIDTH_MAX : MIN_RIGHT_PAD);
+  const drawingWidth = Math.max(0, width - LEFT_PAD - rightPad);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Auto-compression: branches whose distance is more than 5× the median
@@ -410,8 +465,9 @@ const TreeBody = ({
         visibleRows,
         drawingLeftX: LEFT_PAD,
         drawingWidth,
+        layoutMode: zoneState.layoutMode,
       }),
-    [data.tree, visibleRows, drawingWidth],
+    [data.tree, visibleRows, drawingWidth, zoneState.layoutMode],
   );
 
   // Compression in pixel space. Each compressed branch is first shortened
@@ -1092,9 +1148,9 @@ const TreeBody = ({
         {/* Leaf extensions. Tracked to the leaf's interpolated x so the
             extension visibly anchors to where the branch tip currently is.
             For collapsed-summary nodes the extension starts past the
-            triangle's base. */}
+            triangle's base. Suppressed when showLeafExtensions is false. */}
         <g pointerEvents="none">
-          {compressedNodes.map((n) => {
+          {showLeafExtensions && compressedNodes.map((n) => {
             if (!n.isVisibleEnd) return null;
             if (!yInRange(n.y)) return null;
             const hl = isHighlighted(n.nodeId);
