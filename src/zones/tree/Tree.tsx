@@ -98,8 +98,9 @@ const SEARCH_MATCH_RING_WIDTH = 1.75;
 /** Length of the visible/clickable horizontal stub drawn to the left of the
  *  root node so the root has a hit area (its own branch is zero-length). */
 const ROOT_STUB_LEN = 10;
-const COLLAPSED_TRIANGLE_MIN_H = 8;
-const COLLAPSED_TRIANGLE_MAX_H = 22;
+const COLLAPSED_TRIANGLE_MIN_H = 3; // smallest still-visible triangle
+const COLLAPSED_TRIANGLE_MAX_H = 22; // cap so triangles don't balloon at large row heights
+const COLLAPSED_TRIANGLE_ROW_PAD = 2; // vertical breathing room kept inside the row
 const COLLAPSED_TRIANGLE_FILL = 'rgba(128, 128, 140, 0.22)';
 const COLLAPSED_TRIANGLE_STROKE = 'var(--tbrowse-text-muted)';
 
@@ -111,11 +112,24 @@ const COMPRESSED_PATH_WIDTH = 26;
 const COMPRESSED_PATH_BAR_COUNT = 8;
 const COMPRESSED_PATH_BAR_HEIGHT = 7;
 
-function collapsedTriangleHeight(leafCount: number): number {
-  // Logarithmic so a 2-leaf and a 1000-leaf collapsed subtree are
-  // distinguishable but both stay inside a single row's height.
-  const h = 4 + Math.log2(Math.max(1, leafCount + 1)) * 4;
-  return Math.max(COLLAPSED_TRIANGLE_MIN_H, Math.min(COLLAPSED_TRIANGLE_MAX_H, h));
+// Triangle height scales with subtree size, but the LARGEST visible collapsed
+// subtree sets the ceiling: it gets the tallest triangle that still fits the
+// row (rowHeight − pad, capped at MAX_H), and smaller subtrees scale down from
+// there on a log curve. This keeps every triangle inside its row even when the
+// row height is reduced (e.g. a dense species-distribution view).
+function collapsedTriangleHeight(
+  leafCount: number,
+  maxLeafCount: number,
+  rowHeight: number,
+): number {
+  const maxTriH = Math.min(
+    COLLAPSED_TRIANGLE_MAX_H,
+    Math.max(COLLAPSED_TRIANGLE_MIN_H, rowHeight - COLLAPSED_TRIANGLE_ROW_PAD),
+  );
+  const curve = (n: number) => Math.log2(Math.max(1, n) + 1);
+  const ratio = curve(leafCount) / curve(Math.max(leafCount, maxLeafCount));
+  const minH = Math.min(maxTriH, COLLAPSED_TRIANGLE_MIN_H);
+  return Math.max(minH, Math.min(maxTriH, maxTriH * ratio));
 }
 
 /**
@@ -438,6 +452,17 @@ const TreeBody = ({
       ),
     [subtreeLeafCounts, sizeForCount],
   );
+
+  // Largest leaf-count among the currently-visible collapsed-summary rows.
+  // Sets the scale for triangle heights: the biggest collapsed subtree gets the
+  // tallest triangle that fits a row, and the rest scale down from it.
+  const maxCollapsedLeafCount = useMemo(() => {
+    let m = 1;
+    for (const r of visibleRows) {
+      if (r.kind === 'collapsedSummary' && r.leafCount > m) m = r.leafCount;
+    }
+    return m;
+  }, [visibleRows]);
 
   // Per-internal-node count of matched leaves anywhere in its subtree.
   // Drives the badge on collapsed-summary triangles so the user can
@@ -1199,7 +1224,7 @@ const TreeBody = ({
               ? parent.x + (n.x - parent.x) * opacity
               : n.x;
             const baseX = apexX + triangleWidth(n.nodeId);
-            const h = collapsedTriangleHeight(row.leafCount);
+            const h = collapsedTriangleHeight(row.leafCount, maxCollapsedLeafCount, row.height);
             const top = n.y - h / 2;
             const bot = n.y + h / 2;
             const matchCount = subtreeMatchCounts.get(n.nodeId) ?? 0;
