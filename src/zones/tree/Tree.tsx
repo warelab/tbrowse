@@ -8,7 +8,13 @@ import {
 import { describeHoveredNodeForHeader } from '../headerInfo';
 import { EditableZoneName } from '../EditableZoneName';
 import type { NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
-import { computeTreeLayout, type TreeLayoutNode, type TreeLayoutMode } from './layout';
+import {
+  computeTreeLayout,
+  compressSpines,
+  type TreeLayoutNode,
+  type TreeLayoutMode,
+  type SpineSegment,
+} from './layout';
 import { Tooltip } from './Tooltip';
 import { LEAF_ROW_HEIGHT } from '../../visibleRows';
 
@@ -110,7 +116,24 @@ const COLLAPSED_TRIANGLE_STROKE = 'var(--tbrowse-text-muted)';
  *  visually replaced with a fixed-width run of vertical pipes. */
 const COMPRESSED_PATH_WIDTH = 26;
 const COMPRESSED_PATH_BAR_COUNT = 8;
-const COMPRESSED_PATH_BAR_HEIGHT = 7;
+const COMPRESSED_PATH_BAR_HEIGHT = 3.5;
+// Stable empty default so the spine-segments fallback keeps a constant
+// reference across renders (avoids spurious memo invalidation).
+const EMPTY_SPINE_SEGMENTS: readonly SpineSegment[] = [];
+
+/** Union of two optional id sets into a fresh set. Returns a stable empty
+ *  set when both are absent so callers can rely on reference identity. */
+function unionSets(
+  a: ReadonlySet<NodeId> | undefined,
+  b: ReadonlySet<NodeId> | undefined,
+): ReadonlySet<NodeId> {
+  if (!a && !b) return EMPTY_NODE_ID_SET;
+  if (a && !b) return a;
+  if (b && !a) return b;
+  const out = new Set<NodeId>(a);
+  for (const id of b!) out.add(id);
+  return out;
+}
 
 // Triangle height scales with subtree size, but the LARGEST visible collapsed
 // subtree sets the ceiling: it gets the tallest triangle that still fits the
@@ -684,12 +707,40 @@ const TreeBody = ({
     };
   }, [layout, rerootCompressionEnabled, drawingWidth]);
 
-  const compressedNodes = rootCompression?.nodes ?? layout.nodes;
-  const compressedBranchSkip: ReadonlySet<NodeId> =
-    rootCompression?.branchSkip ?? EMPTY_NODE_ID_SET;
-  const compressedGlyphSkip: ReadonlySet<NodeId> =
-    rootCompression?.glyphSkip ?? EMPTY_NODE_ID_SET;
+  // ─── Spine compression ──────────────────────────────────────────
+  // Generalises the root-path compression to every interior run of
+  // single-visible-child internal nodes (the long pruned ladders left
+  // behind when a tree is filtered down to a sparse leaf set). Runs on
+  // the root-compressed nodes and excludes that root chain so the two
+  // don't fight over the same nodes. Gated on the same flag.
+  const spineCompression = useMemo(
+    () =>
+      rerootCompressionEnabled
+        ? compressSpines(
+            rootCompression?.nodes ?? layout.nodes,
+            layout.rootId,
+            {
+              compressedWidth: COMPRESSED_PATH_WIDTH,
+              exclude: rootCompression ? new Set(rootCompression.chain) : undefined,
+              minChainLength: 2,
+            },
+          )
+        : null,
+    [rootCompression, layout, rerootCompressionEnabled],
+  );
+
+  const compressedNodes =
+    spineCompression?.nodes ?? rootCompression?.nodes ?? layout.nodes;
+  const compressedBranchSkip: ReadonlySet<NodeId> = useMemo(
+    () => unionSets(rootCompression?.branchSkip, spineCompression?.branchSkip),
+    [rootCompression, spineCompression],
+  );
+  const compressedGlyphSkip: ReadonlySet<NodeId> = useMemo(
+    () => unionSets(rootCompression?.glyphSkip, spineCompression?.glyphSkip),
+    [rootCompression, spineCompression],
+  );
   const compressibleChain = rootCompression?.chain ?? null;
+  const spineSegments = spineCompression?.segments ?? EMPTY_SPINE_SEGMENTS;
   // ─────────────────────────────────────────────────────────────────
 
   const byId = useMemo(() => {
@@ -725,14 +776,28 @@ const TreeBody = ({
   // regrow back to — based on its position in the anchor's original
   // children list.
   const prunedStubs = useMemo(() => {
-    // Group pruned ids by closest visible ancestor.
+    const anchorToSegment = spineCompression?.anchorToSegment ?? null;
+    // Group pruned ids by closest visible ancestor — except those anchored
+    // on a collapsed spine's pass-through node, which are grouped by segment
+    // so the whole run sheds a single merged marker instead of one per rung.
     const byAnchor = new Map<NodeId, NodeId[]>();
+    const bySegment = new Map<number, NodeId[]>();
     for (const prunedId of prunedNodeIds) {
       let cur: NodeId | null = data.tree.nodes[prunedId]?.parentId ?? null;
       while (cur !== null && !byId.has(cur)) {
         cur = data.tree.nodes[cur]?.parentId ?? null;
       }
       if (cur === null) continue;
+      const seg = anchorToSegment?.get(cur);
+      if (seg !== undefined) {
+        let arr = bySegment.get(seg);
+        if (!arr) {
+          arr = [];
+          bySegment.set(seg, arr);
+        }
+        arr.push(prunedId);
+        continue;
+      }
       let arr = byAnchor.get(cur);
       if (!arr) {
         arr = [];
@@ -839,6 +904,43 @@ const TreeBody = ({
       stackSide(aboveSide, -1);
       stackSide(belowSide, 1);
     }
+
+    // One merged stub per collapsed spine, sitting on the pipe glyph that
+    // replaced the run. Its leaf count sums every pruned clade the run shed;
+    // its click target is the largest of them, so inspecting the marker lands
+    // on the most significant pruned subtree.
+    if (anchorToSegment) {
+      for (const [segIdx, ids] of bySegment) {
+        const seg = spineSegments[segIdx];
+        if (!seg) continue;
+        const start = byId.get(seg.startId);
+        const exit = byId.get(seg.exitId);
+        if (!start || !exit) continue;
+        const midX = (start.x + exit.x) / 2;
+        let leafCount = 0;
+        let repId = ids[0];
+        let repCount = -1;
+        for (const id of ids) {
+          const c = countLeavesInSubtree(id, data.tree, fullChildrenIndex);
+          leafCount += c;
+          if (c > repCount) {
+            repCount = c;
+            repId = id;
+          }
+        }
+        const markY = start.y + PRUNED_STUB_GAP;
+        stubs.push({
+          prunedId: repId,
+          anchorX: midX,
+          anchorY: start.y,
+          stubY: markY,
+          markX: midX,
+          markY,
+          leafCount,
+          strokeWidth: PRUNED_STUB_WIDTH,
+        });
+      }
+    }
     return stubs;
   }, [
     prunedNodeIds,
@@ -846,6 +948,8 @@ const TreeBody = ({
     byId,
     fullChildrenIndex,
     swappedNodeIds,
+    spineCompression,
+    spineSegments,
   ]);
 
   const isHighlighted = (nodeId: NodeId): boolean =>
@@ -1130,6 +1234,48 @@ const TreeBody = ({
               </g>
             );
           })()}
+        {/* Compressed interior-spine glyphs: each collapsed run of
+            single-visible-child nodes is replaced by a short string of
+            vertical pipes at the spine's y, between the run's start and
+            exit. Visually identical to the root-path glyph above. */}
+        {spineSegments.length > 0 && (
+          <g pointerEvents="none">
+            {spineSegments.map((seg, segIdx) => {
+              const start = byId.get(seg.startId);
+              const exit = byId.get(seg.exitId);
+              if (!start || !exit) return null;
+              if (!yInRange(start.y)) return null;
+              const startX = start.x;
+              const endX = exit.x;
+              const span = endX - startX;
+              if (span <= 0) return null;
+              const margin = 2;
+              const innerSpan = Math.max(0, span - 2 * margin);
+              const spacing =
+                COMPRESSED_PATH_BAR_COUNT > 1
+                  ? innerSpan / (COMPRESSED_PATH_BAR_COUNT - 1)
+                  : 0;
+              const half = COMPRESSED_PATH_BAR_HEIGHT / 2;
+              return Array.from({ length: COMPRESSED_PATH_BAR_COUNT }).map(
+                (_, i) => {
+                  const x = startX + margin + i * spacing;
+                  return (
+                    <line
+                      key={`csp-${segIdx}-${i}`}
+                      x1={x}
+                      y1={start.y - half}
+                      x2={x}
+                      y2={start.y + half}
+                      stroke={BRANCH_COLOR}
+                      strokeWidth={1.25}
+                      strokeLinecap="round"
+                    />
+                  );
+                },
+              );
+            })}
+          </g>
+        )}
         {/* Branch-compression glyphs. Two short diagonal slashes ("//") at
             the midpoint of each compressed horizontal segment, signalling
             that the rendered length is shorter than the actual branch

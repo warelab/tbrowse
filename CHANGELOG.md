@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.0
+
+### Tree
+- Spine compression: any maximal run of single-visible-child internal nodes (the long "ladders" left behind when a tree is pruned down to a sparse leaf set) now collapses to a fixed-width segment drawn as a short pipe glyph, with the run's pruned branches merged into a single stub marker instead of one per rung. Generalizes the existing root-path compression to interior runs; gated on the same `rerootCompression` flag and only active when pruning actually creates such runs. Exported pure helper `compressSpines`.
+- Halved the compressed-path pipe-glyph height for a more subtle mark.
+
 ## 2.0.0
 
 Complete rewrite. Not backwards-compatible with the 1.x line.
