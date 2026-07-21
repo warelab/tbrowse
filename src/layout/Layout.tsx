@@ -138,8 +138,32 @@ export function Layout({
     }
     if (newlyAvailable.length === 0) return;
     setViewState((vs) => {
+      // Auto-enable must respect mutually-exclusive groups: if a linked
+      // group already shows a member, a sibling whose data just landed
+      // must not light up alongside it (and at most one member can be
+      // auto-revealed per pass). Unlinked groups behave like plain zones.
+      const unlinkedSet = new Set(vs.unlinkedZoneGroups ?? []);
+      const groupOf = new Map<string, string | undefined>(
+        zones.map((d) => [d.id, d.exclusiveGroup]),
+      );
+      const groupClaimed = new Set<string>();
+      for (const z of vs.zones) {
+        if (!z.visible) continue;
+        const g = groupOf.get(z.id);
+        if (g && !unlinkedSet.has(g)) groupClaimed.add(g);
+      }
+      const canEnable = (id: string) => {
+        const g = groupOf.get(id);
+        if (!g || unlinkedSet.has(g)) return true;
+        if (groupClaimed.has(g)) return false;
+        groupClaimed.add(g); // claim the group's single slot
+        return true;
+      };
       const next = vs.zones.map((z) =>
-        newlyAvailable.includes(z.id) && !z.visible && !z.userToggled
+        newlyAvailable.includes(z.id) &&
+        !z.visible &&
+        !z.userToggled &&
+        canEnable(z.id)
           ? { ...z, visible: true }
           : z,
       );
@@ -151,7 +175,7 @@ export function Layout({
         if (seen.has(id)) continue;
         const def = zones.find((d) => d.id === id);
         if (!def) continue;
-        next.push({ id, width: def.defaultWidth, visible: true });
+        next.push({ id, width: def.defaultWidth, visible: canEnable(id) });
       }
       const changed = next.some((z, i) => z !== vs.zones[i]) ||
         next.length !== vs.zones.length;

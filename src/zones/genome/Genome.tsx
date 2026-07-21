@@ -874,6 +874,7 @@ export function createGenomeZone(
         data.geneStructures && Object.keys(data.geneStructures).length > 0,
       ),
     defaultVisible: false,
+    exclusiveGroup: 'detail',
   };
 }
 

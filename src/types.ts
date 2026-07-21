@@ -142,6 +142,14 @@ export interface ViewState {
    * exported from this module. Pluggable zones own their own slots.
    */
   zoneStates: Record<string, unknown>;
+  /**
+   * Ids of `ZoneDefinition.exclusiveGroup` groups the user has decoupled
+   * via the link toggle in the Zones panel. A group listed here allows
+   * several of its zones on at once; absent (the default) it stays
+   * mutually exclusive. Optional so pre-existing persisted view states
+   * deserialize unchanged.
+   */
+  unlinkedZoneGroups?: string[];
   search: SearchState | null;
 }
 
@@ -442,6 +450,19 @@ export interface ZoneDefinition<S = unknown> {
    * the first time neighbourhood data appears in `HostData`).
    */
   defaultVisible?: boolean;
+  /**
+   * Opt this zone into a mutually-exclusive group. Zones sharing a group
+   * id render in the Zones panel as one segmented control (like the
+   * genome header's CDS|Gene|±2kb trio) and, by default, only one of
+   * them can be visible at a time — turning one on turns its siblings
+   * off. The user can decouple a group via the link toggle beside the
+   * control, after which its members behave as independent toggles;
+   * that choice persists in `ViewState.unlinkedZoneGroups`.
+   *
+   * Host-defined zones can join a built-in group by declaring the same
+   * id (the built-ins use `'detail'`).
+   */
+  exclusiveGroup?: string;
   /**
    * Optional contributor: returns SearchFields the zone wants to add
    * to the search-bar dropdown based on its current state and data.

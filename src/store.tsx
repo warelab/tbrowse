@@ -80,16 +80,24 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     collapsedNodeIds: collapsedFromPivot,
     swappedNodeIds: swappedFromPivot,
     nodeOfInterestId,
-    zones: props.zones.map((z) => ({
-      id: z.id,
-      width: z.defaultWidth,
-      // Initial visibility = (the zone opts in via `defaultVisible`,
-      //  default true) AND (its data is available right now). Zones
-      // that opt out (defaultVisible: false) stay hidden on first
-      // paint and rely on the chassis's auto-enable effect to flip
-      // them on once their data has been observed.
-      visible: (z.defaultVisible ?? true) && z.isAvailable(data),
-    })),
+    zones: (() => {
+      // Mutually-exclusive groups start linked, so at most one member may
+      // be visible on first paint — the first that qualifies wins.
+      const claimed = new Set<string>();
+      return props.zones.map((z) => {
+        // Initial visibility = (the zone opts in via `defaultVisible`,
+        //  default true) AND (its data is available right now). Zones
+        // that opt out (defaultVisible: false) stay hidden on first
+        // paint and rely on the chassis's auto-enable effect to flip
+        // them on once their data has been observed.
+        let visible = (z.defaultVisible ?? true) && z.isAvailable(data);
+        if (visible && z.exclusiveGroup) {
+          if (claimed.has(z.exclusiveGroup)) visible = false;
+          else claimed.add(z.exclusiveGroup);
+        }
+        return { id: z.id, width: z.defaultWidth, visible };
+      });
+    })(),
     zoneStates,
     ...props.initialViewState,
   };

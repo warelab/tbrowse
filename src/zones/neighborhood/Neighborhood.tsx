@@ -1391,4 +1391,5 @@ export const neighborhoodZone: ZoneDefinition<NeighborhoodZoneState> = {
   // have neighborhood data leave it hidden, and the toggle stays
   // disabled.
   defaultVisible: false,
+  exclusiveGroup: 'detail',
 };

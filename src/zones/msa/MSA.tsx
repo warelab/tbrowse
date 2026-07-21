@@ -1672,6 +1672,10 @@ export const msaZone: ZoneDefinition<MSAZoneState> = {
   minWidth: 120,
   defaultZoneState: DEFAULT_STATE,
   isAvailable: (data) => Boolean(data.msa),
+  // One of the wide per-leaf detail tracks — mutually exclusive with
+  // neighborhood / genome (and any host zone joining 'detail') unless the
+  // user unlinks the group.
+  exclusiveGroup: 'detail',
 };
 
 // Helpers referenced from sibling files in later slices (minimap, pan/zoom).
