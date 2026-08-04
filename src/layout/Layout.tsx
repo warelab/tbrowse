@@ -54,13 +54,18 @@ interface LayoutProps {
   hotkeys?: { search?: boolean };
   /** Initial open state of the toolbar disclosure sections —
    *  forwarded from `TBrowseProps.defaultOpenSections`. */
-  defaultOpenSections?: { search?: boolean; zones?: boolean };
+  defaultOpenSections?: { search?: boolean; zones?: boolean; display?: boolean };
   /** Per-zone load status — forwarded from `TBrowseProps.zoneStatus`. */
   zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
   /** Show the top toolbar. Forwarded from `TBrowseProps.showHeader`. */
   showHeader?: boolean;
-  /** Per-row height in px. Forwarded from `TBrowseProps.rowHeight`. */
+  /** Initial per-row height in px. Forwarded from `TBrowseProps.rowHeight`;
+   *  `ViewState.rowHeight` overrides it. */
   rowHeight?: number;
+  /** Initial base font size in px. Forwarded from `TBrowseProps.fontSize`. */
+  fontSize?: number;
+  /** Show the Display (row-height / font-size) toolbar section. */
+  densityControls?: boolean;
   /** Host controls rendered in the toolbar. Forwarded from
    *  `TBrowseProps.headerActions`. */
   headerActions?: ReactNode;
@@ -82,6 +87,8 @@ export function Layout({
   zoneStatus,
   showHeader = true,
   rowHeight,
+  fontSize,
+  densityControls,
   headerActions,
   autoHeight = false,
   containerRef,
@@ -310,6 +317,9 @@ export function Layout({
     });
   }, [setViewState, data.tree, searchResults]);
 
+  // ViewState.rowHeight (set by the Display control) overrides the initial
+  // rowHeight prop; either falling back to computeVisibleRows' built-in default.
+  const effectiveRowHeight = viewState.rowHeight ?? rowHeight;
   const targetVisibleRows = useMemo(
     () =>
       computeVisibleRows({
@@ -317,9 +327,9 @@ export function Layout({
         collapsedNodeIds,
         prunedNodeIds,
         swappedNodeIds,
-        rowHeight,
+        rowHeight: effectiveRowHeight,
       }),
-    [data.tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds, rowHeight],
+    [data.tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds, effectiveRowHeight],
   );
 
   // Animation: lerp visibleRows between the previous and target snapshots
@@ -788,6 +798,9 @@ export function Layout({
           defaultOpenSections={defaultOpenSections}
           zoneStatus={zoneStatus}
           headerActions={headerActions}
+          densityControls={densityControls}
+          rowHeight={rowHeight}
+          fontSize={fontSize}
           containerRef={containerRef}
         />
       )}

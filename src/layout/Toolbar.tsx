@@ -8,7 +8,8 @@ import {
 import { SearchControls } from './SearchBar';
 import { ZoneToggles } from './ChromeStrip';
 import { TBrowseLogo } from '../icons/TBrowseLogo';
-import { useTBrowseStore } from '../store';
+import { useTBrowseStore, DEFAULT_FONT_SIZE } from '../store';
+import { LEAF_ROW_HEIGHT } from '../visibleRows';
 import type { SearchField } from '../search/fields';
 import type {
   HostData,
@@ -32,11 +33,17 @@ interface ToolbarProps {
   /** Initial open state of each disclosure section. Defaults: search
    *  follows `hasActiveSearch`, zones is closed. See
    *  `TBrowseProps.defaultOpenSections`. */
-  defaultOpenSections?: { search?: boolean; zones?: boolean };
+  defaultOpenSections?: { search?: boolean; zones?: boolean; display?: boolean };
   /** Per-zone load status — forwarded from `TBrowseProps.zoneStatus`. */
   zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
   /** Host controls rendered right-aligned in the toolbar. */
   headerActions?: ReactNode;
+  /** Show the Display section (row-height / font-size sliders). */
+  densityControls?: boolean;
+  /** Initial row height / font size, used as slider fallbacks when the
+   *  corresponding `ViewState` field is unset. */
+  rowHeight?: number;
+  fontSize?: number;
   /** Ref to the chassis-root element so the global keydown listener
    *  can gate on "user is interacting with our chassis" rather than
    *  greedily stealing every `/` keypress on the page. */
@@ -75,6 +82,9 @@ export function Toolbar({
   defaultOpenSections,
   zoneStatus,
   headerActions,
+  densityControls,
+  rowHeight,
+  fontSize,
   containerRef,
 }: ToolbarProps) {
   const hasActiveSearch = !!search?.query;
@@ -88,6 +98,9 @@ export function Toolbar({
   );
   const [zonesOpen, setZonesOpen] = useState(
     defaultOpenSections?.zones ?? false,
+  );
+  const [displayOpen, setDisplayOpen] = useState(
+    defaultOpenSections?.display ?? false,
   );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchHotkey = hotkeys?.search ?? true;
@@ -207,6 +220,16 @@ export function Toolbar({
       >
         <ZoneToggles zones={zones} data={data} zoneStatus={zoneStatus} />
       </Section>
+      {densityControls && (
+        <Section
+          id="tbrowse-toolbar-display"
+          label="Display"
+          open={displayOpen}
+          onToggle={() => setDisplayOpen((o) => !o)}
+        >
+          <DisplayControls rowHeightProp={rowHeight} fontSizeProp={fontSize} />
+        </Section>
+      )}
       {headerActions && (
         <div
           className="tbrowse-toolbar-actions"
@@ -221,6 +244,81 @@ export function Toolbar({
           {headerActions}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Row-height + font-size sliders, mirroring the playground's density
+ * controls. They write `ViewState.rowHeight` / `ViewState.fontSize` via
+ * `setViewState`, so the chosen density flows through the same
+ * controlled/persisted view-state path as everything else. Current values
+ * fall back to the `rowHeight` / `fontSize` props (then the built-in
+ * defaults) when the view state hasn't set them yet.
+ */
+function DisplayControls({
+  rowHeightProp,
+  fontSizeProp,
+}: {
+  rowHeightProp?: number;
+  fontSizeProp?: number;
+}) {
+  const rowHeightVS = useTBrowseStore((s) => s.viewState.rowHeight);
+  const fontSizeVS = useTBrowseStore((s) => s.viewState.fontSize);
+  const setViewState = useTBrowseStore((s) => s.setViewState);
+
+  const rowHeight = rowHeightVS ?? rowHeightProp ?? LEAF_ROW_HEIGHT;
+  const fontSize = fontSizeVS ?? fontSizeProp ?? DEFAULT_FONT_SIZE;
+
+  const labelStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    color: 'var(--tbrowse-text-muted)',
+    fontSize: 11,
+    whiteSpace: 'nowrap',
+  };
+  const valStyle: React.CSSProperties = {
+    fontVariantNumeric: 'tabular-nums',
+    color: 'var(--tbrowse-text)',
+    minWidth: 30,
+    textAlign: 'right',
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <label style={labelStyle} title={`Row height: ${rowHeight}px`}>
+        Row
+        <input
+          type="range"
+          min={12}
+          max={48}
+          step={1}
+          value={rowHeight}
+          onChange={(e) => {
+            const v = +e.target.value;
+            setViewState((vs) => ({ ...vs, rowHeight: v }));
+          }}
+          style={{ verticalAlign: 'middle', width: 84 }}
+        />
+        <span style={valStyle}>{rowHeight}px</span>
+      </label>
+      <label style={labelStyle} title={`Font size: ${fontSize}px`}>
+        Font
+        <input
+          type="range"
+          min={8}
+          max={20}
+          step={1}
+          value={fontSize}
+          onChange={(e) => {
+            const v = +e.target.value;
+            setViewState((vs) => ({ ...vs, fontSize: v }));
+          }}
+          style={{ verticalAlign: 'middle', width: 84 }}
+        />
+        <span style={valStyle}>{fontSize}px</span>
+      </label>
     </div>
   );
 }

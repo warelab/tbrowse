@@ -1,5 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
-import { createTBrowseStore, TBrowseStoreProvider } from './store';
+import {
+  createTBrowseStore,
+  TBrowseStoreProvider,
+  useTBrowseStore,
+  DEFAULT_FONT_SIZE,
+} from './store';
 import { Layout } from './layout/Layout';
 import { ensureThemeStylesInjected } from './theme';
 import type { HostData, TBrowseProps } from './types';
@@ -50,14 +55,21 @@ export function TBrowse(props: TBrowseProps) {
     }
   }, [propTheme, store]);
 
-  // Mirror the fontSize prop into the store so canvas-drawn zones (MSA) can
-  // read the numeric value; DOM zones additionally pick up the CSS var set on
-  // the root below.
+  // Keep the store's numeric `fontSize` (read by canvas-drawn zones like the
+  // MSA grid, and by the root CSS var below) synced to the EFFECTIVE size:
+  // `viewState.fontSize ?? fontSize prop ?? default`. viewState wins so the
+  // Display control's edits take effect; a subscription re-syncs whenever the
+  // controlled view state changes.
   const propFontSize = props.fontSize;
   useLayoutEffect(() => {
-    if (propFontSize !== undefined && store.getState().fontSize !== propFontSize) {
-      store.setState({ fontSize: propFontSize });
-    }
+    const effective = (vsFontSize?: number) =>
+      vsFontSize ?? propFontSize ?? DEFAULT_FONT_SIZE;
+    const apply = () => {
+      const eff = effective(store.getState().viewState.fontSize);
+      if (store.getState().fontSize !== eff) store.setState({ fontSize: eff });
+    };
+    apply();
+    return store.subscribe(apply);
   }, [propFontSize, store]);
 
   useEffect(() => {
@@ -95,14 +107,15 @@ function TBrowseShell(props: TBrowseProps) {
     hostData: props.hostData,
   };
 
+  // Effective font size (viewState ?? prop ?? default), kept in the store by
+  // the sync effect above. Drive the CSS var from it so the Display control's
+  // edits reflow DOM zone text without any prop change.
+  const effectiveFontSize = useTBrowseStore((s) => s.fontSize);
   const rootStyle: CSSProperties = {
     width: '100%',
     height: props.autoHeight ? 'auto' : '100%',
+    ['--tbrowse-font-size' as string]: `${effectiveFontSize}px`,
   };
-  if (typeof props.fontSize === 'number') {
-    (rootStyle as Record<string, string | number>)['--tbrowse-font-size'] =
-      `${props.fontSize}px`;
-  }
 
   return (
     <div
@@ -119,6 +132,8 @@ function TBrowseShell(props: TBrowseProps) {
         zoneStatus={props.zoneStatus}
         showHeader={props.showHeader ?? true}
         rowHeight={props.rowHeight}
+        fontSize={props.fontSize}
+        densityControls={props.densityControls}
         headerActions={props.headerActions}
         autoHeight={props.autoHeight}
         containerRef={containerRef}

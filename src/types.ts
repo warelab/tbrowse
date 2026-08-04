@@ -143,6 +143,17 @@ export interface ViewState {
    */
   zoneStates: Record<string, unknown>;
   /**
+   * Per-row height in px (leaf + collapsed-summary rows). Undefined falls
+   * back to the `rowHeight` prop and then the built-in default (24). Lives
+   * here so the Display control's choice persists in a saved/shared view.
+   */
+  rowHeight?: number;
+  /**
+   * Base font size in px (the `--tbrowse-font-size` var + canvas zone text).
+   * Undefined falls back to the `fontSize` prop and then the default (12).
+   */
+  fontSize?: number;
+  /**
    * Ids of `ZoneDefinition.exclusiveGroup` groups the user has decoupled
    * via the link toggle in the Zones panel. A group listed here allows
    * several of its zones on at once; absent (the default) it stays
@@ -541,6 +552,9 @@ export interface TBrowseProps {
   defaultOpenSections?: {
     search?: boolean;
     zones?: boolean;
+    /** Initial open state of the Display section (row-height / font-size
+     *  sliders). Only meaningful when `densityControls` is enabled. */
+    display?: boolean;
   };
   /**
    * Per-zone load status, keyed by zone id. Lets the host signal that
@@ -577,17 +591,26 @@ export interface TBrowseProps {
    */
   showHeader?: boolean;
   /**
-   * Per-row height in px for leaf and collapsed-summary rows. Default 24.
-   * Lets a host pack more rows (e.g. a species-distribution view with many
-   * genomes) or give rows more room.
+   * *Initial* per-row height in px for leaf and collapsed-summary rows
+   * (default 24). Seeds `ViewState.rowHeight`; once set there (e.g. by the
+   * Display control) that value wins. Lets a host pack more rows (a
+   * species-distribution view with many genomes) or give rows more room.
    */
   rowHeight?: number;
   /**
-   * Base font size in px, exposed as the `--tbrowse-font-size` CSS variable
-   * on the chassis root. Zone text that opts into the variable scales with
-   * it. Default leaves each zone's built-in sizing.
+   * *Initial* base font size in px, exposed as the `--tbrowse-font-size` CSS
+   * variable on the chassis root. Seeds `ViewState.fontSize`; the effective
+   * size is `ViewState.fontSize ?? fontSize ?? 12`. Zone text that opts into
+   * the variable scales with it.
    */
   fontSize?: number;
+  /**
+   * Show the built-in "Display" toolbar section — row-height and font-size
+   * sliders that write `ViewState.rowHeight` / `ViewState.fontSize`, so the
+   * chosen density round-trips through a controlled/persisted view state.
+   * Default false (the playground supplies its own external controls).
+   */
+  densityControls?: boolean;
   /**
    * Opaque host data passed through to `ZoneRenderProps.data.hostData` for
    * host-defined zones. See `HostData.hostData`.

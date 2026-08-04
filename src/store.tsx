@@ -80,6 +80,10 @@ export function buildInitialViewState(props: TBrowseProps): ViewState {
     collapsedNodeIds: collapsedFromPivot,
     swappedNodeIds: swappedFromPivot,
     nodeOfInterestId,
+    // NB: rowHeight / fontSize are intentionally left unset here. They resolve
+    // at read time as `viewState.<x> ?? <x> prop ?? default`, so a host that
+    // drives density via prop changes (the playground) stays reactive; the
+    // Display control writes them into view state, which then wins.
     zones: (() => {
       // Mutually-exclusive groups start linked, so at most one member may
       // be visible on first paint — the first that qualifies wins.
