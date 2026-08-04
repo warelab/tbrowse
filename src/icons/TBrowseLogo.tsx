@@ -1,11 +1,11 @@
 /**
  * TBrowse wordmark — "TBrowse" rendered in the Clustal alignment palette
- * with a colour-keyed underline ribbon under each letter to echo the
+ * with a color-keyed underline ribbon under each letter to echo the
  * row-aligned data zones the component is built around.
  *
- * Comes in two variants: `'light'` for light themes (saturated colours
+ * Comes in two variants: `'light'` for light themes (saturated colors
  * tuned for white backgrounds) and `'dark'` for dark themes (lighter,
- * desaturated colours that read against deep neutrals). The path data
+ * desaturated colors that read against deep neutrals). The path data
  * is shared between the two; only the fills swap.
  *
  * Inline SVG so it ships with the JS bundle (no extra asset roundtrip)
@@ -15,7 +15,7 @@
 
 type LogoVariant = 'light' | 'dark';
 
-/** Per-variant fill colours. The 6-entry array maps to B, r, o, w, s, e
+/** Per-variant fill colors. The 6-entry array maps to B, r, o, w, s, e
  *  in left-to-right reading order; the T fill reuses the "s" green so
  *  the cap of the wordmark balances the bottom-right s. */
 const PALETTES: Record<LogoVariant, readonly string[]> = {
@@ -72,7 +72,7 @@ export function TBrowseLogo({
         fill={colors[5]}
         d="m888.19965 191.0902q0 4.5625 -2.296875 6.5q-2.28125 1.9375 -5.203125 1.9375l-69.140625 0q0 8.78125 1.75 15.8125q1.765625 7.03125 5.859375 12.078125q4.109375 5.03125 10.671875 7.734375q6.5625 2.6875 16.046875 2.6875q7.5 0 13.359375 -1.21875q5.859375 -1.234375 10.140625 -2.75q4.28125 -1.53125 7.03125 -2.765625q2.75 -1.234375 4.15625 -1.234375q0.828125 0 1.46875 0.421875q0.640625 0.40625 0.984375 1.234375q0.359375 0.8125 0.53125 2.28125q0.1875 1.453125 0.1875 3.5625q0 1.53125 -0.125 2.640625q-0.109375 1.109375 -0.296875 2.0q-0.171875 0.875 -0.578125 1.578125q-0.40625 0.703125 -1.0625 1.34375q-0.640625 0.640625 -3.8125 2.109375q-3.15625 1.46875 -8.203125 2.875q-5.03125 1.40625 -11.65625 2.515625q-6.609375 1.125 -14.109375 1.125q-13.015625 0 -22.796875 -3.640625q-9.78125 -3.640625 -16.46875 -10.78125q-6.671875 -7.15625 -10.078125 -17.9375q-3.390625 -10.78125 -3.390625 -25.078125q0 -13.59375 3.515625 -24.421875q3.515625 -10.84375 10.125 -18.40625q6.625 -7.5625 16.0 -11.59375q9.375 -4.046875 20.984375 -4.046875q12.421875 0 21.140625 3.984375q8.734375 3.984375 14.359375 10.71875q5.625 6.734375 8.265625 15.828125q2.640625 9.078125 2.640625 19.390625l0 3.515625zm-19.453125 -5.75q0.34375 -15.234375 -6.75 -23.90625q-7.078125 -8.671875 -21.03125 -8.671875q-7.140625 0 -12.53125 2.703125q-5.390625 2.6875 -9.03125 7.140625q-3.625 4.453125 -5.625 10.375q-1.984375 5.921875 -2.21875 12.359375l57.1875 0z"
       />
-      {/* Underline ribbon — six bars under the letters in matching colour. */}
+      {/* Underline ribbon — six bars under the letters in matching color. */}
       <rect x="119.79" y="266.92" width="184.80" height="21.6" fill={colors[0]} />
       <rect x="304.60" y="266.92" width="83.67" height="21.6" fill={colors[1]} />
       <rect x="388.27" y="266.92" width="126.56" height="21.6" fill={colors[2]} />

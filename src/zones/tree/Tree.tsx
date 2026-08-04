@@ -34,7 +34,7 @@ const RIGHT_PAD = 44;
 // triangle needs room — just enough to not sit flush against the zone divider.
 const MIN_RIGHT_PAD = 6;
 
-// Theme-aware colour values: SVG presentation attributes accept var()
+// Theme-aware color values: SVG presentation attributes accept var()
 // references the same way `style` does, so we string them as
 // `var(--name)` here and they re-evaluate when the theme class flips on
 // the root.
@@ -1357,7 +1357,7 @@ const TreeBody = ({
             height scales (logarithmically) with the subtree's leaf
             count, capped to fit within a single row. Triangles whose
             subtree contains search matches get the search-match stroke
-            colour and a small count badge to the right of the base. */}
+            color and a small count badge to the right of the base. */}
         <g pointerEvents="none">
           {compressedNodes.map((n) => {
             if (!n.isCollapsedSummary) return null;
@@ -1379,7 +1379,7 @@ const TreeBody = ({
             // px), so a collapsed clade's outline reads as a fatter
             // continuation of the branch leading into it. When the
             // subtree contains search matches, the border picks up
-            // the search-match colour and a small `+0.75 px` bump so
+            // the search-match color and a small `+0.75 px` bump so
             // the highlight is still visually distinct.
             const triW = branchWidth(n.nodeId);
             return (
@@ -1465,12 +1465,12 @@ const TreeBody = ({
             );
           })}
         </g>
-        {/* Leaf-node glyphs. Small filled circle in the branch colour at
+        {/* Leaf-node glyphs. Small filled circle in the branch color at
             each visible leaf's branch tip, tracking the same interpolated
             x as the leaf-extension start so it slides smoothly during
             collapse / expand / prune / regrow animations. Search-matched
             leaves additionally get an outer ring in the search-match
-            colour so they pop against the rest of the tree. */}
+            color so they pop against the rest of the tree. */}
         <g pointerEvents="none">
           {compressedNodes.map((n) => {
             if (!n.isLeaf) return null;
@@ -1508,7 +1508,7 @@ const TreeBody = ({
           })}
         </g>
         {/* Selection marker. Skipped for pruned nodes — those already
-            highlight via the stub's own selected-state colour, and an
+            highlight via the stub's own selected-state color, and an
             extra circle on top would obscure the marker glyph. */}
         {selectedLayoutNode &&
           selectedNodeId !== null &&

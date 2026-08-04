@@ -1,7 +1,7 @@
 /**
  * Inline gear/cog SVG used by every zone-config and search-config
  * trigger button. Renders with `stroke="currentColor"` so it inherits
- * the parent button's text colour, which lets a single source drive
+ * the parent button's text color, which lets a single source drive
  * both the active and inactive treatments via CSS variables.
  *
  * `size` controls both width and height in pixels (default 14).

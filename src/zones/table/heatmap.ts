@@ -117,7 +117,7 @@ export function autoPalette(domain: HeatmapDomain): Palette {
 }
 
 /** Build a per-column min/max domain across every value in the table.
- *  Computed once at zone-build time so heatmap colouring is stable as
+ *  Computed once at zone-build time so heatmap coloring is stable as
  *  rows collapse / prune (the domain is "this column overall", not
  *  "what's currently visible"). */
 export function buildHeatmapDomains(
@@ -142,7 +142,7 @@ export function buildHeatmapDomains(
   return out;
 }
 
-/** Compute the heatmap colour for `value` against `domain` using
+/** Compute the heatmap color for `value` against `domain` using
  *  `palette`. For diverging palettes, `midpoint` (default 0) anchors
  *  the central stop; values <= midpoint scale across the low → mid
  *  ramp, values > midpoint across the mid → high ramp. Returns null
@@ -197,7 +197,7 @@ export function rgbCss(rgb: readonly [number, number, number]): string {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
-/** Pick a foreground colour with adequate contrast on `bgRgb`. Uses
+/** Pick a foreground color with adequate contrast on `bgRgb`. Uses
  *  relative luminance so the heuristic generalises beyond a single
  *  palette / sweep direction. */
 export function readableForeground(

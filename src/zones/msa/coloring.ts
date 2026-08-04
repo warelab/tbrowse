@@ -6,7 +6,7 @@ export interface ColorScheme {
   id: ColorSchemeId;
   label: string;
   alphabets: ReadonlyArray<MSA['alphabet']>;
-  /** Returns a CSS colour for the residue, or null to use the default. */
+  /** Returns a CSS color for the residue, or null to use the default. */
   color: (residue: string) => string | null;
 }
 

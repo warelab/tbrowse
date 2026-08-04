@@ -16,7 +16,7 @@ export interface AggregateResult {
   text: string;
   /** Optional rich tooltip for the cell (defaults to `text`). */
   title?: string;
-  /** Optional numeric "representative" value the cell can be coloured by
+  /** Optional numeric "representative" value the cell can be colored by
    *  in heatmap display mode (e.g. mean for `mean ± stdev`). */
   numeric?: number;
 }

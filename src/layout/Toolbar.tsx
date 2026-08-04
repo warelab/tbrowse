@@ -324,7 +324,7 @@ function DisplayControls({
 }
 
 /**
- * Top-left wordmark — Clustal-coloured "TBrowse" rendered inline as
+ * Top-left wordmark — Clustal-colored "TBrowse" rendered inline as
  * SVG so it stays crisp at any DPI and ships with the bundle. Picks
  * the dark or light palette to match the chassis's active theme.
  * Wrapped in a link to tbrowse.org so users can click through to
@@ -358,7 +358,7 @@ function ToolbarBrand() {
  * sliding controls panel that opens to its right, separated from
  * the next section by a vertical divider on its right edge. The
  * label has no button chrome — it reads as a section heading;
- * colour shifts from muted (closed) to accent-strong (open) so the
+ * color shifts from muted (closed) to accent-strong (open) so the
  * active section is unambiguous without any extra glyph.
  */
 function Section({

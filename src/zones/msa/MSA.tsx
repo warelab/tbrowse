@@ -65,11 +65,11 @@ export function residueGlyphPx(
     ? Math.max(6, Math.min(basePx - 2, residueWidth * 0.55))
     : Math.max(6, Math.min(basePx - 1, residueWidth * 1.6));
 }
-/** Below this residue width, individual residue colours stop being legible —
+/** Below this residue width, individual residue colors stop being legible —
  *  the per-column fills smear together. When the host has supplied domain
- *  data, the body silently switches to the "Domains" colouring at that zoom
+ *  data, the body silently switches to the "Domains" coloring at that zoom
  *  level even if the user has Clustal/etc. selected, since domain
- *  organisation reads much better than residue colour at this scale. The
+ *  organisation reads much better than residue color at this scale. The
  *  user's scheme preference is preserved (the dropdown is unchanged); this
  *  is purely a render-time override. */
 const AUTO_DOMAIN_RESIDUE_PX = 5;
@@ -264,7 +264,7 @@ const MSAHeader = ({
   const totalVisible = mask?.visibleCols.length ?? 0;
   const vp = msa ? resolveViewport(zoneState, totalVisible) : null;
   // (Header no longer reads the residue scheme — the minimap is always
-  // domain-coloured. The body keeps its own scheme for residue rendering.)
+  // domain-colored. The body keeps its own scheme for residue rendering.)
 
   // Per-original-column consensus residue across every active leaf. The
   // expensive part (counting residues across geneIds × cols) only re-runs
@@ -283,7 +283,7 @@ const MSAHeader = ({
     return computeCoverageArray([...activeGeneIds], msa.sequences, msa.length);
   }, [msa, activeGeneIds]);
 
-  // Per-original-column dominant domain id (used by the minimap to colour
+  // Per-original-column dominant domain id (used by the minimap to color
   // the consensus track regardless of which residue scheme the body is
   // using). Re-runs only when the alignment, domain set, or active leaves
   // change.
@@ -293,8 +293,8 @@ const MSAHeader = ({
   }, [msa, data.proteinDomains, activeGeneIds]);
 
   // Cheap O(visibleCols) projection: pick the residues for the currently
-  // visible columns and choose a colour. The minimap is intentionally
-  // "plain" — gaps render empty, non-gap columns are coloured by their
+  // visible columns and choose a color. The minimap is intentionally
+  // "plain" — gaps render empty, non-gap columns are colored by their
   // dominant domain (or a neutral grey when none) and their alpha tracks
   // per-column coverage so sparsely-supported regions fade out.
   const consensus = useMemo(() => {
@@ -666,7 +666,7 @@ const MSABody = ({
     endVCol: number;
     id: string;
     nodeId: NodeId;
-    /** Alpha applied to the bar's domain colour. Leaf bars are full-alpha;
+    /** Alpha applied to the bar's domain color. Leaf bars are full-alpha;
      *  collapsed-summary bars use the run's peak coverage so a partly-
      *  conserved domain on a clade fades the same way as the minimap. */
     alpha: number;
@@ -942,16 +942,16 @@ const MSABody = ({
     const residueWidth = innerWidth / vp.width;
     const scheme = getScheme(zoneState.colorSchemeId ?? defaultSchemeFor(msa.alphabet));
     const visibleCols = mask ? mask.visibleCols : null;
-    // "Plain" / "Domains" scheme: each row gets its OWN colour source —
-    // leaves colour by the leaf's own domain hits (full alpha), collapsed
-    // summaries colour by their subtree's dominant domain × subtree
+    // "Plain" / "Domains" scheme: each row gets its OWN color source —
+    // leaves color by the leaf's own domain hits (full alpha), collapsed
+    // summaries color by their subtree's dominant domain × subtree
     // coverage (so a partly-conserved domain on a collapsed clade fades
     // exactly the same way as in the minimap header). Other schemes use
-    // the standard residue → colour map and pay no extra cost.
+    // the standard residue → color map and pay no extra cost.
     //
     // Auto-override: when the user is zoomed out far enough that residue
-    // colours stop reading (residueWidth < AUTO_DOMAIN_RESIDUE_PX) AND the
-    // host has supplied domain data, force-switch to domain colouring.
+    // colors stop reading (residueWidth < AUTO_DOMAIN_RESIDUE_PX) AND the
+    // host has supplied domain data, force-switch to domain coloring.
     // The user's `colorSchemeId` is left alone — only the render is
     // overridden — so zooming back in restores Clustal/etc.
     const hasDomains =
@@ -992,9 +992,9 @@ const MSABody = ({
       // consensus across their subtree's (non-pruned) leaves.
       let getCh: ((col: number) => string | undefined) | null = null;
       let consensusRow = false;
-      // Domain colour source for the "Plain" / "Domains" scheme — set up
+      // Domain color source for the "Plain" / "Domains" scheme — set up
       // per row so leaves and collapsed summaries can use different
-      // logic. Returns the CSS colour string or null when there's no
+      // logic. Returns the CSS color string or null when there's no
       // domain at the given column on this row.
       let domainColorAt: ((oCol: number) => string | null) | null = null;
       if (r.kind === 'leaf') {
@@ -1054,7 +1054,7 @@ const MSABody = ({
       } else {
         // Snap each column's CSS-pixel boundaries so adjacent fills abut
         // exactly. Avoids the sub-pixel seams that show as faint vertical
-        // lines under plain/domain colouring at small residueWidth.
+        // lines under plain/domain coloring at small residueWidth.
         for (let vCol = vp.start; vCol < vp.end; vCol++) {
           const oCol = visibleCols ? visibleCols[vCol] : vCol;
           if (oCol === undefined) continue;
@@ -1331,7 +1331,7 @@ const MSABody = ({
           />
         );
       })}
-      {/* Domain bars: thin coloured strips at the bottom of each leaf
+      {/* Domain bars: thin colored strips at the bottom of each leaf
           row showing protein domains in the current viewport. The parent
           SVG has pointerEvents:none so events still reach the row hit
           overlays for non-bar pixels; each rect re-enables pointer events
@@ -1379,7 +1379,7 @@ const MSABody = ({
       )}
       {/* Splice-junction marks: thin vertical line at the right edge of
           the junction column, full row height. Drawn AFTER domain bars
-          so the bar's colour shows through underneath the line. */}
+          so the bar's color shows through underneath the line. */}
       {junctionMarks.length > 0 && vpForOverlay && (
         <svg
           width={width}

@@ -27,7 +27,7 @@ interface MinimapProps {
 
 /**
  * The MSA "consensus track": a column-for-column overview of the alignment
- * coloured by the active scheme, with a draggable viewport rectangle that
+ * colored by the active scheme, with a draggable viewport rectangle that
  * reflects the body's current zoom/pan. Dragging the rectangle pans; clicking
  * an empty area recenters; column units are mask-aware (they index into the
  * visible-column space, same as the body and the viewport state).
@@ -80,7 +80,7 @@ export function Minimap({
     // Snap each column's CSS-pixel boundaries with Math.round so adjacent
     // fills abut on integer pixels. Without this, fractional colWidth
     // (e.g. 1.5px) leaves anti-aliased seams between same-row columns —
-    // visible as faint vertical lines on plain/domain colour fills.
+    // visible as faint vertical lines on plain/domain color fills.
     const colWidth = width / totalCols;
     const xAt = (c: number) => Math.round(c * colWidth);
     for (let c = 0; c < totalCols; c++) {

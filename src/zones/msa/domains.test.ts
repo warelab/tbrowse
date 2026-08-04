@@ -54,7 +54,7 @@ describe('domainColor', () => {
     expect(a.startsWith('hsl(')).toBe(true);
   });
 
-  it('gives different ids different colours (in the typical case)', () => {
+  it('gives different ids different colors (in the typical case)', () => {
     expect(domainColor('PF00069')).not.toBe(domainColor('PF00271'));
   });
 });

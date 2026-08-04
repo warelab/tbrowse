@@ -9,8 +9,8 @@
  * file separately — the lib still works as a single JS import.
  *
  * Things that are intentionally NOT themed:
- *   - Residue colours (Clustal, hydrophobicity, nucleotide) — biology.
- *   - Domain hash colours — stable identity across sessions.
+ *   - Residue colors (Clustal, hydrophobicity, nucleotide) — biology.
+ *   - Domain hash colors — stable identity across sessions.
  *   - Selection-marker amber — readable on both backgrounds.
  *   - Splice-junction red, pruned-stub greys — same.
  *

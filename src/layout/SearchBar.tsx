@@ -323,7 +323,7 @@ interface ConfigPopoverButtonProps {
  * The trigger picks up an accent treatment whenever any
  * non-default config is active (`nonDefault`), so the user can
  * tell at a glance that the search has been customised even when
- * the popover is closed. Switches to the danger colour if the
+ * the popover is closed. Switches to the danger color if the
  * user has unticked every field — search is effectively
  * disabled until they re-enable at least one.
  */

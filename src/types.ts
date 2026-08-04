@@ -195,7 +195,7 @@ export interface RowRange {
  * neighborhood-conservation zone). Coordinates are absolute on the
  * genome; `strand` drives arrow direction; `geneTree` is the family
  * identifier — neighbours sharing a `geneTree` value get the same
- * colour, and undefined means "no family / non-protein-coding".
+ * color, and undefined means "no family / non-protein-coding".
  */
 export interface NeighborhoodGene {
   id: GeneId;
@@ -208,7 +208,7 @@ export interface NeighborhoodGene {
   /** Chromosome / scaffold name (e.g. "1", "Chr3", "scaffold_42"). */
   region?: string;
   biotype?: string;
-  /** Gene-tree (family) accession; same value across genes ⇒ same colour. */
+  /** Gene-tree (family) accession; same value across genes ⇒ same color. */
   geneTree?: string;
 }
 
@@ -273,7 +273,7 @@ export interface GeneStructure {
 /**
  * One genome annotation in the proximal region of a leaf gene
  * (e.g. transcription factor binding site, enhancer, repeat). Coords
- * are absolute on the genome. `kind` drives a default colour bucket;
+ * are absolute on the genome. `kind` drives a default color bucket;
  * `category` overrides it when present so a host can group by motif
  * id, family, etc.
  */
@@ -309,7 +309,7 @@ export interface HostData {
   labelProviders?: LabelProvider[];
   /**
    * Optional per-leaf protein-domain hits, keyed by GeneId. Renders as thin
-   * coloured bars below each MSA leaf row, spanning the domain's residue
+   * colored bars below each MSA leaf row, spanning the domain's residue
    * range translated into MSA columns.
    */
   proteinDomains?: Record<GeneId, ProteinDomain[]>;

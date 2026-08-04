@@ -51,7 +51,7 @@ export function domainColumnRange(
  * lexically smallest id so the result is deterministic.
  *
  * Used both by the header's minimap (per-column "domain track") and by the
- * body's "Plain" colour scheme (per-residue domain colouring).
+ * body's "Plain" color scheme (per-residue domain coloring).
  */
 export function computeDominantDomainByCol(
   msa: MSA,
@@ -98,12 +98,12 @@ export function computeDominantDomainByCol(
 }
 
 /**
- * Stable hash → CSS HSL colour for a domain id, so the same Pfam id (or
- * other accession) always renders in the same colour across leaves and
+ * Stable hash → CSS HSL color for a domain id, so the same Pfam id (or
+ * other accession) always renders in the same color across leaves and
  * sessions. Hue is the only varied channel; saturation and lightness are
  * tuned for legibility on the MSA's pale grey background.
  *
- * Pass `alpha` (0..1) to fade the colour; the minimap uses this to encode
+ * Pass `alpha` (0..1) to fade the color; the minimap uses this to encode
  * per-column alignment coverage (low coverage → faint domain bar).
  */
 export function domainColor(id: string, alpha = 1): string {

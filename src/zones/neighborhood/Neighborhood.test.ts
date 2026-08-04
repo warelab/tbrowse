@@ -60,9 +60,9 @@ describe('buildFamilyPalette', () => {
     expect(before.get('famA')).toBe(CENTER_HUE);
     expect(after.get('famZ')).toBe(CENTER_HUE);
     // famA was green under NoI=A; under NoI=B it must be a different
-    // colour (it sits in B's downstream rainbow region).
+    // color (it sits in B's downstream rainbow region).
     expect(after.get('famA')).not.toBe(CENTER_HUE);
-    // famZ was rainbow-coloured under NoI=A; now it's green.
+    // famZ was rainbow-colored under NoI=A; now it's green.
     expect(before.get('famZ')).not.toBe(CENTER_HUE);
   });
 
@@ -91,7 +91,7 @@ describe('buildFamilyPalette', () => {
     expect(buildFamilyPalette({}, 'A').size).toBe(0);
   });
 
-  it('still assigns colours to every family even with no NoI', () => {
+  it('still assigns colors to every family even with no NoI', () => {
     const palette = buildFamilyPalette(neighborhoods, undefined);
     // No centre pinned to green — every family falls through the
     // descending-frequency / interpolation pass and gets some hue.

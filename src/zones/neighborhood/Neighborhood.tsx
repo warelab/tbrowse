@@ -31,7 +31,7 @@ const MIN_ARROW_PX = 3;
  *  the rectangle grows or shrinks pixel-wise as gaps elsewhere in the
  *  row compress / expand and the row's overall scale changes. */
 const EDGE_TERMINAL_DEFAULT_WIDTH = 200;
-/** Fallback colour for non-coding / family-less genes. */
+/** Fallback color for non-coding / family-less genes. */
 const NO_FAMILY_COLOR = 'rgba(150, 150, 160, 0.55)';
 
 /**
@@ -109,25 +109,25 @@ function normHue(h: number): number {
 }
 
 /**
- * Build a stable family-colour palette: gene_tree id → hue in [0, 360).
+ * Build a stable family-color palette: gene_tree id → hue in [0, 360).
  *
  * 1. The centre family of the node-of-interest's neighbourhood is
  *    pinned to green (`CENTER_FAMILY_HUE`).
  * 2. Other families in that neighbourhood are walked in genomic
  *    order and assigned hues distributed across a rainbow gradient
  *    that flows blue → green (upstream) and green → orange/red
- *    (downstream), so adjacent genes get adjacent colours.
+ *    (downstream), so adjacent genes get adjacent colors.
  * 3. Every remaining family across all rows is then processed in
  *    DESCENDING order of total occurrence count. For each, we look
  *    at the family's first appearance in any neighbourhood and
- *    interpolate between its already-coloured flanking neighbours'
- *    hues, so the new colour fits naturally into the gradient
+ *    interpolate between its already-colored flanking neighbours'
+ *    hues, so the new color fits naturally into the gradient
  *    established by the existing palette. If neither flank is yet
- *    coloured, fall back to a stable hash so the colour at least
+ *    colored, fall back to a stable hash so the color at least
  *    stays consistent across renders.
  */
 /** Stable hash → hue used as a last-resort fallback when a family
- *  has no coloured flanking gene to interpolate from. */
+ *  has no colored flanking gene to interpolate from. */
 function hashFamilyHue(family: string): number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < family.length; i++) {
@@ -189,7 +189,7 @@ export function buildFamilyPalette(
   }
 
   // Step 3 — single pass over every row to (a) build a genomic-ordered
-  // gene list per row, (b) tally frequencies of every still-uncoloured
+  // gene list per row, (b) tally frequencies of every still-uncolored
   // family, and (c) record the FIRST occurrence of each such family
   // (`{ list, idx }`) so the interpolation pass can scan that row's
   // flanks directly without re-iterating the entire neighbourhood
@@ -197,7 +197,7 @@ export function buildFamilyPalette(
   const frequency = new Map<string, number>();
   type Occurrence = { list: NeighborhoodGene[]; idx: number };
   const firstOccurrence = new Map<string, Occurrence>();
-  // Allow a small fallback: if the FIRST occurrence has no coloured
+  // Allow a small fallback: if the FIRST occurrence has no colored
   // flank in either direction, try one more occurrence before giving
   // up. Two occurrences cover virtually all useful cases without
   // blowing up to the O(N) worst case the previous code had.
@@ -290,9 +290,9 @@ function circularMidHue(h1: number, h2: number): number {
   return (h1 + d / 2 + 360) % 360;
 }
 
-/** Render a gene-family colour by looking up the family's hue in the
+/** Render a gene-family color by looking up the family's hue in the
  *  precomputed palette. Falls back to a hash so unknown families still
- *  get a stable colour (shouldn't normally happen). */
+ *  get a stable color (shouldn't normally happen). */
 function familyColor(
   geneTree: string,
   palette: Map<string, number>,
@@ -855,18 +855,18 @@ const NeighborhoodBody = ({
   // Resolve the node of interest to its gene id so the palette
   // dependency is on the gene id directly. When the user picks a
   // different node of interest, this memo emits a new gene id, which
-  // in turn invalidates the palette memo and the whole family-colour
+  // in turn invalidates the palette memo and the whole family-color
   // assignment is rebuilt around the new centre.
   const noiGeneId = useMemo<GeneId | undefined>(() => {
     if (!nodeOfInterestId) return undefined;
     return data.tree.nodes[nodeOfInterestId]?.geneId;
   }, [data.tree.nodes, nodeOfInterestId]);
 
-  // Family-colour palette: green for the centre family of the NoI's
+  // Family-color palette: green for the centre family of the NoI's
   // neighbourhood, rainbow-distributed for its other families,
   // descending-frequency interpolation for everything else. Computed
   // once per (data, NoI) pair and shared across every row, so picking
-  // a different node of interest reassigns colours globally.
+  // a different node of interest reassigns colors globally.
   const familyPalette = useMemo(
     () => buildFamilyPalette(data.neighborhood, noiGeneId),
     [data.neighborhood, noiGeneId],

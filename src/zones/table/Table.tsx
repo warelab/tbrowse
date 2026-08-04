@@ -235,9 +235,9 @@ export function createTableZone(
 ): ZoneDefinition<TableZoneState> {
   const factoryColumns = opts.columns;
   // Per-column heatmap domains are computed once across the full table —
-  // colours stay stable as the user collapses / prunes / scrolls. We
+  // colors stay stable as the user collapses / prunes / scrolls. We
   // only build domains for numerical columns; the body skips heatmap
-  // colouring when no domain is registered.
+  // coloring when no domain is registered.
   const heatmapDomains: Record<string, HeatmapDomain> = buildHeatmapDomains(
     opts.table,
     factoryColumns.filter((c) => (c.kind ?? 'string') === 'number').map((c) => c.id),
@@ -555,7 +555,7 @@ export function createTableZone(
                       heatmapValue = raw;
                     }
                   }
-                  // Heatmap colouring on top of the row's hover/select bg —
+                  // Heatmap coloring on top of the row's hover/select bg —
                   // applied as a div background so hover/select stripes
                   // still tint the row in non-heatmap columns.
                   let cellBg: string | undefined;

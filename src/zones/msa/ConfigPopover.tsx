@@ -37,7 +37,7 @@ interface MSAConfigPopoverProps {
 
 /**
  * Single gear-icon control that opens a portaled popover containing
- * the colour-scheme selector and the column-mask configuration. The
+ * the color-scheme selector and the column-mask configuration. The
  * popover anchors to the host MSA zone's bounds (matching the table
  * zone's pattern) — its right edge lines up with the zone's right
  * edge and its width is capped at the zone's width so it never spills
@@ -57,6 +57,13 @@ export function MSAConfigPopover({
     maxWidth: number;
   } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // Element the popover is portaled into. Prefer the chassis root — it sits
+  // inside whatever fullscreen / modal subtree the host has wrapped TBrowse in,
+  // so the popover (and its color-scheme select) stays visible and on top.
+  // `document.body` escapes that stacking context: under a host fullscreen
+  // modal the popover lands behind it, and under the browser Fullscreen API it
+  // isn't rendered at all. Captured on open.
+  const portalHostRef = useRef<HTMLElement | null>(null);
   const theme = useTBrowseStore((s) => s.theme);
 
   const togglePopover = () => {
@@ -71,6 +78,9 @@ export function MSAConfigPopover({
         : Math.max(0, window.innerWidth - btnRect.right);
       const zoneWidth = zoneRect ? zoneRect.right - zoneRect.left : 320;
       const maxWidth = Math.max(240, zoneWidth);
+      portalHostRef.current =
+        buttonRef.current.closest<HTMLElement>('.tbrowse-root') ??
+        document.body;
       setAnchor({ right, top: btnRect.bottom + 4, maxWidth });
     }
     setOpen((o) => !o);
@@ -110,7 +120,7 @@ export function MSAConfigPopover({
         ref={buttonRef}
         type="button"
         onClick={togglePopover}
-        title="Configure colours and column mask"
+        title="Configure colors and column mask"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -157,7 +167,7 @@ export function MSAConfigPopover({
                   marginBottom: 6,
                 }}
               >
-                Colour scheme
+                Color scheme
               </div>
               <select
                 value={selectedSchemeId}
@@ -302,7 +312,7 @@ export function MSAConfigPopover({
               </div>
             </div>
           </div>,
-          document.body,
+          portalHostRef.current ?? document.body,
         )}
     </>
   );
