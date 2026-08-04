@@ -291,8 +291,8 @@ function DisplayControls({
         Row
         <input
           type="range"
-          min={12}
-          max={48}
+          min={8}
+          max={64}
           step={1}
           value={rowHeight}
           onChange={(e) => {
@@ -308,7 +308,7 @@ function DisplayControls({
         <input
           type="range"
           min={8}
-          max={20}
+          max={36}
           step={1}
           value={fontSize}
           onChange={(e) => {
