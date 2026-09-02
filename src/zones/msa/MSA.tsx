@@ -82,6 +82,7 @@ const THREE_LETTER_MIN_PX = 22;
  *  The future "render codons under each AA" affordance will live in this
  *  same column footprint. */
 const MAX_RESIDUE_PX_PROTEIN = 28;
+const RESIDUE_FONT_STACK = 'ui-monospace, "SF Mono", Menlo, monospace';
 const RESIDUE_COLOR = '#444';
 const RESIDUE_BG_COLOR = '#cfd6df';
 const CONSENSUS_OPACITY = 0.7;
@@ -104,6 +105,20 @@ function minViewportLength(alphabet: MSA['alphabet'], innerWidth: number): numbe
     return Math.max(2, Math.ceil(innerWidth / MAX_RESIDUE_PX_PROTEIN));
   }
   return 2;
+}
+
+/**
+ * 1-based position of the residue at `col` within the UNALIGNED sequence —
+ * i.e. how many non-gap characters `seq` holds up to and including `col`.
+ * Caller must have checked that `seq[col]` is not a gap.
+ */
+function residuePositionAt(seq: string, col: number): number {
+  let n = 0;
+  for (let i = 0; i <= col; i++) {
+    const ch = seq[i];
+    if (ch !== '-' && ch !== '.' && ch !== undefined) n++;
+  }
+  return n;
 }
 
 /**
@@ -233,6 +248,7 @@ const MSAHeader = ({
   width,
 }: ZoneRenderProps<MSAZoneState>) => {
   const msa = data.msa;
+  const hoveredResidue = useTBrowseStore((s) => s.hoveredResidue);
   const maskParams = zoneState.mask ?? DEFAULT_MASK;
   const activeGeneIds = useMemo(
     () => (msa ? computeActiveGeneIds(data.tree, msa, prunedNodeIds) : new Set<GeneId>()),
@@ -355,6 +371,23 @@ const MSAHeader = ({
   // of any flex/padding gymnastics on the surrounding header. The top control
   // row reserves room above the minimap by leaving `LEAF_ROW_HEIGHT + gap` of
   // bottom space.
+  // Residue under the pointer in this zone's body, printed beside the zone
+  // controls as "<protein_stable_id> <residue><position>". Only set while
+  // the body is zoomed in far enough to render residues as text.
+  const hoverReadout = useMemo(() => {
+    if (!hoveredResidue) return null;
+    const meta = data.geneMetadata?.[hoveredResidue.geneId] as
+      | { proteinId?: string }
+      | undefined;
+    return {
+      proteinId: meta?.proteinId ?? hoveredResidue.geneId,
+      // Residue + position read together as the usual "K24" shorthand,
+      // single-letter even when the body is drawing 3-letter codes.
+      residue: hoveredResidue.residue.toUpperCase(),
+      position: hoveredResidue.position,
+    };
+  }, [hoveredResidue, data.geneMetadata]);
+
   const minimapWidth = Math.max(0, width - 2 * PAD_X);
   const minVpLength = msa
     ? Math.min(totalVisible || Infinity, minViewportLength(msa.alphabet, minimapWidth))
@@ -429,6 +462,26 @@ const MSAHeader = ({
             >
               {'<->'}
             </button>
+            {hoverReadout && (
+              <span
+                title="Residue under the pointer"
+                style={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: 11,
+                  fontFamily: RESIDUE_FONT_STACK,
+                  color: 'var(--tbrowse-text-muted)',
+                }}
+              >
+                {hoverReadout.proteinId}{' '}
+                <strong style={{ color: 'var(--tbrowse-text)' }}>
+                  {hoverReadout.residue}
+                  {hoverReadout.position}
+                </strong>
+              </span>
+            )}
             <span style={{ marginLeft: 'auto' }}>
               <MSAConfigPopover
                 msa={msa}
@@ -496,6 +549,10 @@ const MSABody = ({
   // glyphs scale with it, but are capped to the column width so adjacent
   // letters never overlap when the base is large or the user is zoomed out.
   const fontSize = useTBrowseStore((s) => s.fontSize);
+  // Residue under the pointer — shared with the zone header (which prints
+  // "<proteinId> <residue><position>") and used here to bold the hovered glyph.
+  const hoveredResidue = useTBrowseStore((s) => s.hoveredResidue);
+  const setHoveredResidue = useTBrowseStore((s) => s.setHoveredResidue);
 
   const totalHeight = useMemo(
     () =>
@@ -961,6 +1018,8 @@ const MSABody = ({
       (residueWidth < AUTO_DOMAIN_RESIDUE_PX && hasDomains);
 
     const renderText = residueWidth >= TEXT_RENDER_MIN_PX;
+    let glyphFont = '';
+    let boldGlyphFont = '';
     // Above THREE_LETTER_MIN_PX, protein columns get the 3-letter abbreviation
     // (Ala, Arg, ...) so the wide column doesn't look empty. Future codon
     // rendering will draw a second line below this one in the same column.
@@ -977,7 +1036,11 @@ const MSABody = ({
       // residues up where there's room.
       const base = fontSize || DEFAULT_FONT_SIZE;
       const glyphPx = residueGlyphPx(base, residueWidth, renderThreeLetter);
-      ctx.font = `${glyphPx}px ui-monospace, "SF Mono", Menlo, monospace`;
+      glyphFont = `${glyphPx}px ${RESIDUE_FONT_STACK}`;
+      // The hovered residue is redrawn in bold so the eye can find the
+      // position quoted in the zone header.
+      boldGlyphFont = `bold ${glyphPx}px ${RESIDUE_FONT_STACK}`;
+      ctx.font = glyphFont;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
     }
@@ -1039,6 +1102,11 @@ const MSABody = ({
       ctx.save();
       ctx.translate(rowTx, 0);
       if (renderText) {
+        // Original column of the hovered residue, when it falls on THIS row.
+        const hoverCol =
+          hoveredResidue && hoveredResidue.nodeId === r.nodeId
+            ? hoveredResidue.column
+            : -1;
         for (let vCol = vp.start; vCol < vp.end; vCol++) {
           const oCol = visibleCols ? visibleCols[vCol] : vCol;
           if (oCol === undefined) continue;
@@ -1049,7 +1117,13 @@ const MSABody = ({
           const text = renderThreeLetter
             ? (AA_THREE_LETTER[ch.toUpperCase()] ?? ch)
             : ch;
-          ctx.fillText(text, x, rowYCenter);
+          if (oCol === hoverCol) {
+            ctx.font = boldGlyphFont;
+            ctx.fillText(text, x, rowYCenter);
+            ctx.font = glyphFont;
+          } else {
+            ctx.fillText(text, x, rowYCenter);
+          }
         }
       } else {
         // Snap each column's CSS-pixel boundaries so adjacent fills abut
@@ -1088,7 +1162,25 @@ const MSABody = ({
     mask,
     totalVisible,
     fontSize,
+    hoveredResidue,
   ]);
+
+  // The header readout and the bold glyph only make sense while residues
+  // render as text, and the residue under a stationary pointer changes when
+  // the viewport pans / zooms or the column mask shifts — no mousemove fires
+  // for either — so drop the hover in those cases and let the next pointer
+  // move re-establish it. Also cleared on unmount.
+  useEffect(() => {
+    setHoveredResidue(null);
+  }, [
+    setHoveredResidue,
+    mask,
+    totalVisible,
+    width,
+    zoneState.viewportStart,
+    zoneState.viewportEnd,
+  ]);
+  useEffect(() => () => setHoveredResidue(null), [setHoveredResidue]);
 
   // Wheel handler: deltaX → pan, ctrl/shift + deltaY → zoom centred on cursor.
   // Has to be attached via native addEventListener (passive: false) because
@@ -1178,34 +1270,86 @@ const MSABody = ({
   // collapsed-summary rows aggregate domain hits across the descendant
   // leaves of that internal node. Either way, this does NOT call
   // onSelectNode — node selection lives in the tree zone.
-  const onBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!msa || !mask || !containerRef.current) return;
+  // Resolve a pointer position to the (row, original column) it lands on,
+  // plus the current residue width so callers can gate on zoom level.
+  // Returns null outside the residue grid or between rows.
+  const cellAt = (
+    clientX: number,
+    clientY: number,
+  ): {
+    row: (typeof visibleRows)[number];
+    oCol: number;
+    residueWidth: number;
+  } | null => {
+    if (!msa || !mask || !containerRef.current) return null;
     const rect = containerRef.current.getBoundingClientRect();
-    const localX = e.clientX - rect.left;
-    const localY = e.clientY - rect.top;
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
     const vp = resolveViewport(zoneState, totalVisible);
     const innerW = Math.max(1, width - 2 * PAD_X);
     const residueW = innerW / vp.width;
     const insideX = localX - PAD_X;
-    if (insideX < 0 || insideX > innerW) return;
+    if (insideX < 0 || insideX > innerW) return null;
     const vCol = vp.start + Math.floor(insideX / residueW);
-    if (vCol < vp.start || vCol >= vp.end) return;
+    if (vCol < vp.start || vCol >= vp.end) return null;
     const oCol = mask.visibleCols[vCol];
-    if (oCol === undefined) return;
+    if (oCol === undefined) return null;
 
     // Find which row contains localY. visibleRows are y-sorted with no
     // overlaps, so a linear scan is fine — bounded by virtualization.
     const startIdx = rowRange.startIndex;
     const endIdx = Math.min(rowRange.endIndex, visibleRows.length);
-    let row: (typeof visibleRows)[number] | null = null;
     for (let i = startIdx; i < endIdx; i++) {
       const r = visibleRows[i];
       if (localY >= r.y && localY < r.y + r.height) {
-        row = r;
-        break;
+        return { row: r, oCol, residueWidth: residueW };
       }
     }
-    if (!row) return;
+    return null;
+  };
+
+  // Pointer move → publish the hovered residue to the store so the zone
+  // header can print "<proteinId> <residue><position>" and the canvas can bold that
+  // glyph. Only meaningful once residues render as text, and only on leaf
+  // rows (a collapsed summary's consensus belongs to no single protein).
+  const onBodyMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const cell = cellAt(e.clientX, e.clientY);
+    if (
+      !msa ||
+      !cell ||
+      cell.residueWidth < TEXT_RENDER_MIN_PX ||
+      cell.row.kind !== 'leaf'
+    ) {
+      if (hoveredResidue) setHoveredResidue(null);
+      return;
+    }
+    const geneId = data.tree.nodes[cell.row.nodeId]?.geneId;
+    const seq = geneId ? msa.sequences[geneId] : undefined;
+    const ch = seq?.[cell.oCol];
+    if (!geneId || !seq || !ch || ch === '-' || ch === '.') {
+      if (hoveredResidue) setHoveredResidue(null);
+      return;
+    }
+    if (
+      hoveredResidue &&
+      hoveredResidue.nodeId === cell.row.nodeId &&
+      hoveredResidue.column === cell.oCol
+    ) {
+      return; // same cell — skip the redundant store write (and repaint).
+    }
+    setHoveredResidue({
+      nodeId: cell.row.nodeId,
+      geneId,
+      column: cell.oCol,
+      position: residuePositionAt(seq, cell.oCol),
+      residue: ch,
+    });
+  };
+
+  const onBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const cell = cellAt(e.clientX, e.clientY);
+    if (!cell) return;
+    const { row, oCol } = cell;
     const node = data.tree.nodes[row.nodeId];
     if (!node) return;
 
@@ -1286,6 +1430,10 @@ const MSABody = ({
     <div
       ref={containerRef}
       onClick={onBodyClick}
+      onMouseMove={onBodyMouseMove}
+      onMouseLeave={() => {
+        if (hoveredResidue) setHoveredResidue(null);
+      }}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
       <canvas

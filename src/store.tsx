@@ -1,11 +1,29 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { computePivotState } from './pivot';
-import type { NodeId, TBrowseProps, ViewState } from './types';
+import type { GeneId, NodeId, TBrowseProps, ViewState } from './types';
+
+/**
+ * The residue under the pointer in the MSA zone. Only set while the zone is
+ * zoomed in far enough to render residue text, and only for leaf rows (a
+ * collapsed-summary consensus has no protein of its own). Transient UI state
+ * — deliberately not part of `viewState`, so hovering never touches the URL.
+ */
+export interface HoveredResidue {
+  nodeId: NodeId;
+  geneId: GeneId;
+  /** Original (pre-mask) MSA column index. */
+  column: number;
+  /** 1-based residue position in the leaf's UNALIGNED sequence. */
+  position: number;
+  /** Residue character at that position (never a gap). */
+  residue: string;
+}
 
 export interface TBrowseState {
   viewState: ViewState;
   hoveredNodeId: NodeId | null;
+  hoveredResidue: HoveredResidue | null;
   /**
    * Active visual theme. Mirrored from the host's `theme` prop on every
    * render. Read by components that render outside the chassis DOM
@@ -21,6 +39,7 @@ export interface TBrowseState {
    */
   fontSize: number;
   setHoveredNodeId: (id: NodeId | null) => void;
+  setHoveredResidue: (residue: HoveredResidue | null) => void;
   setViewState: (next: ViewState | ((prev: ViewState) => ViewState)) => void;
   setTheme: (theme: 'light' | 'dark') => void;
   setFontSize: (fontSize: number) => void;
@@ -112,9 +131,11 @@ export function createTBrowseStore(props: TBrowseProps): TBrowseStore {
   return createStore<TBrowseState>((set) => ({
     viewState: initial,
     hoveredNodeId: null,
+    hoveredResidue: null,
     theme: props.theme ?? 'light',
     fontSize: props.fontSize ?? DEFAULT_FONT_SIZE,
     setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
+    setHoveredResidue: (residue) => set({ hoveredResidue: residue }),
     setViewState: (next) =>
       set((s) => ({
         viewState: typeof next === 'function' ? next(s.viewState) : next,
