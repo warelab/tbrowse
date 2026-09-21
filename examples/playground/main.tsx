@@ -68,8 +68,142 @@ import { AboutPage } from './AboutPage';
 import { DevelopersPage } from './DevelopersPage';
 
 const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
-const ensemblUrlFor = (geneId: string) =>
-  `https://rest.ensembl.org/genetree/member/id/homo_sapiens/${geneId}?aligned=1&sequence=protein`;
+
+/**
+ * Ensembl REST endpoints, newest release first. Each archive host pins a
+ * single release and runs on infrastructure separate from the main
+ * `rest.ensembl.org` endpoint, which intermittently sheds load with 5xx
+ * (and multi-second latency on a bare /info/ping) when traffic spikes.
+ * Picking an archive trades currency for consistency.
+ *
+ * `route` is not cosmetic: the gene-tree member endpoint changed shape
+ * mid-history. Releases <= 109 answer only
+ * `/genetree/member/id/{gene}`; releases >= 112 answer only
+ * `/genetree/member/id/{species}/{gene}`; 110 and 111 accept both.
+ * Sending the wrong form gets a 404, so the URL builder switches on it.
+ *
+ * Release 106 (apr2022) is deliberately absent — that host accepts TCP
+ * connections but never responds.
+ */
+interface EnsemblMirror {
+  /** Hostname, and the stable id persisted in the URL hash. */
+  host: string;
+  /** Ensembl release served by this host. */
+  release: number;
+  /** Gene-tree member route shape this release understands. */
+  route: 'bare' | 'species';
+  /** Short qualifier shown in the picker. */
+  note?: string;
+}
+
+const ENSEMBL_MIRRORS: readonly EnsemblMirror[] = [
+  {
+    host: 'rest.ensembl.org',
+    release: 116,
+    route: 'species',
+    note: 'current, load-sensitive',
+  },
+  {
+    host: 'sep2025.rest.ensembl.org',
+    release: 115,
+    route: 'species',
+    note: 'slowest archive',
+  },
+  { host: 'may2025.rest.ensembl.org', release: 114, route: 'species' },
+  { host: 'oct2024.rest.ensembl.org', release: 113, route: 'species' },
+  {
+    host: 'may2024.rest.ensembl.org',
+    release: 112,
+    route: 'species',
+    note: 'default',
+  },
+  { host: 'jan2024.rest.ensembl.org', release: 111, route: 'species' },
+  { host: 'jul2023.rest.ensembl.org', release: 110, route: 'species' },
+  { host: 'feb2023.rest.ensembl.org', release: 109, route: 'bare' },
+  { host: 'oct2022.rest.ensembl.org', release: 108, route: 'bare' },
+  { host: 'jul2022.rest.ensembl.org', release: 107, route: 'bare' },
+  { host: 'dec2021.rest.ensembl.org', release: 105, route: 'bare' },
+];
+
+/** Archive release 112 — species route (so it matches the modern URL
+ *  shape), consistently sub-second on the per-leaf overlap calls, and
+ *  recent enough that the trees aren't stale. */
+const ENSEMBL_DEFAULT_MIRROR = 'may2024.rest.ensembl.org';
+
+const mirrorFor = (host: string): EnsemblMirror =>
+  ENSEMBL_MIRRORS.find((m) => m.host === host) ??
+  (ENSEMBL_MIRRORS.find((m) => m.host === ENSEMBL_DEFAULT_MIRROR) as EnsemblMirror);
+
+const mirrorLabel = (m: EnsemblMirror) =>
+  `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} \u00b7 r${m.release}` +
+  (m.note ? ` (${m.note})` : '');
+
+const ensemblUrlFor = (geneId: string, host: string) => {
+  const m = mirrorFor(host);
+  // The species segment is only valid on the newer route; older
+  // releases take the gene id directly and infer the species from it.
+  const member =
+    m.route === 'species' ? `homo_sapiens/${geneId}` : `${geneId}`;
+  return (
+    `https://${m.host}/genetree/member/id/${member}` +
+    `?aligned=1&sequence=protein`
+  );
+};
+
+/** Transient statuses worth another attempt. Ensembl sheds load with
+ *  5xx and rate-limits with 429; every other 4xx is a real client error
+ *  (deprecated accession, unknown id) that retrying cannot fix. */
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524]);
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Exponential backoff with jitter, capped. Honours `Retry-After` when
+ *  the server sends one. The jitter matters for the per-leaf fan-outs:
+ *  without it, six workers that fail together retry together forever. */
+function backoffMs(
+  attempt: number,
+  base: number,
+  retryAfter: string | null,
+): number {
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs) && secs >= 0) {
+      return Math.min(secs * 1000, 30_000);
+    }
+  }
+  const capped = Math.min(base * 2 ** attempt, 8_000);
+  return Math.round(capped * (0.5 + Math.random() * 0.5));
+}
+
+/**
+ * `fetch` with bounded retries for the failure modes Ensembl REST shows
+ * under load: 429, 5xx, and dropped connections. Returns the final
+ * response even when it is still a failure, so callers keep their
+ * existing `res.ok` handling; only a network-level error throws.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit = {},
+  { attempts = 4, baseDelayMs = 500 }: { attempts?: number; baseDelayMs?: number } = {},
+): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok || !RETRYABLE_STATUS.has(res.status)) return res;
+      if (attempt === attempts - 1) return res;
+      await sleep(backoffMs(attempt, baseDelayMs, res.headers.get('Retry-After')));
+    } catch (err) {
+      lastError = err;
+      if (attempt === attempts - 1) break;
+      await sleep(backoffMs(attempt, baseDelayMs, null));
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Network error fetching ${url}`);
+}
 
 // Initial fr-share per zone id. The chassis treats zone widths as
 // fractions of the container so this gives tree 30 % / labels 20 % /
@@ -102,6 +236,9 @@ interface UrlState {
   /** Gene id used to load the Ensembl tree — only meaningful when
    *  source === 'ensembl'. */
   ensemblGeneId?: string;
+  /** REST host the Ensembl tree was loaded from. Persisted so a shared
+   *  link reproduces the same release, not just the same gene. */
+  ensemblMirror?: string;
   viewState?: Partial<ViewState>;
 }
 
@@ -243,6 +380,19 @@ export function Playground() {
       ? bootstrappedUrl.ensemblGeneId
       : null,
   );
+  /** Picker selection. Applied on the next load; `loadedEnsemblMirror`
+   *  is what the fan-outs actually use, so domains and gene structures
+   *  can never be fetched from a different release than the tree. */
+  const [ensemblMirror, setEnsemblMirror] = useState<string>(
+    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblMirror
+      ? bootstrappedUrl.ensemblMirror
+      : ENSEMBL_DEFAULT_MIRROR,
+  );
+  const [loadedEnsemblMirror, setLoadedEnsemblMirror] = useState<string>(
+    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblMirror
+      ? bootstrappedUrl.ensemblMirror
+      : ENSEMBL_DEFAULT_MIRROR,
+  );
   const [ensemblData, setEnsemblData] = useState<FromEnsemblResult | null>(null);
   const [ensemblStatus, setEnsemblStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [ensemblError, setEnsemblError] = useState<string | null>(null);
@@ -253,6 +403,9 @@ export function Playground() {
     state: 'idle' | 'loading' | 'error';
     done?: number;
     total?: number;
+    /** Leaves whose domain call never succeeded, after retries. A
+     *  non-zero count is reported but does not fail the batch. */
+    failed?: number;
     error?: string;
   }>({ state: 'idle' });
   const [ensemblGeneStructures, setEnsemblGeneStructures] = useState<
@@ -319,22 +472,36 @@ export function Playground() {
 
   const loadEnsembl = async (
     geneIdRaw: string,
-    opts: { applyPivot?: boolean } = {},
+    opts: { applyPivot?: boolean; mirror?: string } = {},
   ) => {
     const geneId = geneIdRaw.trim();
     if (geneId === '') return;
     const applyPivot = opts.applyPivot ?? true;
+    // Explicit override lets the picker re-load from the newly chosen
+    // host without waiting for the `ensemblMirror` state to settle.
+    const host = opts.mirror ?? ensemblMirror;
     setEnsemblStatus('loading');
     setEnsemblError(null);
     try {
-      const res = await fetch(ensemblUrlFor(geneId), {
+      const res = await fetchWithRetry(ensemblUrlFor(geneId, host), {
         headers: { Accept: 'application/json' },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const m = mirrorFor(host);
+        // A 404 here is almost always the route-shape mismatch rather
+        // than a missing gene, so name the cause instead of the code.
+        throw new Error(
+          res.status === 404
+            ? `HTTP 404 from ${m.host} (release ${m.release}) — no gene tree for ${geneId}`
+            : `HTTP ${res.status} from ${m.host}`,
+        );
+      }
       const json = (await res.json()) as unknown;
       const data = fromEnsemblGeneTree(json);
       setEnsemblData(data);
+      setLoadedEnsemblMirror(host);
       setEnsemblDomains(null);
+      setDomainStatus({ state: 'idle' });
       setEnsemblGeneStructures(null);
       setEnsemblGenomeFeatures(null);
       setEnsemblGeneStructureErrors(null);
@@ -366,18 +533,24 @@ export function Playground() {
       return;
     }
     setDomainStatus({ state: 'loading', done: 0, total: entries.length });
+    const host = loadedEnsemblMirror;
     const result: Record<string, ProteinDomain[]> = {};
     let done = 0;
-    let aborted = false;
+    let failed = 0;
+    let lastError = '';
     const concurrency = 6;
     let cursor = 0;
+    // A single leaf failing used to abort the whole fan-out, which made
+    // one transient 5xx out of ~175 requests lose the entire batch.
+    // Failures are now counted and skipped — `fetchWithRetry` has
+    // already backed off and retried before we get here.
     const worker = async () => {
-      while (cursor < entries.length && !aborted) {
+      while (cursor < entries.length) {
         const idx = cursor++;
         const [geneId, ensp] = entries[idx];
         try {
-          const res = await fetch(
-            `https://rest.ensembl.org/overlap/translation/${ensp}?feature=protein_feature`,
+          const res = await fetchWithRetry(
+            `https://${host}/overlap/translation/${ensp}?feature=protein_feature`,
             { headers: { Accept: 'application/json' } },
           );
           if (!res.ok) throw new Error(`HTTP ${res.status} for ${ensp}`);
@@ -388,21 +561,33 @@ export function Playground() {
             sources: ['Pfam', 'Smart'],
           });
         } catch (err) {
-          aborted = true;
-          setDomainStatus({
-            state: 'error',
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return;
+          failed++;
+          lastError = err instanceof Error ? err.message : String(err);
         }
         done++;
-        setDomainStatus({ state: 'loading', done, total: entries.length });
+        setDomainStatus({
+          state: 'loading',
+          done,
+          total: entries.length,
+          failed,
+        });
       }
     };
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    if (aborted) return;
+    if (Object.keys(result).length === 0) {
+      setDomainStatus({
+        state: 'error',
+        error: `All ${entries.length} domain requests failed (${lastError})`,
+      });
+      return;
+    }
     setEnsemblDomains(result);
-    setDomainStatus({ state: 'idle', done, total: entries.length });
+    setDomainStatus({
+      state: 'idle',
+      done,
+      total: entries.length,
+      failed,
+    });
   };
 
   /**
@@ -413,9 +598,10 @@ export function Playground() {
    * elements) — they're split out by the two converter functions so
    * the playground can wire them into the matching TBrowse props.
    *
-   * Same concurrency-capped pattern as `loadEnsemblDomains` — protects
-   * the Ensembl REST API's 15 req/s limit and surfaces failures
-   * inline rather than silently retrying.
+   * Same concurrency-capped pattern as `loadEnsemblDomains` — stays
+   * under the Ensembl REST API's 15 req/s limit, retries the transient
+   * statuses via `fetchWithRetry`, and surfaces whatever still fails
+   * per gene rather than aborting the batch.
    */
   const loadEnsemblOverlap = async () => {
     if (!ensemblData) return;
@@ -428,6 +614,7 @@ export function Playground() {
       return;
     }
     setOverlapStatus({ state: 'loading', done: 0, total: leaves.length });
+    const host = loadedEnsemblMirror;
     const structures: Record<string, GeneStructure> = {};
     const features: Record<string, GenomeFeature[]> = {};
     const errors: Record<string, string> = {};
@@ -446,10 +633,10 @@ export function Playground() {
         const geneId = leaves[idx];
         try {
           const url =
-            `https://rest.ensembl.org/overlap/id/${geneId}` +
+            `https://${host}/overlap/id/${geneId}` +
             `?feature=transcript;feature=exon;feature=cds` +
             `;feature=regulatory;feature=motif`;
-          const res = await fetch(url, {
+          const res = await fetchWithRetry(url, {
             headers: { Accept: 'application/json' },
           });
           if (!res.ok) {
@@ -476,6 +663,30 @@ export function Playground() {
       Object.keys(errors).length > 0 ? errors : null,
     );
     setOverlapStatus({ state: 'idle', done, total: leaves.length });
+  };
+
+  /**
+   * Switching release invalidates everything derived from the tree —
+   * alignment width, protein ids and gene models all differ between
+   * Ensembl releases. Drop the derived data, then re-fetch the current
+   * gene from the new host, preserving the viewState so the user keeps
+   * their collapsed/pruned subtrees across the switch.
+   */
+  const handleMirrorChange = (host: string) => {
+    if (host === ensemblMirror) return;
+    setEnsemblMirror(host);
+    setEnsemblDomains(null);
+    setEnsemblGeneStructures(null);
+    setEnsemblGenomeFeatures(null);
+    setEnsemblGeneStructureErrors(null);
+    setDomainStatus({ state: 'idle' });
+    setOverlapStatus({ state: 'idle' });
+    if (dataSource === 'ensembl' && loadedEnsemblGeneId) {
+      void loadEnsembl(loadedEnsemblGeneId, {
+        applyPivot: false,
+        mirror: host,
+      });
+    }
   };
 
   /**
@@ -698,7 +909,10 @@ export function Playground() {
       bootstrappedUrl?.source === 'ensembl' &&
       bootstrappedUrl.ensemblGeneId
     ) {
-      void loadEnsembl(bootstrappedUrl.ensemblGeneId, { applyPivot: false });
+      void loadEnsembl(bootstrappedUrl.ensemblGeneId, {
+        applyPivot: false,
+        mirror: bootstrappedUrl.ensemblMirror ?? ENSEMBL_DEFAULT_MIRROR,
+      });
     }
   }, [bootstrappedUrl]);
 
@@ -711,6 +925,9 @@ export function Playground() {
       source: dataSource,
       grameneGeneId: loadedGrameneGeneId ?? undefined,
       ensemblGeneId: loadedEnsemblGeneId ?? undefined,
+      // Only meaningful alongside a loaded gene id — omitted otherwise
+      // so sample/Gramene links don't carry a stray Ensembl host.
+      ensemblMirror: loadedEnsemblGeneId ? loadedEnsemblMirror : undefined,
       viewState,
     });
     if (window.location.hash !== next) {
@@ -718,7 +935,13 @@ export function Playground() {
         window.location.pathname + window.location.search + next;
       window.history.replaceState(null, '', url);
     }
-  }, [dataSource, loadedGrameneGeneId, loadedEnsemblGeneId, viewState]);
+  }, [
+    dataSource,
+    loadedGrameneGeneId,
+    loadedEnsemblGeneId,
+    loadedEnsemblMirror,
+    viewState,
+  ]);
 
   const handleUploadedFiles = async (
     files: FileList | null,
@@ -957,6 +1180,24 @@ export function Playground() {
 
         {/* 2 — Ensembl tree + Pfam domains fan-out + ensembl-scoped uploads */}
         <ToolbarRow label="Ensembl">
+          <select
+            value={ensemblMirror}
+            onChange={(e) => handleMirrorChange(e.target.value)}
+            disabled={ensemblStatus === 'loading'}
+            style={{ fontSize: 12 }}
+            title={
+              'REST host to fetch from. Archive hosts pin one Ensembl ' +
+              'release and run separately from rest.ensembl.org, which ' +
+              'intermittently returns 5xx under load. Switching reloads ' +
+              'the current tree and clears release-specific data.'
+            }
+          >
+            {ENSEMBL_MIRRORS.map((m) => (
+              <option key={m.host} value={m.host}>
+                {mirrorLabel(m)}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={ensemblGeneInput}
@@ -991,7 +1232,9 @@ export function Playground() {
             {domainStatus.state === 'loading'
               ? `Loading domains ${domainStatus.done ?? 0}/${domainStatus.total ?? 0}…`
               : ensemblDomains
-                ? 'Pfam domains (cached)'
+                ? domainStatus.failed
+                  ? `Pfam domains (cached, ${domainStatus.failed} failed)`
+                  : 'Pfam domains (cached)'
                 : 'Load Pfam domains'}
           </button>
           <button

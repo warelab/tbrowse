@@ -31,18 +31,34 @@ const msa: MSA = { alphabet: 'protein', length: 60, sequences: { /* geneId → s
 
 ## Live Ensembl example
 
-The bundled Vite playground (`npm run dev`) has a "Load Ensembl tree" button that fetches a real gene tree (BRCA2 — `ENSG00000139618`) from `rest.ensembl.org`, runs it through `fromEnsemblGeneTree`, and renders it pivoted to put human BRCA2 at the top. Demonstrates the entire stack against live data.
+The bundled Vite playground (`npm run dev`) has a "Load Ensembl tree" button that fetches a real gene tree (BRCA2 — `ENSG00000139618`), runs it through `fromEnsemblGeneTree`, and renders it pivoted to put human BRCA2 at the top. Demonstrates the entire stack against live data.
 
 ```ts
 import { fromEnsemblGeneTree, computePivotState, TBrowse } from 'tbrowse';
 
 const json = await fetch(
-  'https://rest.ensembl.org/genetree/member/id/homo_sapiens/ENSG00000139618?aligned=1&sequence=protein',
+  'https://may2024.rest.ensembl.org/genetree/member/id/homo_sapiens/ENSG00000139618?aligned=1&sequence=protein',
   { headers: { Accept: 'application/json' } },
 ).then((r) => r.json());
 
 const { tree, taxonomy, msa, geneMetadata } = fromEnsemblGeneTree(json);
 ```
+
+### Choosing a REST endpoint
+
+`rest.ensembl.org` intermittently sheds load with 5xx errors, which is fatal to a fan-out that issues one request per leaf. The playground therefore ships a **mirror picker** listing the current endpoint plus every live per-release archive host. Archive hosts pin one Ensembl release and run on separate infrastructure, so they stay responsive when the main endpoint does not. The default is `may2024.rest.ensembl.org` (release 112).
+
+One caveat if you hard-code a host yourself: the gene-tree member route changed shape mid-history.
+
+| Release | Route |
+| --- | --- |
+| ≤ 109 | `/genetree/member/id/{gene}` |
+| 110–111 | either form |
+| ≥ 112 | `/genetree/member/id/{species}/{gene}` |
+
+Sending the wrong form returns a 404, so the playground's URL builder switches on the selected release. Note that alignment width and leaf count differ between releases (BRCA2 is 174 leaves / 5471 columns on r112, 176 / 7138 on r105), so switching mirrors invalidates anything derived from the tree — the playground clears cached domains and gene structures on a switch.
+
+All playground fetches go through a shared `fetchWithRetry` helper that retries 429 and 5xx with exponential backoff plus jitter, honouring `Retry-After` when present. The per-leaf fan-outs record individual failures and carry on rather than aborting the batch.
 
 ## Development
 
