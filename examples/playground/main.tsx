@@ -92,31 +92,17 @@ interface EnsemblMirror {
   release: number;
   /** Gene-tree member route shape this release understands. */
   route: 'bare' | 'species';
-  /** Short qualifier shown in the picker. */
-  note?: string;
 }
 
 const ENSEMBL_MIRRORS: readonly EnsemblMirror[] = [
-  {
-    host: 'rest.ensembl.org',
-    release: 116,
-    route: 'species',
-    note: 'current, load-sensitive',
-  },
-  {
-    host: 'sep2025.rest.ensembl.org',
-    release: 115,
-    route: 'species',
-    note: 'slowest archive',
-  },
+  { host: 'rest.ensembl.org', release: 116, route: 'species' },
+  // sep2025 takes the archive overflow traffic and measures several
+  // times slower than its neighbours; prefer a lower release if the
+  // per-leaf fan-outs feel sluggish.
+  { host: 'sep2025.rest.ensembl.org', release: 115, route: 'species' },
   { host: 'may2025.rest.ensembl.org', release: 114, route: 'species' },
   { host: 'oct2024.rest.ensembl.org', release: 113, route: 'species' },
-  {
-    host: 'may2024.rest.ensembl.org',
-    release: 112,
-    route: 'species',
-    note: 'default',
-  },
+  { host: 'may2024.rest.ensembl.org', release: 112, route: 'species' },
   { host: 'jan2024.rest.ensembl.org', release: 111, route: 'species' },
   { host: 'jul2023.rest.ensembl.org', release: 110, route: 'species' },
   { host: 'feb2023.rest.ensembl.org', release: 109, route: 'bare' },
@@ -125,18 +111,17 @@ const ENSEMBL_MIRRORS: readonly EnsemblMirror[] = [
   { host: 'dec2021.rest.ensembl.org', release: 105, route: 'bare' },
 ];
 
-/** Archive release 112 — species route (so it matches the modern URL
- *  shape), consistently sub-second on the per-leaf overlap calls, and
- *  recent enough that the trees aren't stale. */
-const ENSEMBL_DEFAULT_MIRROR = 'may2024.rest.ensembl.org';
+/** The current endpoint, so the playground shows current Ensembl data by
+ *  default. It is the load-sensitive one — `fetchWithRetry` absorbs the
+ *  transient 5xx, and the picker is there for when it cannot. */
+const ENSEMBL_DEFAULT_MIRROR = 'rest.ensembl.org';
 
 const mirrorFor = (host: string): EnsemblMirror =>
   ENSEMBL_MIRRORS.find((m) => m.host === host) ??
   (ENSEMBL_MIRRORS.find((m) => m.host === ENSEMBL_DEFAULT_MIRROR) as EnsemblMirror);
 
 const mirrorLabel = (m: EnsemblMirror) =>
-  `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} \u00b7 r${m.release}` +
-  (m.note ? ` (${m.note})` : '');
+  `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} \u00b7 r${m.release}`;
 
 const ensemblUrlFor = (geneId: string, host: string) => {
   const m = mirrorFor(host);

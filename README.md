@@ -37,7 +37,7 @@ The bundled Vite playground (`npm run dev`) has a "Load Ensembl tree" button tha
 import { fromEnsemblGeneTree, computePivotState, TBrowse } from 'tbrowse';
 
 const json = await fetch(
-  'https://may2024.rest.ensembl.org/genetree/member/id/homo_sapiens/ENSG00000139618?aligned=1&sequence=protein',
+  'https://rest.ensembl.org/genetree/member/id/homo_sapiens/ENSG00000139618?aligned=1&sequence=protein',
   { headers: { Accept: 'application/json' } },
 ).then((r) => r.json());
 
@@ -46,7 +46,7 @@ const { tree, taxonomy, msa, geneMetadata } = fromEnsemblGeneTree(json);
 
 ### Choosing a REST endpoint
 
-`rest.ensembl.org` intermittently sheds load with 5xx errors, which is fatal to a fan-out that issues one request per leaf. The playground therefore ships a **mirror picker** listing the current endpoint plus every live per-release archive host. Archive hosts pin one Ensembl release and run on separate infrastructure, so they stay responsive when the main endpoint does not. The default is `may2024.rest.ensembl.org` (release 112).
+`rest.ensembl.org` intermittently sheds load with 5xx errors, which is fatal to a fan-out that issues one request per leaf. The playground therefore ships a **mirror picker** listing the current endpoint plus every live per-release archive host. Archive hosts pin one Ensembl release and run on separate infrastructure, so they stay responsive when the main endpoint does not. The default is `rest.ensembl.org` (the current release), so the playground shows current data; switch to an archive when the main endpoint is struggling.
 
 One caveat if you hard-code a host yourself: the gene-tree member route changed shape mid-history.
 
