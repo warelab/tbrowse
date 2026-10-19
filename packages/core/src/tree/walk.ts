@@ -6,7 +6,9 @@ import { buildChildrenIndex, type ChildrenIndex } from './index';
  * subtree (default: the tree root); `swappedNodeIds` is the viewer's
  * `ViewState.swappedNodeIds` as a set — an internal node listed there has
  * its children visited in reversed order, so the walk yields display order;
- * `childrenIndex` lets callers reuse a precomputed `buildChildrenIndex`.
+ * `childrenIndex` lets callers reuse a precomputed `buildChildrenIndex`, or
+ * supply an explicitly ordered one (numeric node ids otherwise enumerate
+ * first, in numeric order — see `buildChildrenIndex`).
  */
 export interface WalkOptions {
   rootId?: NodeId;

@@ -1,9 +1,10 @@
 /**
  * tbrowse-core — the headless half of tbrowse.
  *
- * Root barrel: everything is also reachable through the subpath entries
- * (`tbrowse-core/tree`, `/parsers`, `/fetch`, `/sources`, `/view`, `/zone`,
- * `/cluster`), which are the same modules grouped by concern.
+ * Root barrel. The tree / parsers / fetch / sources / view / zone / cluster
+ * modules are also reachable through the matching subpath entries
+ * (`tbrowse-core/tree`, …); the data-model types and the table helpers
+ * (`TableColumn`, `AGGREGATE_METHODS`, …) are exported from the root only.
  */
 export * from './types';
 export * from './table/types';

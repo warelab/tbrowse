@@ -1,7 +1,7 @@
 {
   "name": "tbrowse-core",
   "version": "0.1.0",
-  "description": "Headless companion to the tbrowse tree viewer: data model, tree algorithms, file parsers, REST adapters, loaders and view-state helpers. Runs in browsers and Node.",
+  "description": "Headless companion to the tbrowse tree viewer: data model, tree algorithms, file parsers, REST adapters, fetch helpers and view-state logic. Runs in browsers and Node.",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -11,53 +11,125 @@
     "url": "https://github.com/warelab/tbrowse.git",
     "directory": "packages/core"
   },
-  "keywords": ["phylogenetics", "tree", "newick", "upgma", "ensembl", "gramene", "brapi", "bioinformatics", "tbrowse"],
-  "engines": { "node": ">=18" },
+  "keywords": [
+    "phylogenetics",
+    "tree",
+    "newick",
+    "nexus",
+    "phyloxml",
+    "ensembl",
+    "gramene",
+    "bioinformatics",
+    "tbrowse"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./tree": {
-      "import": { "types": "./dist/tree/index.d.ts", "default": "./dist/tree/index.js" },
-      "require": { "types": "./dist/tree/index.d.cts", "default": "./dist/tree/index.cjs" }
+      "import": {
+        "types": "./dist/tree/index.d.ts",
+        "default": "./dist/tree/index.js"
+      },
+      "require": {
+        "types": "./dist/tree/index.d.cts",
+        "default": "./dist/tree/index.cjs"
+      }
     },
     "./parsers": {
-      "import": { "types": "./dist/parsers/index.d.ts", "default": "./dist/parsers/index.js" },
-      "require": { "types": "./dist/parsers/index.d.cts", "default": "./dist/parsers/index.cjs" }
+      "import": {
+        "types": "./dist/parsers/index.d.ts",
+        "default": "./dist/parsers/index.js"
+      },
+      "require": {
+        "types": "./dist/parsers/index.d.cts",
+        "default": "./dist/parsers/index.cjs"
+      }
     },
     "./cluster": {
-      "import": { "types": "./dist/cluster/index.d.ts", "default": "./dist/cluster/index.js" },
-      "require": { "types": "./dist/cluster/index.d.cts", "default": "./dist/cluster/index.cjs" }
+      "import": {
+        "types": "./dist/cluster/index.d.ts",
+        "default": "./dist/cluster/index.js"
+      },
+      "require": {
+        "types": "./dist/cluster/index.d.cts",
+        "default": "./dist/cluster/index.cjs"
+      }
     },
     "./fetch": {
-      "import": { "types": "./dist/fetch/index.d.ts", "default": "./dist/fetch/index.js" },
-      "require": { "types": "./dist/fetch/index.d.cts", "default": "./dist/fetch/index.cjs" }
+      "import": {
+        "types": "./dist/fetch/index.d.ts",
+        "default": "./dist/fetch/index.js"
+      },
+      "require": {
+        "types": "./dist/fetch/index.d.cts",
+        "default": "./dist/fetch/index.cjs"
+      }
     },
     "./sources": {
-      "import": { "types": "./dist/sources/index.d.ts", "default": "./dist/sources/index.js" },
-      "require": { "types": "./dist/sources/index.d.cts", "default": "./dist/sources/index.cjs" }
+      "import": {
+        "types": "./dist/sources/index.d.ts",
+        "default": "./dist/sources/index.js"
+      },
+      "require": {
+        "types": "./dist/sources/index.d.cts",
+        "default": "./dist/sources/index.cjs"
+      }
     },
     "./view": {
-      "import": { "types": "./dist/view/index.d.ts", "default": "./dist/view/index.js" },
-      "require": { "types": "./dist/view/index.d.cts", "default": "./dist/view/index.cjs" }
+      "import": {
+        "types": "./dist/view/index.d.ts",
+        "default": "./dist/view/index.js"
+      },
+      "require": {
+        "types": "./dist/view/index.d.cts",
+        "default": "./dist/view/index.cjs"
+      }
     },
     "./zone": {
-      "import": { "types": "./dist/zone/index.d.ts", "default": "./dist/zone/index.js" },
-      "require": { "types": "./dist/zone/index.d.cts", "default": "./dist/zone/index.cjs" }
+      "import": {
+        "types": "./dist/zone/index.d.ts",
+        "default": "./dist/zone/index.js"
+      },
+      "require": {
+        "types": "./dist/zone/index.d.cts",
+        "default": "./dist/zone/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "tree", "parsers", "cluster", "fetch", "sources", "view", "zone", "CHANGELOG.md", "README.md"],
+  "files": [
+    "dist",
+    "tree",
+    "parsers",
+    "cluster",
+    "fetch",
+    "sources",
+    "view",
+    "zone",
+    "CHANGELOG.md",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && node ../../scripts/smoke-core.mjs"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && node scripts/check-surface.mjs && node ../../scripts/smoke-core.mjs",
+    "check:surface": "node scripts/check-surface.mjs"
   },
   "dependencies": {},
   "devDependencies": {

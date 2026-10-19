@@ -58,6 +58,11 @@ describe('preorder', () => {
       },
     };
     expect(preorder(withGhost)).toEqual(['r', 'a']);
+    // A children index that names an id absent from tree.nodes: the walks skip it.
+    const ghostIndex = new Map([['r', ['a', 'ghost']]]);
+    expect(preorder(withGhost, { childrenIndex: ghostIndex })).toEqual(['r', 'a']);
+    expect(postorder(withGhost, { childrenIndex: ghostIndex })).toEqual(['a', 'r']);
+    expect(leafOrder(withGhost, { childrenIndex: ghostIndex })).toEqual(['a']);
   });
 });
 

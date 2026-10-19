@@ -169,7 +169,7 @@ Both `Header` and `Body` receive the same `ZoneRenderProps`: `visibleRows` (alre
 
 | Export | Package | What |
 |---|---|---|
-| `computeVisibleRows` | tbrowse-core | Pure derivation: `(tree, collapsed, pruned, swapped) → VisibleRow[]`. |
+| `computeVisibleRows` | tbrowse-core | Pure derivation: `({ tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds?, rowHeight? }) → VisibleRow[]`. |
 | `computePivotState` | tbrowse-core | Resolve a gene id / node id and return collapse + swap sets that pivot the tree. |
 | `buildInitialViewState` | tbrowse-core | Initial `ViewState` for a zone list (widths, visibility, exclusive groups, pivot). |
 | `fromEnsemblGeneTree` | tbrowse-core | Convert Ensembl REST gene-tree JSON to TBrowse inputs. |

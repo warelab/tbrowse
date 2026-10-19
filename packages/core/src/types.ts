@@ -10,7 +10,7 @@
 export type NodeId = string;
 export type GeneId = string;
 /**
- * Taxon identifier. Widened from `number` in tbrowse 2.10: Gramene gene
+ * Taxon identifier. Widened from `number` in tbrowse 2.11 / tbrowse-core 0.1: Gramene gene
  * trees carry numeric NCBI taxon ids while gramene-search's taxonomic
  * distribution view keys its species tree by `String(taxonId)`. Every
  * consumer only ever uses it as a `Taxonomy` key or in an equality test,

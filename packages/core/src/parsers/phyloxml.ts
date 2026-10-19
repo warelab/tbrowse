@@ -38,6 +38,17 @@ export interface ParsePhyloXMLOptions {
 
 const ELEMENT_NODE = 1;
 
+/** Every element in document order whose local name is `name`, whatever its namespace prefix. */
+function elementsByLocalName(doc: DocumentLike, name: string): ElementLike[] {
+  const all = doc.getElementsByTagName('*');
+  const out: ElementLike[] = [];
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i]!;
+    if (el.localName === name) out.push(el);
+  }
+  return out;
+}
+
 const NO_PARSER_MESSAGE =
   'PhyloXML: no XML parser in this environment; pass opts.parseDocument or opts.DOMParser (e.g. @xmldom/xmldom)';
 
@@ -65,7 +76,9 @@ export function parsePhyloXML(text: string, opts: ParsePhyloXMLOptions = {}): Pa
   const doc = parseDocumentWith(text, opts);
   const parserError = doc.getElementsByTagName('parsererror')[0];
   if (parserError) throw new Error(`PhyloXML: malformed XML — ${parserError.textContent ?? ''}`);
-  const phylogenies = doc.getElementsByTagName('phylogeny');
+  // Match by local name (as the playground's CSS type selector did), so a
+  // namespace-prefixed document (`<phy:phylogeny>`) is found too.
+  const phylogenies = elementsByLocalName(doc, 'phylogeny');
   let rootClade: ElementLike | null = null;
   for (let i = 0; i < phylogenies.length && rootClade === null; i++) {
     rootClade = directChild(phylogenies[i]!, 'clade');

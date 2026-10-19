@@ -22,7 +22,7 @@ Zero runtime dependencies. ESM and CommonJS builds with type declarations; Node 
 
 ## The model
 
-A tree is flat: `{ rootId, nodes: Record<NodeId, { id, parentId, distance, isLeaf, taxonomyId?, geneId? }> }`. Child order is the insertion order of `nodes`. Per-leaf data (`MSA.sequences`, `proteinDomains`, `neighborhood`, `geneStructures`, `germplasm`, …) is keyed by the leaf's `geneId`; per-taxon data by `String(taxonomyId)`.
+A tree is flat: `{ rootId, nodes: Record<NodeId, { id, parentId, distance, isLeaf, taxonomyId?, geneId? }> }`. Child order is the enumeration order of `nodes` — insertion order, except that canonical-integer ids always come first in numeric order (a JavaScript object invariant), which is why the parsers and the clustering builder use synthetic node ids and keep the biological label in `geneId`. Per-leaf data (`MSA.sequences`, `proteinDomains`, `neighborhood`, `geneStructures`, `germplasm`, …) is keyed by the leaf's `geneId`; per-taxon data by `String(taxonomyId)`.
 
 ```ts
 import { parseNewick } from 'tbrowse-core/parsers';

@@ -1,6 +1,15 @@
 import type { GeneId, NodeId, Tree, TreeNode } from '../types';
 
-/** Children index for a tree, keyed by parent id. Child order = insertion order of `tree.nodes`. */
+/**
+ * Children index for a tree, keyed by parent id. Child order is the
+ * enumeration order of `Object.keys(tree.nodes)`: insertion order, EXCEPT
+ * that canonical-integer keys (`'3'`, `'12'`) always enumerate first, in
+ * ascending numeric order — a JavaScript object invariant, and the same
+ * order the viewer walks (`computeVisibleRows`). Trees whose node ids are
+ * numeric strings therefore lose insertion order; give such trees
+ * synthetic ids (the parsers and the UPGMA builder do) or pass an
+ * explicitly ordered `ChildrenIndex` to the walks and to `toNewick`.
+ */
 export type ChildrenIndex = ReadonlyMap<NodeId, readonly NodeId[]>;
 
 export function buildChildrenIndex(tree: Tree): ChildrenIndex {
@@ -73,8 +82,9 @@ export function countLeavesInSubtree(
 }
 
 /**
- * Leaf ids under `rootId` (default: the tree root) in child-insertion
- * order — the same order the viewer walks when nothing is swapped.
+ * Leaf ids under `rootId` (default: the tree root) in child order (see
+ * `buildChildrenIndex` for what that means with numeric ids) — the same
+ * order the viewer walks when nothing is swapped.
  */
 export function leafIdsOf(
   tree: Tree,

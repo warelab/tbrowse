@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phy:phyloxml xmlns:phy="http://www.phyloxml.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <phy:phylogeny rooted="true">
+    <phy:clade>
+      <phy:clade branch_length="0.1">
+        <phy:name>A</phy:name>
+      </phy:clade>
+      <phy:clade branch_length="0.2">
+        <phy:name>B</phy:name>
+      </phy:clade>
+    </phy:clade>
+  </phy:phylogeny>
+</phy:phyloxml>

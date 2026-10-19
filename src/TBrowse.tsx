@@ -104,6 +104,7 @@ function TBrowseShell(props: TBrowseProps) {
     geneStructures: props.geneStructures,
     genomeFeatures: props.genomeFeatures,
     geneStructureErrors: props.geneStructureErrors,
+    germplasm: props.germplasm,
     hostData: props.hostData,
   };
 
