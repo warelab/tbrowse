@@ -1,0 +1,4 @@
+﻿gene_id	Expression Level	Is Expressed	Count	Tissue
+G1	1.5	true	0	leaf
+G2	2.5	false	1	root
+G3		yes	1	

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeId, Tree, ZoneDefinition, ZoneRenderProps } from '../../types';
-import { buildChildrenIndex, type ChildrenIndex } from '../../treeIndex';
-import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { buildChildrenIndex, type ChildrenIndex } from 'tbrowse-core';
+import { LEAF_ROW_HEIGHT } from 'tbrowse-core';
 import { useTBrowseStore } from '../../store';
 import { EditableZoneName } from '../EditableZoneName';
 import {
@@ -15,7 +15,7 @@ import {
   type AggregateFn,
   type AggregateResult,
   type ColumnKind,
-} from './aggregators';
+} from 'tbrowse-core';
 import {
   autoPalette,
   buildHeatmapDomains,
@@ -35,7 +35,7 @@ import type {
   TableData,
   TableDisplayMode,
   TableZoneState,
-} from './types';
+} from 'tbrowse-core';
 
 export type {
   AggregateContext,
@@ -50,7 +50,7 @@ export type {
   TableZoneState,
 };
 export { AGGREGATE_METHODS, defaultAggregators };
-export type { TableColumnOverride } from './types';
+export type { TableColumnOverride } from 'tbrowse-core';
 
 const DEFAULT_COL_WIDTH = 90;
 const MIN_COL_WIDTH = 30;

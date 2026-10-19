@@ -1,0 +1,4 @@
+name,score,label,flag,score
+G1,10,"Smith, John",1,a
+G2,20,"He said ""hi""",0,b
+G1,30,plain,1,c

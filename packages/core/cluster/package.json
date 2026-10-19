@@ -1,0 +1,5 @@
+{
+  "main": "../dist/cluster/index.cjs",
+  "module": "../dist/cluster/index.js",
+  "types": "../dist/cluster/index.d.ts"
+}

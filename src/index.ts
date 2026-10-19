@@ -1,31 +1,55 @@
 export { TBrowse } from './TBrowse';
 export { ensureThemeStylesInjected } from './theme';
 export { TBrowseLogo } from './icons/TBrowseLogo';
-export {
-  fromEnsemblGeneTree,
-  fromEnsemblGeneStructure,
-  fromEnsemblGenomeFeatures,
-  fromEnsemblProteinFeatures,
-  type FromEnsemblOptions,
-  type FromEnsemblResult,
-  type FromEnsemblProteinFeaturesOptions,
-} from './adapters/ensembl';
-export {
-  fromGrameneGene,
-  fromGrameneGenetree,
-  fromGrameneGeneStructures,
-  fromGrameneNeighborhood,
-  type FromGrameneGeneResult,
-  type FromGrameneGenetreeOptions,
-  type FromGrameneGenetreeResult,
-} from './adapters/gramene';
-export { computePivotState, type PivotState } from './pivot';
-export { computeVisibleRows, LEAF_ROW_HEIGHT, SUMMARY_ROW_HEIGHT } from './visibleRows';
-export { computeRowRange } from './layout/rowRange';
+
+// ---------------------------------------------------------------------------
+// Headless helpers that moved to tbrowse-core in 2.11. They are re-exported
+// here so 2.x consumers keep compiling; import them from 'tbrowse-core'
+// instead. These function re-exports are removed in tbrowse 3.0 (the type
+// re-exports below stay).
+// ---------------------------------------------------------------------------
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromEnsemblGeneTree } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromEnsemblGeneStructure } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromEnsemblGenomeFeatures } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromEnsemblProteinFeatures } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromGrameneGene } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromGrameneGenetree } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromGrameneGeneStructures } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { fromGrameneNeighborhood } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { computePivotState } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { computeVisibleRows } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { LEAF_ROW_HEIGHT } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { SUMMARY_ROW_HEIGHT } from 'tbrowse-core';
+/** @deprecated Import from 'tbrowse-core'. Removed in tbrowse 3.0. */
+export { computeRowRange } from 'tbrowse-core';
+export type {
+  FromEnsemblOptions,
+  FromEnsemblResult,
+  FromEnsemblProteinFeaturesOptions,
+  FromGrameneGeneResult,
+  FromGrameneGenetreeOptions,
+  FromGrameneGenetreeResult,
+  PivotState,
+} from 'tbrowse-core';
+
 export { createStubZone } from './zones/stub';
 // Editable zone-name control, so host-defined zones can offer the same
 // rename affordance as the built-in zones.
 export { EditableZoneName, type EditableZoneNameProps } from './zones/EditableZoneName';
+// Row prologue for host-defined zones: hover/selection flags → theme background.
+export { rowHighlightBackground, rowsWithFlags } from './zones/rows';
 export {
   treeZone,
   type TreeZoneState,
@@ -108,6 +132,9 @@ export type {
   Transcript,
   GeneStructure,
   GenomeFeature,
+  Germplasm,
+  VariantSite,
+  GenotypeMatrix,
   LabelProvider,
   ZoneViewState,
   SearchState,
@@ -118,6 +145,10 @@ export type {
   VisibleRow,
   RowRange,
   HostData,
+  HostDataPatch,
+  ZoneStatus,
+  ZoneStatusMap,
+  ZoneSpec,
   ZoneRenderProps,
   ZoneDefinition,
   TBrowseProps,

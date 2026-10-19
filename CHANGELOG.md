@@ -1,5 +1,71 @@
 # Changelog
 
+## 2.11.0
+
+### tbrowse-core
+- The headless half of tbrowse now lives in its own package, `tbrowse-core`
+  (`packages/core` in this repo; published separately, zero runtime
+  dependencies, runs in Node and browsers): the data model types, tree
+  algorithms (children index, walks, roll-ups, pruning, pivot, Newick
+  serialisation, tree-model conversion), the Newick / Nexus / PhyloXML and
+  CSV/TSV parsers that used to be private to the playground, the Ensembl and
+  Gramene REST adapters, `fetchWithRetry` + bounded fan-out, view-state
+  helpers (`buildInitialViewState`, URL-hash codec, derived-prune layer,
+  `computeVisibleRows` / `computeRowRange`) and pure row/join helpers for
+  host-defined zones. tbrowse depends on it (`>=0.1.0 <2.0.0`).
+- Every data-model type is re-exported unchanged, so `import type { Tree }
+  from 'tbrowse'` keeps working and names the same type as the core's.
+- `fromEnsembl*`, `fromGramene*`, `computePivotState`, `computeVisibleRows`,
+  `computeRowRange`, `LEAF_ROW_HEIGHT` and `SUMMARY_ROW_HEIGHT` are still
+  exported from tbrowse but marked `@deprecated`; import them from
+  `tbrowse-core`. The function re-exports go away in tbrowse 3.0.
+- New exports: `rowHighlightBackground` and `rowsWithFlags` (the row prologue
+  every host-defined zone used to copy), and the types `ZoneSpec`,
+  `ZoneStatus`, `ZoneStatusMap`, `HostDataPatch`, `Germplasm`,
+  `VariantSite`, `GenotypeMatrix`.
+- `TaxonomyId` widened from `number` to `string | number` and `Taxonomy` is
+  keyed by `string` (a JS object is string-keyed at runtime anyway). No code
+  in the viewer changes; a TypeScript host passing `node.taxonomyId` to a
+  `number` parameter now needs a cast.
+- `TBrowseProps.zoneStatus` is typed as `ZoneStatusMap` (same shape).
+- `ZoneDefinition` now extends the core's `ZoneSpec`; nothing changes for
+  zone authors.
+
+### Playground
+- The tree and table parsers, Ensembl mirror table, retry helper and URL-hash
+  codec are imported from `tbrowse-core` (and are now type-checked and
+  tested there). `npm run typecheck:playground` type-checks the playground.
+
+## 2.10.0
+
+### MSA
+- Hovered-residue readout in the zone header (gene, 1-based residue position,
+  residue) with the hovered glyph drawn bold in the body.
+
+## 2.9.2
+- Fix the MSA config popover when the chassis is fullscreen.
+- Spelling: "color" (was "colour") in user-facing labels.
+
+## 2.9.1
+- Widen the Display control ranges: row height 8–64 px, font size 8–36 px.
+
+## 2.9.0
+
+### Toolbar
+- Built-in "Display" toolbar section with row-height and font-size sliders,
+  writing `ViewState.rowHeight` / `ViewState.fontSize` so the chosen density
+  round-trips through a controlled or persisted view state. Opt in with
+  `densityControls`.
+
+## 2.8.0
+
+### Zones
+- Mutually-exclusive zone groups: zones sharing an `exclusiveGroup` id render
+  as one segmented control in the Zones panel and only one is visible at a
+  time; a link toggle decouples the group (persisted in
+  `ViewState.unlinkedZoneGroups`). The built-in detail zones use the group
+  `'detail'`.
+
 ## 2.7.0
 
 ### Tree

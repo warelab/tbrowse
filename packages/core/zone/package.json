@@ -1,0 +1,5 @@
+{
+  "main": "../dist/zone/index.cjs",
+  "module": "../dist/zone/index.js",
+  "types": "../dist/zone/index.d.ts"
+}

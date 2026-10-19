@@ -4,10 +4,26 @@ import { createBrowserRouter, Link, RouterProvider } from 'react-router-dom';
 import {
   TBrowse,
   ensureThemeStylesInjected,
-  computePivotState,
   createGenomeZone,
   createTableZone,
   type ZoneDefinition,
+  labelsZone,
+  msaZone,
+  neighborhoodZone,
+  treeZone,
+  type FromEnsemblResult,
+  type FromGrameneGenetreeResult,
+  type GeneStructure,
+  type GenomeFeature,
+  type Neighborhood,
+  type PrunedNodeStyle,
+  type ProteinDomain,
+  type ViewState,
+} from 'tbrowse';
+// Everything that turns a file or an API response into TBrowse props is
+// headless and lives in tbrowse-core (also usable from Node).
+import {
+  computePivotState,
   fromEnsemblGeneTree,
   fromEnsemblGeneStructure,
   fromEnsemblGenomeFeatures,
@@ -16,18 +32,20 @@ import {
   fromGrameneGenetree,
   fromGrameneGeneStructures,
   fromGrameneNeighborhood,
-  labelsZone,
-  msaZone,
-  neighborhoodZone,
-  treeZone,
-  type FromEnsemblResult,
-  type FromGrameneGenetreeResult,
-  type GeneStructure,
-  type Neighborhood,
-  type PrunedNodeStyle,
-  type ProteinDomain,
-  type ViewState,
-} from 'tbrowse';
+  parseTableFile,
+  parseTreeFile,
+  type ParsedTreeFile,
+  type TreeFileFormat,
+  ENSEMBL_MIRRORS,
+  ENSEMBL_DEFAULT_MIRROR,
+  mirrorFor,
+  ensemblGeneTreeUrl,
+  fetchWithRetry,
+  encodeHashState,
+  readHashState,
+  buildInitialViewState as coreBuildInitialViewState,
+  type EnsemblMirror,
+} from 'tbrowse-core';
 
 const PRUNED_STYLES: { id: PrunedNodeStyle; label: string }[] = [
   { id: 'square', label: 'Square' },
@@ -57,138 +75,14 @@ import {
   sampleTaxonomy,
   sampleTree,
 } from './sampleTree';
-import { parseTableFile } from './parseTableFile';
-import {
-  parseTreeFile,
-  type ParsedTreeFile,
-  type TreeFileFormat,
-} from './parseTreeFile';
 import { Layout } from './Layout';
 import { AboutPage } from './AboutPage';
 import { DevelopersPage } from './DevelopersPage';
 
 const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
 
-/**
- * Ensembl REST endpoints, newest release first. Each archive host pins a
- * single release and runs on infrastructure separate from the main
- * `rest.ensembl.org` endpoint, which intermittently sheds load with 5xx
- * (and multi-second latency on a bare /info/ping) when traffic spikes.
- * Picking an archive trades currency for consistency.
- *
- * `route` is not cosmetic: the gene-tree member endpoint changed shape
- * mid-history. Releases <= 109 answer only
- * `/genetree/member/id/{gene}`; releases >= 112 answer only
- * `/genetree/member/id/{species}/{gene}`; 110 and 111 accept both.
- * Sending the wrong form gets a 404, so the URL builder switches on it.
- *
- * Release 106 (apr2022) is deliberately absent — that host accepts TCP
- * connections but never responds.
- */
-interface EnsemblMirror {
-  /** Hostname, and the stable id persisted in the URL hash. */
-  host: string;
-  /** Ensembl release served by this host. */
-  release: number;
-  /** Gene-tree member route shape this release understands. */
-  route: 'bare' | 'species';
-}
-
-const ENSEMBL_MIRRORS: readonly EnsemblMirror[] = [
-  { host: 'rest.ensembl.org', release: 116, route: 'species' },
-  // sep2025 takes the archive overflow traffic and measures several
-  // times slower than its neighbours; prefer a lower release if the
-  // per-leaf fan-outs feel sluggish.
-  { host: 'sep2025.rest.ensembl.org', release: 115, route: 'species' },
-  { host: 'may2025.rest.ensembl.org', release: 114, route: 'species' },
-  { host: 'oct2024.rest.ensembl.org', release: 113, route: 'species' },
-  { host: 'may2024.rest.ensembl.org', release: 112, route: 'species' },
-  { host: 'jan2024.rest.ensembl.org', release: 111, route: 'species' },
-  { host: 'jul2023.rest.ensembl.org', release: 110, route: 'species' },
-  { host: 'feb2023.rest.ensembl.org', release: 109, route: 'bare' },
-  { host: 'oct2022.rest.ensembl.org', release: 108, route: 'bare' },
-  { host: 'jul2022.rest.ensembl.org', release: 107, route: 'bare' },
-  { host: 'dec2021.rest.ensembl.org', release: 105, route: 'bare' },
-];
-
-/** The current endpoint, so the playground shows current Ensembl data by
- *  default. It is the load-sensitive one — `fetchWithRetry` absorbs the
- *  transient 5xx, and the picker is there for when it cannot. */
-const ENSEMBL_DEFAULT_MIRROR = 'rest.ensembl.org';
-
-const mirrorFor = (host: string): EnsemblMirror =>
-  ENSEMBL_MIRRORS.find((m) => m.host === host) ??
-  (ENSEMBL_MIRRORS.find((m) => m.host === ENSEMBL_DEFAULT_MIRROR) as EnsemblMirror);
-
 const mirrorLabel = (m: EnsemblMirror) =>
   `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} \u00b7 r${m.release}`;
-
-const ensemblUrlFor = (geneId: string, host: string) => {
-  const m = mirrorFor(host);
-  // The species segment is only valid on the newer route; older
-  // releases take the gene id directly and infer the species from it.
-  const member =
-    m.route === 'species' ? `homo_sapiens/${geneId}` : `${geneId}`;
-  return (
-    `https://${m.host}/genetree/member/id/${member}` +
-    `?aligned=1&sequence=protein`
-  );
-};
-
-/** Transient statuses worth another attempt. Ensembl sheds load with
- *  5xx and rate-limits with 429; every other 4xx is a real client error
- *  (deprecated accession, unknown id) that retrying cannot fix. */
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524]);
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** Exponential backoff with jitter, capped. Honours `Retry-After` when
- *  the server sends one. The jitter matters for the per-leaf fan-outs:
- *  without it, six workers that fail together retry together forever. */
-function backoffMs(
-  attempt: number,
-  base: number,
-  retryAfter: string | null,
-): number {
-  if (retryAfter) {
-    const secs = Number(retryAfter);
-    if (Number.isFinite(secs) && secs >= 0) {
-      return Math.min(secs * 1000, 30_000);
-    }
-  }
-  const capped = Math.min(base * 2 ** attempt, 8_000);
-  return Math.round(capped * (0.5 + Math.random() * 0.5));
-}
-
-/**
- * `fetch` with bounded retries for the failure modes Ensembl REST shows
- * under load: 429, 5xx, and dropped connections. Returns the final
- * response even when it is still a failure, so callers keep their
- * existing `res.ok` handling; only a network-level error throws.
- */
-async function fetchWithRetry(
-  url: string,
-  init: RequestInit = {},
-  { attempts = 4, baseDelayMs = 500 }: { attempts?: number; baseDelayMs?: number } = {},
-): Promise<Response> {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    try {
-      const res = await fetch(url, init);
-      if (res.ok || !RETRYABLE_STATUS.has(res.status)) return res;
-      if (attempt === attempts - 1) return res;
-      await sleep(backoffMs(attempt, baseDelayMs, res.headers.get('Retry-After')));
-    } catch (err) {
-      lastError = err;
-      if (attempt === attempts - 1) break;
-      await sleep(backoffMs(attempt, baseDelayMs, null));
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(`Network error fetching ${url}`);
-}
 
 // Initial fr-share per zone id. The chassis treats zone widths as
 // fractions of the container so this gives tree 30 % / labels 20 % /
@@ -227,48 +121,43 @@ interface UrlState {
   viewState?: Partial<ViewState>;
 }
 
+const isUrlState = (v: unknown): v is UrlState => typeof v === 'object' && v !== null;
+
+/** The URL hash, decoded; null when absent or malformed (a bad hash lands
+ *  the user on a fresh view rather than a blank screen). */
 function decodeUrlState(): UrlState | null {
-  if (typeof window === 'undefined') return null;
-  const h = window.location.hash;
-  if (!h || h.length < 2) return null;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(h.slice(1))) as unknown;
-    if (parsed && typeof parsed === 'object') return parsed as UrlState;
-  } catch {
-    // Malformed hash — silently ignore so the user lands on a fresh view
-    // rather than a blank screen.
-  }
-  return null;
+  return readHashState<UrlState>(isUrlState);
 }
 
 function encodeUrlState(s: UrlState): string {
-  return '#' + encodeURIComponent(JSON.stringify(s));
+  return encodeHashState(s);
 }
 
-function buildInitialViewState(zoneIds: string[]): ViewState {
-  return {
-    selectedNodeId: null,
-    collapsedNodeIds: [],
-    prunedNodeIds: [],
-    swappedNodeIds: [],
-    compressedNodeIds: [],
-    nodeOfInterestId: null,
-    zones: zoneIds.map((id) => ({
-      id,
-      width: INITIAL_ZONE_FR[id] ?? 25,
-      visible: true,
-    })),
-    zoneStates: {},
-    search: null,
-  };
+/**
+ * The playground's initial view state: tbrowse-core's `buildInitialViewState`
+ * (zoneStates seeded from each zone's defaults) with every zone visible at
+ * its playground width — the kitchen-sink demo shows everything up front
+ * rather than honouring the zones' own `defaultVisible` / exclusive-group
+ * defaults, so those are applied through `overrides.zones`.
+ */
+function buildInitialViewState(zs: readonly ZoneDefinition<any>[]): ViewState {
+  return coreBuildInitialViewState(zs, {
+    overrides: {
+      zones: zs.map((z) => ({
+        id: z.id,
+        width: INITIAL_ZONE_FR[z.id] ?? 25,
+        visible: true,
+      })),
+    },
+  });
 }
 
 /** Mount-time helper: prefers viewState encoded in the URL hash, falls
  *  back to a fresh `buildInitialViewState`. Only used at first render —
  *  the app's reset / data-source-switch paths build fresh state. */
-function buildBootstrapViewState(zoneIds: string[]): ViewState {
+function buildBootstrapViewState(zs: readonly ZoneDefinition<any>[]): ViewState {
   const url = decodeUrlState();
-  const base = buildInitialViewState(zoneIds);
+  const base = buildInitialViewState(zs);
   return url?.viewState ? { ...base, ...url.viewState } : base;
 }
 
@@ -348,10 +237,9 @@ export function Playground() {
     ],
     [genomeZone, expressionZone, scoresZone, uploadedZonesBySource, dataSource],
   );
-  const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
   const [tree, setTree] = useState(sampleTree);
-  const [viewState, setViewState] = useState<ViewState>(() => buildBootstrapViewState(zoneIds));
+  const [viewState, setViewState] = useState<ViewState>(() => buildBootstrapViewState(zones));
   const [ensemblGeneInput, setEnsemblGeneInput] = useState(
     bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblGeneId
       ? bootstrappedUrl.ensemblGeneId
@@ -442,7 +330,7 @@ export function Playground() {
 
   const applyEnsemblViewState = (data: FromEnsemblResult, geneId: string) => {
     const pivot = computePivotState(data.tree, geneId);
-    const initial = buildInitialViewState(zoneIds);
+    const initial = buildInitialViewState(zones);
     setViewState(
       pivot
         ? {
@@ -468,7 +356,7 @@ export function Playground() {
     setEnsemblStatus('loading');
     setEnsemblError(null);
     try {
-      const res = await fetchWithRetry(ensemblUrlFor(geneId, host), {
+      const res = await fetchWithRetry(ensemblGeneTreeUrl(geneId, { host }), {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) {
@@ -800,7 +688,7 @@ export function Playground() {
       setLoadedGrameneGeneId(gene.geneId);
       if (applyPivot) {
         // Center on the originating gene so the user lands looking at it.
-        const initial = buildInitialViewState(zoneIds);
+        const initial = buildInitialViewState(zones);
         const pivot = computePivotState(data.tree, gene.geneId);
         setViewState(
           pivot
@@ -991,7 +879,7 @@ export function Playground() {
     setViewState((vs) => ({ ...vs, collapsedNodeIds: ids }));
   const setPruned = (ids: string[]) =>
     setViewState((vs) => ({ ...vs, prunedNodeIds: ids }));
-  const reset = () => setViewState(buildInitialViewState(zoneIds));
+  const reset = () => setViewState(buildInitialViewState(zones));
 
   const prunedStyle =
     ((viewState.zoneStates.tree as { prunedNodeStyle?: PrunedNodeStyle } | undefined)
@@ -1018,7 +906,7 @@ export function Playground() {
     const pivot = computePivotState(treeForPivot, identifier);
     if (!pivot) return;
     setViewState((vs) => ({
-      ...buildInitialViewState(zoneIds),
+      ...buildInitialViewState(zones),
       collapsedNodeIds: pivot.collapsedNodeIds,
       swappedNodeIds: pivot.swappedNodeIds,
       nodeOfInterestId: pivot.targetId,

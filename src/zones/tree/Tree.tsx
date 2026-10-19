@@ -4,7 +4,7 @@ import {
   buildChildrenIndex,
   countLeavesInSubtree,
   EMPTY_NODE_ID_SET,
-} from '../../treeIndex';
+} from 'tbrowse-core';
 import { describeHoveredNodeForHeader } from '../headerInfo';
 import { EditableZoneName } from '../EditableZoneName';
 import type { NodeId, ZoneDefinition, ZoneRenderProps } from '../../types';
@@ -16,7 +16,7 @@ import {
   type SpineSegment,
 } from './layout';
 import { Tooltip } from './Tooltip';
-import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { LEAF_ROW_HEIGHT } from 'tbrowse-core';
 
 // LEFT_PAD must be ≥ ROOT_STUB_LEN so the stub drawn left of the root has
 // room inside the SVG. (The stub is what users hover/click to interact with
