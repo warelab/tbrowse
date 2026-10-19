@@ -1,7 +1,7 @@
 {
   "name": "tbrowse-core",
-  "version": "0.1.0",
-  "description": "Headless companion to the tbrowse tree viewer: data model, tree algorithms, file parsers, REST adapters, fetch helpers and view-state logic. Runs in browsers and Node.",
+  "version": "0.2.0",
+  "description": "Headless companion to the tbrowse tree viewer: data model, tree algorithms, file parsers, REST adapters and data-source loaders (Ensembl, Gramene, BrAPI), UPGMA clustering, fetch helpers and view-state logic. Runs in browsers and Node.",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -17,8 +17,11 @@
     "newick",
     "nexus",
     "phyloxml",
+    "upgma",
     "ensembl",
     "gramene",
+    "brapi",
+    "genotype",
     "bioinformatics",
     "tbrowse"
   ],

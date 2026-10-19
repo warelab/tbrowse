@@ -31,3 +31,16 @@ export type {
   FromGrameneGenetreeResult,
   FromGrameneGeneResult,
 } from './gramene';
+
+export {
+  fromBrAPIAlleleMatrix,
+  fromBrAPIGermplasm,
+  fromBrAPIVariants,
+  mergeVariantSites,
+  fromBrAPITree,
+} from './brapi';
+export type {
+  FromBrAPIAlleleMatrixOptions,
+  FromBrAPIAlleleMatrixResult,
+  FromBrAPIVariantsOptions,
+} from './brapi';

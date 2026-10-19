@@ -1,2 +1,6 @@
-// Filled in tbrowse-core 0.2 (UPGMA clustering). Intentionally empty in 0.1.
-export {};
+/**
+ * `tbrowse-core/cluster`: UPGMA clustering of genotype dosages, lifted from
+ * gramene-g2p's server (`apps/api/src/cluster.ts`) and emitting a flat
+ * `Tree` with synthetic node ids.
+ */
+export * from './upgma';

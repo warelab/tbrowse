@@ -1,0 +1,9 @@
+{
+  "response": {
+    "docs": [
+      { "id": "AT1G01030", "gene_idx": 99, "region": "1", "system_name": "arabidopsis_thaliana", "start": 1, "end": 100, "strand": 1, "gene_tree": "OTHER" },
+      { "id": "AT1G01040", "gene_idx": 100, "region": "1", "system_name": "arabidopsis_thaliana", "start": 200, "end": 300, "strand": 1, "gene_tree": "EPlGT00940000166940" },
+      { "id": "AT1G01050", "gene_idx": 101, "region": "1", "system_name": "arabidopsis_thaliana", "start": 400, "end": 500, "strand": -1, "gene_tree": "OTHER2" }
+    ]
+  }
+}

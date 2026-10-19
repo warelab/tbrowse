@@ -16,3 +16,4 @@ export * from './sources/index';
 export * from './view/index';
 export * from './zone/index';
 export * from './cluster/index';
+export * from './genotype/encoding';

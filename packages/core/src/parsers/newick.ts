@@ -28,6 +28,17 @@ export interface ParseNewickOptions {
    * Labelled nodes keep their label as id. Defaults to no prefix.
    */
   idPrefix?: string;
+  /**
+   * When true (the default) a node's label is its `id`. When false EVERY
+   * node gets a synthetic id `${idPrefix ?? ''}n<N>` (N counting in parse
+   * order, i.e. the order in which nodes complete — children before their
+   * parent) and a leaf's label goes to `geneId` only (subject to
+   * `leafGeneId`); internal labels still become `bootstrap` when numeric
+   * in 0–100. Use this for trees whose labels may be numeric strings
+   * (BrAPI sample names such as `"1001"`) so that child order survives
+   * `Object.keys` enumeration — see `buildChildrenIndex`.
+   */
+  labelsAsIds?: boolean;
 }
 
 /**
@@ -45,10 +56,13 @@ export interface ParseNewickOptions {
  * input, unbalanced parentheses, unterminated quotes, or when the result
  * fails `assertValidTree`. Lifted from
  * `examples/playground/parseTreeFile.ts:59-185`; with no `opts` the
- * behaviour is identical to the playground.
+ * behaviour is identical to the playground. `labelsAsIds: false` (new in
+ * tbrowse-core 0.2) replaces every id with a synthetic `n<N>`; labels then
+ * survive only as `geneId` / `bootstrap`.
  */
 export function parseNewick(text: string, opts: ParseNewickOptions = {}): ParsedTreeFile {
   const leafGeneId = opts.leafGeneId ?? true;
+  const labelsAsIds = opts.labelsAsIds ?? true;
   const prefix = opts.idPrefix ?? '';
   const warnings: string[] = [];
   // Drop comments and any trailing semicolons + whitespace.
@@ -59,6 +73,7 @@ export function parseNewick(text: string, opts: ParseNewickOptions = {}): Parsed
   const nodes: Record<string, TreeNode> = {};
   let pos = 0;
   let synthetic = 0;
+  let ordinal = 0;
   const seenIds = new Set<string>();
 
   const uniqueId = (raw: string, isLeaf: boolean): string => {
@@ -151,7 +166,7 @@ export function parseNewick(text: string, opts: ParseNewickOptions = {}): Parsed
       const n = Number(label);
       if (n >= 0 && n <= 100) bootstrap = n;
     }
-    const id = uniqueId(label, isLeaf);
+    const id = labelsAsIds ? uniqueId(label, isLeaf) : `${prefix}n${ordinal++}`;
     const node: TreeNode = {
       id,
       parentId: null,

@@ -77,6 +77,18 @@ export default defineConfig(({ command, mode }) => {
         'tbrowse-core': resolve(__dirname, 'packages/core/src/index.ts'),
       },
     },
+    server: {
+      // The playground's BrAPI mode fetches a relative
+      // `/brapi/v2/allelematrix-search?…&tree=upgma` URL. Point the proxy at a
+      // running gramene-g2p API (its default dev port is 8080) or any other
+      // BrAPI v2 server via BRAPI_PROXY_TARGET.
+      proxy: {
+        '/brapi': {
+          target: process.env.BRAPI_PROXY_TARGET ?? 'http://localhost:8080',
+          changeOrigin: true,
+        },
+      },
+    },
   };
 
   if (isPlaygroundBuild) {

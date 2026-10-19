@@ -62,6 +62,76 @@ export const builtInFields: BuiltinLabelField[] = [
       return d.taxonomy?.[n.taxonomyId]?.commonName ?? null;
     },
   },
+  // Germplasm fields. Keyed by the leaf's `geneId` field, which for
+  // germplasm trees carries the germplasmDbId / germplasmName. They
+  // return null when no germplasm record exists, so they're invisible
+  // on gene trees and other non-germplasm sources.
+  {
+    kind: 'builtin',
+    id: 'germplasm.id',
+    label: 'Germplasm ID',
+    get: (n) => n.geneId ?? null,
+  },
+  {
+    kind: 'builtin',
+    id: 'germplasm.name',
+    label: 'Germplasm name',
+    get: (n, d) => {
+      if (!n.geneId) return null;
+      const g = d.germplasm?.[n.geneId];
+      return g?.defaultDisplayName ?? g?.germplasmName ?? null;
+    },
+  },
+  {
+    kind: 'builtin',
+    id: 'germplasm.species',
+    label: 'Species',
+    get: (n, d) => {
+      if (!n.geneId) return null;
+      const g = d.germplasm?.[n.geneId];
+      if (!g) return null;
+      // Genus + species reads more naturally than species alone for plant
+      // material; fall back to species alone when genus is absent.
+      if (g.genus && g.species) return `${g.genus} ${g.species}`;
+      return g.species ?? null;
+    },
+  },
+  {
+    kind: 'builtin',
+    id: 'germplasm.crop',
+    label: 'Crop',
+    get: (n, d) => {
+      if (!n.geneId) return null;
+      return d.germplasm?.[n.geneId]?.commonCropName ?? null;
+    },
+  },
+  {
+    kind: 'builtin',
+    id: 'germplasm.accession',
+    label: 'Accession',
+    get: (n, d) => {
+      if (!n.geneId) return null;
+      return d.germplasm?.[n.geneId]?.accessionNumber ?? null;
+    },
+  },
+  {
+    kind: 'builtin',
+    id: 'germplasm.pedigree',
+    label: 'Pedigree',
+    get: (n, d) => {
+      if (!n.geneId) return null;
+      return d.germplasm?.[n.geneId]?.pedigree ?? null;
+    },
+  },
+  {
+    kind: 'builtin',
+    id: 'germplasm.country',
+    label: 'Country of origin',
+    get: (n, d) => {
+      if (!n.geneId) return null;
+      return d.germplasm?.[n.geneId]?.countryOfOriginCode ?? null;
+    },
+  },
 ];
 
 /** Derive provider-backed fields from the host's registered labelProviders. */

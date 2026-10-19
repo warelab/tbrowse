@@ -1,0 +1,27 @@
+{
+  "type": "gene tree",
+  "rooted": 1,
+  "id": "ENSGT00010000000001",
+  "tree": {
+    "branch_length": 0,
+    "confidence": {},
+    "events": { "type": "speciation" },
+    "taxonomy": { "id": 9347, "scientific_name": "Eutheria", "common_name": "Placental mammals" },
+    "children": [
+      {
+        "branch_length": 0.01,
+        "confidence": {},
+        "taxonomy": { "id": 9606, "scientific_name": "Homo sapiens", "common_name": "Human" },
+        "id": { "accession": "ENSG00000139618", "source": "EnsEMBL" },
+        "sequence": { "id": [{ "accession": "ENSP00000369497", "source": "EnsEMBL" }], "mol_seq": { "is_aligned": 1, "seq": "MPI--EYK" } }
+      },
+      {
+        "branch_length": 0.01,
+        "confidence": {},
+        "taxonomy": { "id": 9598, "scientific_name": "Pan troglodytes", "common_name": "Chimpanzee" },
+        "id": { "accession": "ENSPTRG00000001", "source": "EnsEMBL" },
+        "sequence": { "id": [{ "accession": "ENSPTRP00000001", "source": "EnsEMBL" }], "mol_seq": { "is_aligned": 1, "seq": "MPIYNEYK" } }
+      }
+    ]
+  }
+}

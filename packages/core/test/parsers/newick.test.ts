@@ -124,3 +124,39 @@ describe('parseNewickAll', () => {
     expect(t!.tree.nodes['A']!.geneId).toBeUndefined();
   });
 });
+
+describe('parseNewick labelsAsIds: false', () => {
+  it('gives every node a synthetic n<N> id in parse order and keeps leaf labels as geneId only', () => {
+    const { tree, warnings } = parseNewick('((1001:0.1,7:0.2)95:0.3,42:0.4);');
+    expect(warnings).toEqual([]);
+    // Default: labels are ids (numeric labels included).
+    expect(tree.nodes['1001']).toMatchObject({ id: '1001', geneId: '1001' });
+
+    const parsed = parseNewick('((1001:0.1,7:0.2)95:0.3,42:0.4);', { labelsAsIds: false });
+    expect(parsed.warnings).toEqual([]);
+    const t = parsed.tree;
+    // Post-order completion: 1001 → n0, 7 → n1, the "95" clade → n2, 42 → n3, root → n4.
+    expect(Object.keys(t.nodes)).toEqual(['n0', 'n1', 'n2', 'n3', 'n4']);
+    expect(t.rootId).toBe('n4');
+    expect(t.nodes['n0']).toMatchObject({ id: 'n0', geneId: '1001', parentId: 'n2', distance: 0.1, isLeaf: true });
+    expect(t.nodes['n1']).toMatchObject({ geneId: '7', parentId: 'n2', distance: 0.2 });
+    expect(t.nodes['n3']).toMatchObject({ geneId: '42', parentId: 'n4', distance: 0.4 });
+    // Internal numeric label still becomes bootstrap but is no longer the id.
+    expect(t.nodes['n2']).toMatchObject({ id: 'n2', bootstrap: 95, distance: 0.3, isLeaf: false });
+    expect(t.nodes['95']).toBeUndefined();
+    expect(t.nodes['n2']!.geneId).toBeUndefined();
+    // No label-derived ids anywhere: child order is insertion order, not numeric order.
+    const kids = Object.keys(t.nodes).filter((id) => t.nodes[id]!.parentId === 'n4');
+    expect(kids).toEqual(['n2', 'n3']);
+  });
+
+  it('honours idPrefix and leafGeneId, and never warns about duplicate labels', () => {
+    const { tree, warnings } = parseNewick('(A,A,B);', { labelsAsIds: false, idPrefix: 't1' });
+    expect(warnings).toEqual([]);
+    expect(Object.keys(tree.nodes)).toEqual(['t1n0', 't1n1', 't1n2', 't1n3']);
+    expect(tree.nodes['t1n0']!.geneId).toBe('A');
+    expect(tree.nodes['t1n1']!.geneId).toBe('A');
+    const bare = parseNewick('(A,B);', { labelsAsIds: false, leafGeneId: false });
+    expect(bare.tree.nodes['n0']!.geneId).toBeUndefined();
+  });
+});

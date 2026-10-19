@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.12.0
+
+### Data loading
+- `useLoader(source, ctx, { key?, zoneSlots?, … })` runs a tbrowse-core `TreeDataSource` and returns `{ snapshot, loader, hostProps }`; spread `hostProps` onto `<TBrowse>` (it includes `zoneStatus`). `useInitialViewState(zones, snapshot, { initial?, onRootReady?, … })` keeps a controlled `ViewState` in step with the loader ('reset' / 'soft' / 'keep' per root).
+
+### Zones
+- `createGenotypeMatrixZone({ id, matrix, … })`: a genotype-matrix zone (variants × leaves, dosage heatmap with allele text when zoomed, consensus row for collapsed clades, phasing toggle), landed from the BrAPI prototype branch. Joins the matrix to leaves by `geneId`.
+- Labels zone: `germplasm.*` built-in fields (id, name, species, crop, accession, pedigree, country) read `TBrowseProps.germplasm`.
+
+### Playground
+- Every data path (sample, Ensembl, Gramene, uploaded file, BrAPI) runs through a core data source and the two hooks; the `/brapi` dev proxy (`BRAPI_PROXY_TARGET`, default `http://localhost:8080`) targets a gramene-g2p API.
+
 ## 2.11.0
 
 ### tbrowse-core

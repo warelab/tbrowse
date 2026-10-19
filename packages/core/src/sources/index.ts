@@ -1,5 +1,11 @@
-// Data sources for tbrowse: the pure JSON → model adapters and the Ensembl
-// endpoint table today; the TreeDataSource / Loader contract and the
-// built-in Ensembl / Gramene / BrAPI / file sources arrive in 0.2.
+// Data sources for tbrowse: the pure JSON → model adapters, the
+// TreeDataSource / DataSlot / Loader contract, and the built-in sources
+// (Ensembl REST, Gramene, BrAPI allele matrices, tree files).
 export * from '../adapters/index';
+export * from './types';
+export * from './loader';
+export * from './extend';
 export * from './ensembl';
+export * from './gramene';
+export * from './brapi';
+export * from './file';

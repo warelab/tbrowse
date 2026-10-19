@@ -1,0 +1,5 @@
+[
+  { "id": "PF00634", "description": "BRCA2 repeat", "type": "Pfam", "start": 1, "end": 4, "interpro": "IPR002093" },
+  { "id": "SM00001", "description": "Smart hit", "type": "Smart", "start": 2, "end": 6 },
+  { "id": "G3DSA:1.10.10.10", "description": "Gene3D hit", "type": "Gene3D", "start": 1, "end": 8 }
+]

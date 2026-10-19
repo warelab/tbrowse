@@ -107,11 +107,28 @@ interface TBrowseProps {
 | `tbrowse-core/tree` | Children index, pre/post-order walks, leaf order with swaps, roll-ups (`sumLeafCounts`, `maximalExcludedClades`), pruning, `computePivotState`, `toNewick`, tree-model / hierarchy conversion, LCA, node heights, validation. |
 | `tbrowse-core/parsers` | Newick, Nexus, PhyloXML (`parseTreeFile`) and CSV/TSV (`parseTableFile`). |
 | `tbrowse-core/fetch` | `fetchWithRetry` (backoff + jitter + `Retry-After`), `getJson`, `buildUrl`, bounded `fanOut` with partial-failure accounting. |
-| `tbrowse-core/sources` | The Ensembl / Gramene adapters (`fromEnsemblGeneTree`, `fromGrameneGenetree`, …). Data-source loaders land in 0.2. |
+| `tbrowse-core/sources` | The adapters (`fromEnsemblGeneTree`, `fromGrameneGenetree`, `fromBrAPIAlleleMatrix`, …), the `TreeDataSource` / `DataSlot` / `Loader` contract with `createLoader`, `extendSource`, `staticSource`, and the built-in sources `ensemblGeneTreeSource`, `grameneGeneTreeSource`, `brapiAlleleMatrixSource`, `fileTreeSource`. |
+| `tbrowse-core/cluster` | UPGMA over genotype dosages (`upgma`, `upgmaFromCalls`, `dosagesFromGenotypeMatrix`). |
 | `tbrowse-core/view` | `buildInitialViewState`, `applyPivot`, URL-hash codec, derived-prune layer, `computeVisibleRows` / `computeRowRange`. |
 | `tbrowse-core/zone` | Row flags and leaf/taxon joins for host-defined zones (`rowsWithFlags` in tbrowse adds the theme colours). |
 
 The viewer re-exports every type from the core, so a host can import `Tree` from either package.
+
+Two hooks wire a core data source to the component:
+
+```tsx
+import { TBrowse, treeZone, labelsZone, msaZone, useLoader, useInitialViewState } from 'tbrowse';
+import { ensemblGeneTreeSource } from 'tbrowse-core';
+
+const zones = [treeZone, labelsZone, msaZone];
+const ctx = useMemo(() => ({ geneId }), [geneId]);
+const { hostProps, snapshot, loader } = useLoader(ensemblGeneTreeSource, ctx, { zoneSlots: { msa: ['proteinDomains'] } });
+const [viewState, setViewState] = useInitialViewState(zones, snapshot);
+if (!hostProps || !viewState) return snapshot.error ?? 'Loading…';
+return <TBrowse {...hostProps} zones={zones} viewState={viewState} onViewStateChange={setViewState} />;
+```
+
+`useLoader` restarts when `ctx` (or an explicit `key`) changes and exposes `loader.load('proteinDomains')` for lazy slots; `useInitialViewState` rebuilds the view when a root arrives ('reset' / 'soft' / 'keep' via `onRootReady`) and keeps the zone list in step.
 
 ## ViewState
 

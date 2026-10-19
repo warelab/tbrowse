@@ -16,7 +16,8 @@ Zero runtime dependencies. ESM and CommonJS builds with type declarations; Node 
 | `tbrowse-core/tree` | `buildChildrenIndex`, `preorder` / `postorder` / `leafOrder`, `rollUp` / `sumLeafCounts` / `maximalExcludedClades` / `leavesFailing`, `pruneToLeaves`, `subtree`, `computePivotState`, `toNewick`, `fromTreeModel` / `fromHierarchy`, `swapsForLeafOrder`, `lca`, `pathToRoot`, `nodeHeights`, `validateTree`. |
 | `tbrowse-core/parsers` | `parseTreeFile` (Newick, Nexus, PhyloXML), `parseNewick`, `parseTableFile` (CSV/TSV). |
 | `tbrowse-core/fetch` | `fetchWithRetry`, `withRetry`, `getJson`, `HttpError`, `buildUrl`, `fanOut`, `fanOutChunks`. |
-| `tbrowse-core/sources` | Ensembl and Gramene adapters (`fromEnsemblGeneTree`, `fromGrameneGenetree`, …). Data-source loaders arrive in 0.2. |
+| `tbrowse-core/sources` | The adapters (`fromEnsemblGeneTree`, `fromGrameneGenetree`, `fromBrAPIAlleleMatrix`, …), the `TreeDataSource` / `DataSlot` / `Loader` contract with `createLoader`, `extendSource`, `staticSource`, and the built-in sources `ensemblGeneTreeSource`, `grameneGeneTreeSource`, `brapiAlleleMatrixSource`, `fileTreeSource`. |
+| `tbrowse-core/cluster` | UPGMA over genotype dosages: `upgma`, `upgmaFromCalls`, `distanceMatrix`, `dosagesFromGenotypeMatrix`. |
 | `tbrowse-core/view` | `buildInitialViewState`, `applyPivot`, `normalizeViewState`, `encodeHashState` / `decodeHashState`, `createDerivedPruneLayer`, `computeVisibleRows`, `computeRowRange`. |
 | `tbrowse-core/zone` | Helpers for host-defined zones: `rowFlags`, `rowsTotalHeight`, `joinByLeaf`, `joinByTaxon`, `countsFromFacet`. |
 
@@ -46,6 +47,35 @@ const json = await (await fetchWithRetry(
 const { tree, taxonomy, msa, geneMetadata } = fromEnsemblGeneTree(json);
 const viewState = applyPivot(buildInitialViewState(zones), computePivotState(tree, 'ENSG00000139618'));
 ```
+
+## Data sources
+
+A `TreeDataSource` loads a root (the tree and whatever came with it) and declares *slots*: independently fetched per-leaf data that becomes `HostData` fields. A `Loader` runs it and exposes a snapshot — tree, merged host data, per-slot status and progress, and a per-zone status map derived from the `zoneSlots` you give it. Zone ids are the host's business, so a slot never names one.
+
+```ts
+import { createLoader, ensemblGeneTreeSource, hostPropsFrom } from 'tbrowse-core/sources';
+
+const loader = createLoader(ensemblGeneTreeSource, {
+  zoneSlots: { msa: ['proteinDomains'], genome: ['overlap'] },
+});
+const snap = await loader.start({ geneId: 'ENSG00000139618' });   // root + eager slots
+await loader.load('proteinDomains');                                // a lazy slot, on demand
+const props = hostPropsFrom(loader.getSnapshot());                 // { tree, taxonomy, msa, proteinDomains, zoneStatus, … }
+```
+
+Extend a source with your own slot (the gramene-search expression-attribute zone does this):
+
+```ts
+const exprAttrs = defineSlot({
+  id: 'exprAttrs',
+  enabled: (ctx) => ctx.expression === true,
+  run: async ({ ctx, fetch, signal, tree }) => buildExprData(await fetchGrameneExprAttrDocs(ctx.base, ctx.treeId, { fetch, signal }), tree),
+  toHostData: (v) => ({ hostData: { exprAttrs: v } }),
+});
+const source = extendSource(grameneGeneTreeSource, { id: 'sorghum-homology', slots: [exprAttrs] });
+```
+
+In React, `tbrowse` wraps this in `useLoader` and `useInitialViewState`. In Node, the same loader runs headless — a script can fetch a gene tree, prune it, and write Newick without the viewer.
 
 ## Relationship to tbrowse
 

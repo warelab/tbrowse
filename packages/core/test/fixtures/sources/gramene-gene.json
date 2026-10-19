@@ -1,0 +1,10 @@
+[
+  {
+    "_id": "AT1G01040",
+    "name": "DCL1",
+    "description": "Dicer-like protein 1",
+    "taxon_id": 3702,
+    "system_name": "arabidopsis_thaliana",
+    "homology": { "gene_tree": { "id": "EPlGT00940000166940" } }
+  }
+]

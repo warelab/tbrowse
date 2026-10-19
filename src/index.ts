@@ -47,6 +47,14 @@ export type {
   PivotState,
 } from 'tbrowse-core';
 
+// React glue for tbrowse-core data sources: run a TreeDataSource and keep a
+// controlled ViewState in step with its loader.
+export { useLoader, type UseLoaderOptions, type UseLoaderResult } from './hooks/useLoader';
+export {
+  useInitialViewState,
+  type RootReadyMode,
+  type UseInitialViewStateOptions,
+} from './hooks/useInitialViewState';
 export { createStubZone } from './zones/stub';
 // Editable zone-name control, so host-defined zones can offer the same
 // rename affordance as the built-in zones.
@@ -69,6 +77,11 @@ export {
   type GenomeZoneState,
   type CreateGenomeZoneOptions,
 } from './zones/genome/Genome';
+export {
+  createGenotypeMatrixZone,
+  type GenotypeMatrixZoneState,
+  type CreateGenotypeMatrixZoneOptions,
+} from './zones/genotype/Genotype';
 export {
   createTableZone,
   defaultAggregators,

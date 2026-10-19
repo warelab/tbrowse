@@ -11,6 +11,7 @@ import type {
   Tree,
   TreeNode,
 } from 'tbrowse';
+import type { RootResult } from 'tbrowse-core';
 
 export const sampleTree: Tree = {
   rootId: 'n0',
@@ -307,3 +308,35 @@ export const sampleGenomeFeatures: Record<string, GenomeFeature[]> = {
     { id: 'tfbs-2', kind: 'TFBS', start: 1020, end: 1035, label: 'NF-Y' },
   ],
 };
+
+// ---------- The sample data source ----------
+//
+// Everything above, bundled the way a `TreeDataSource` delivers it. The
+// playground wraps `sampleRoot` with tbrowse-core's `staticSource` so the
+// bundled tree runs through the same loader as Ensembl, Gramene, BrAPI and
+// uploaded trees. `size` picks the hand-written five-leaf tree or the
+// synthetic 1024-leaf one ("toggle tree size"); both share the sample
+// taxonomy, MSA, metadata, domains, gene structures and label provider.
+
+export type SampleSize = 'small' | 'large';
+
+/** `RootResult.meta` of the sample source. */
+export interface SampleMeta {
+  size: SampleSize;
+}
+
+export function sampleRoot(size: SampleSize): RootResult<SampleMeta> {
+  return {
+    tree: size === 'large' ? largeSampleTree : sampleTree,
+    taxonomy: sampleTaxonomy,
+    data: {
+      geneMetadata: sampleGeneMetadata,
+      msa: sampleMSA,
+      proteinDomains: sampleProteinDomains,
+      geneStructures: sampleGeneStructures,
+      genomeFeatures: sampleGenomeFeatures,
+      labelProviders: [sampleGoProvider],
+    },
+    meta: { size },
+  };
+}
