@@ -112,7 +112,7 @@ interface TBrowseProps {
 | `tbrowse-core/view` | `buildInitialViewState`, `applyPivot`, URL-hash codec, derived-prune layer, `computeVisibleRows` / `computeRowRange`. |
 | `tbrowse-core/zone` | Row flags and leaf/taxon joins for host-defined zones (`rowsWithFlags` in tbrowse adds the theme colours). |
 
-The viewer re-exports every type from the core, so a host can import `Tree` from either package.
+The viewer re-exports every type from the core, so a host can import `Tree` from either package. The core's own documentation: [README](./packages/core/README.md) (model diagram, complete entry-point table, a headless Node example), [Writing a data source](./packages/core/docs/data-sources.md), [Writing a zone with the row helpers](./packages/core/docs/zones.md) and the [API reference](./packages/core/docs/api/tbrowse-core.md) generated from the type declarations.
 
 Two hooks wire a core data source to the component:
 

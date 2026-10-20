@@ -1,6 +1,6 @@
 {
   "name": "tbrowse-core",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Headless companion to the tbrowse tree viewer: data model, tree algorithms, file parsers, REST adapters and data-source loaders (Ensembl, Gramene, BrAPI), UPGMA clustering, fetch helpers and view-state logic. Runs in browsers and Node.",
   "type": "module",
   "sideEffects": false,
@@ -131,8 +131,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && node scripts/check-surface.mjs && node ../../scripts/smoke-core.mjs",
-    "check:surface": "node scripts/check-surface.mjs"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && node scripts/check-surface.mjs && node scripts/gen-api-docs.mjs --check && node ../../scripts/smoke-core.mjs",
+    "check:surface": "node scripts/check-surface.mjs",
+    "docs:api": "npm run build && node scripts/gen-api-docs.mjs",
+    "check:docs": "node scripts/gen-api-docs.mjs --check"
   },
   "dependencies": {},
   "devDependencies": {

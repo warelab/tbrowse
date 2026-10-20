@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.13.0
+
+Documentation release paired with tbrowse-core 1.0.0, whose surface is now frozen for the application note. No runtime change from 2.12.0; the `tbrowse-core` dependency range `>=0.1.0 <2.0.0` is unchanged and covers 1.0.0.
+
+### tbrowse-core
+- The core's README now carries the model diagram, the complete entry-point table and a Node example run against Gramene; new guides `packages/core/docs/data-sources.md` (writing a data source) and `packages/core/docs/zones.md` (writing a zone with the row helpers); an API reference generated from the type declarations under `packages/core/docs/api/` (`npm run docs:api`). The README's "Data loading" section links to them.
+- `TaxonomyId` stays `string | number` and `Taxonomy` keyed by `string`, as since 2.11.0; this is the shape the note describes.
+
+### Deprecations (unchanged, restated)
+- `fromEnsemblGeneTree`, `fromEnsemblGeneStructure`, `fromEnsemblGenomeFeatures`, `fromEnsemblProteinFeatures`, `fromGrameneGene`, `fromGrameneGenetree`, `fromGrameneGeneStructures`, `fromGrameneNeighborhood`, `computePivotState`, `computeVisibleRows`, `computeRowRange`, `LEAF_ROW_HEIGHT` and `SUMMARY_ROW_HEIGHT` remain exported from `tbrowse` with `@deprecated`; import them from `tbrowse-core`. These function re-exports are removed in tbrowse 3.0, the first release after the note; every type re-export stays. `scripts/check-exports.mjs` guards the 2.x surface until then.
+
 ## 2.12.0
 
 ### Data loading
