@@ -27,6 +27,8 @@ import type {
  * InterPro hits with residue ranges).
  */
 interface GrameneNode {
+  /** Root only: the tree set the tree belongs to (see {@link GRAMENE_DEFAULT_TREE_FIELD}). */
+  tree_set?: string;
   node_id?: number;
   distance_to_parent?: number;
   taxon_id?: number;
@@ -82,6 +84,13 @@ export interface FromGrameneGenetreeResult {
   exonJunctions: Record<GeneId, number[]>;
   /** GeneId → translation accession (for parity with the Ensembl adapter). */
   proteinIdByGeneId: Record<GeneId, string>;
+  /**
+   * The root's `tree_set` — `'gene_tree'` for the main Compara trees, the
+   * clade set (`'wheat'`, `'oat'`, …) otherwise — which is also the Solr
+   * field holding the tree id. {@link GRAMENE_DEFAULT_TREE_FIELD} when the
+   * doc predates tree sets (v69 and earlier).
+   */
+  treeField: string;
 }
 
 /**
@@ -223,6 +232,8 @@ export function fromGrameneGenetree(
     proteinDomains,
     exonJunctions,
     proteinIdByGeneId,
+    treeField:
+      typeof root.tree_set === 'string' && root.tree_set !== '' ? root.tree_set : GRAMENE_DEFAULT_TREE_FIELD,
   };
 }
 
@@ -256,6 +267,45 @@ export function expandCigar(sequence: string, cigar: string): string {
 
 // ─── Gene endpoint ────────────────────────────────────────────────────────────
 
+/**
+ * Where a gene's tree id lives, in the gene doc's `homology` and in Solr,
+ * for the main Compara trees. Genomes in a clade-specific tree set (v70:
+ * wheat, oat) carry it under the set's name instead —
+ * `homology.wheat = { id: 'EplWheatGT_…' }`, Solr field `wheat` — and the
+ * tree doc's root names the set in `tree_set`.
+ */
+export const GRAMENE_DEFAULT_TREE_FIELD = 'gene_tree';
+
+/** A gene's tree: its id and the field (tree set) that holds it. */
+export interface GrameneGeneTreeRef {
+  id: string;
+  field: string;
+}
+
+const NOT_TREE_KEYS = new Set(['homologous_genes', 'supertree']);
+
+/**
+ * Resolve a Gramene gene doc's `homology` to its tree: `gene_tree` when
+ * present, else the first tree-set entry (an object with a string `id`).
+ * `null` when the gene has homologues but no tree.
+ */
+export function grameneGeneTreeRef(homology: unknown): GrameneGeneTreeRef | null {
+  if (!homology || typeof homology !== 'object') return null;
+  const h = homology as Record<string, unknown>;
+  const idOf = (v: unknown): string | null => {
+    const id = v && typeof v === 'object' ? (v as { id?: unknown }).id : undefined;
+    return typeof id === 'string' && id !== '' ? id : null;
+  };
+  const main = idOf(h[GRAMENE_DEFAULT_TREE_FIELD]);
+  if (main) return { id: main, field: GRAMENE_DEFAULT_TREE_FIELD };
+  for (const key of Object.keys(h)) {
+    if (NOT_TREE_KEYS.has(key)) continue;
+    const id = idOf(h[key]);
+    if (id) return { id, field: key };
+  }
+  return null;
+}
+
 interface GrameneGeneDoc {
   _id?: string;
   name?: string;
@@ -263,12 +313,15 @@ interface GrameneGeneDoc {
   biotype?: string;
   taxon_id?: number;
   system_name?: string;
-  homology?: { gene_tree?: { id?: string } };
+  homology?: Record<string, unknown>;
 }
 
 export interface FromGrameneGeneResult {
   geneId: GeneId;
+  /** The gene's tree id, from `gene_tree` or its clade tree set; `null` when it has none. */
   geneTreeId: string | null;
+  /** Solr field / tree set holding {@link geneTreeId}; `null` with it. */
+  geneTreeField: string | null;
   taxonomyId: number | null;
   systemName: string | null;
   description: string | null;
@@ -291,9 +344,11 @@ export function fromGrameneGene(json: unknown): FromGrameneGeneResult {
   if (typeof doc._id !== 'string' || doc._id === '') {
     throw new Error('fromGrameneGene: gene doc is missing _id');
   }
+  const ref = grameneGeneTreeRef(doc.homology);
   return {
     geneId: doc._id,
-    geneTreeId: doc.homology?.gene_tree?.id ?? null,
+    geneTreeId: ref ? ref.id : null,
+    geneTreeField: ref ? ref.field : null,
     taxonomyId: typeof doc.taxon_id === 'number' ? doc.taxon_id : null,
     systemName: doc.system_name ?? null,
     description: doc.description ?? null,
@@ -320,6 +375,8 @@ interface GrameneNeighborhoodDoc {
   biotype?: string;
   /** Gene-tree (family) accession. */
   gene_tree?: string;
+  /** Clade tree-set fields (`wheat`, `oat`, …) carry the accession instead. */
+  [treeField: string]: unknown;
   /** Position within the species' chromosome — the ordering key for
    *  identifying flanking genes. */
   gene_idx?: number;
@@ -345,9 +402,20 @@ interface GrameneSearchResponse {
  *
  * Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:338`.
  */
+export interface FromGrameneNeighborhoodOptions {
+  /**
+   * Field holding each gene's family accession (`NeighborhoodGene.geneTree`);
+   * default {@link GRAMENE_DEFAULT_TREE_FIELD}. For a clade tree pass its set
+   * (`'wheat'`), so neighbours are coloured by the same family ids as the tree.
+   */
+  treeField?: string;
+}
+
 export function fromGrameneNeighborhood(
   json: unknown,
+  options: FromGrameneNeighborhoodOptions = {},
 ): Record<GeneId, Neighborhood> {
+  const treeField = options.treeField ?? GRAMENE_DEFAULT_TREE_FIELD;
   const docs = (json as GrameneSearchResponse | null)?.response?.docs;
   if (!Array.isArray(docs)) return {};
 
@@ -384,7 +452,8 @@ export function fromGrameneNeighborhood(
     if (d.description && d.description !== '""') gene.description = d.description;
     if (d.region) gene.region = d.region;
     if (d.biotype) gene.biotype = d.biotype;
-    if (d.gene_tree) gene.geneTree = d.gene_tree;
+    const family = d[treeField] ?? d.gene_tree;
+    if (typeof family === 'string' && family !== '') gene.geneTree = family;
     return gene;
   };
 

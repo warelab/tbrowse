@@ -4,7 +4,7 @@
 
 REST adapters, the TreeDataSource / DataSlot / Loader contract, built-in Ensembl, Gramene, BrAPI and file sources.
 
-90 exports: 41 functions, 9 constants, 39 interfaces, 1 type aliases.
+95 exports: 42 functions, 10 constants, 42 interfaces, 1 type aliases.
 
 Every name here is also exported from the package root (`tbrowse-core`); the subpath import lets a bundler drop the rest.
 
@@ -43,7 +43,8 @@ Every name here is also exported from the package root (`tbrowse-core`); the sub
 | [`fromGrameneGene`](#fromgramenegene) | function | Convert a Gramene `/genes?idList=<single-id>` response into the minimal pieces a host needs to discover the gene's tree id and bootstrap a tbrowse view. |
 | [`fromGrameneGeneStructures`](#fromgramenegenestructures) | function | Convert one or more Gramene `/genes` documents (each carrying `location` + `gene_structure`) into the normalized `GeneStructure` shape the genome browser zone consumes. |
 | [`fromGrameneGenetree`](#fromgramenegenetree) | function | Convert a Gramene `/genetrees?idList=...` response (an array containing a single root node) into TBrowse's normalized inputs. |
-| [`fromGrameneNeighborhood`](#fromgrameneneighborhood) | function | Convert a Gramene `/search` graph-query response into per-gene neighbourhood windows. |
+| [`fromGrameneNeighborhood`](#fromgrameneneighborhood) | function |  |
+| [`grameneGeneTreeRef`](#gramenegenetreeref) | function | Resolve a Gramene gene doc's `homology` to its tree: `gene_tree` when present, else the first tree-set entry (an object with a string `id`). |
 | [`grameneNeighborhoodQuery`](#grameneneighborhoodquery) | function | Query parameters of the Solr graph query that returns every leaf of a gene tree plus its ±10 flanking genes, in the order the origins set them: `fl`, `fq='{!graph from=compara_neighbors_10 to=compara_idx_multi… |
 | [`hostPropsFrom`](#hostpropsfrom) | function | Turns a snapshot into the props the `TBrowse` viewer takes: `null` until the tree has loaded, else `{ tree, taxonomy?, nodeOfInterest?, zoneStatus }` plus every merged host-data field. |
 | [`mergeHostData`](#mergehostdata) | function | Merges one host-data patch over another. |
@@ -58,6 +59,7 @@ Every name here is also exported from the package root (`tbrowse-core`); the sub
 | [`ensemblGeneTreeSource`](#ensemblgenetreesource) | constant | The Ensembl gene-tree data source: the root is the gene tree containing `ctx.geneId` ({@link fetchEnsemblGeneTree}: tree, taxonomy, aligned MSA, gene metadata), pivoted on that gene. |
 | [`fileTreeSource`](#filetreesource) | constant | The file data source: the root is `parseTreeSource(ctx.file, …)` — the format is sniffed from the content (then from the filename extension), the PhyloXML parser takes `ctx.parseDocument` / `ctx.DOMParser` by… |
 | [`GRAMENE_DEFAULT_BASE`](#gramene_default_base) | constant | The Gramene REST base the playground uses (`main.tsx:167`). |
+| [`GRAMENE_DEFAULT_TREE_FIELD`](#gramene_default_tree_field) | constant | Where a gene's tree id lives, in the gene doc's `homology` and in Solr, for the main Compara trees. |
 | [`GRAMENE_GENE_STRUCTURE_FL`](#gramene_gene_structure_fl) | constant | The narrow field list the playground requests for gene structures (`main.tsx:618`). |
 | [`grameneGeneTreeSource`](#gramenegenetreesource) | constant | The Gramene gene-tree data source. |
 | [`BrapiCtx`](#brapictx) | interface | What `brapiAlleleMatrixSource.loadRoot` needs. |
@@ -87,10 +89,13 @@ Every name here is also exported from the package root (`tbrowse-core`); the sub
 | [`FromGrameneGeneResult`](#fromgramenegeneresult) | interface |  |
 | [`FromGrameneGenetreeOptions`](#fromgramenegenetreeoptions) | interface |  |
 | [`FromGrameneGenetreeResult`](#fromgramenegenetreeresult) | interface |  |
+| [`FromGrameneNeighborhoodOptions`](#fromgrameneneighborhoodoptions) | interface | Convert a Gramene `/search` graph-query response into per-gene neighbourhood windows. |
 | [`GrameneCtx`](#gramenectx) | interface | Context for {@link grameneGeneTreeSource}. |
 | [`GrameneFetchOptions`](#gramenefetchoptions) | interface | Transport options shared by every fetch helper here. |
+| [`GrameneGeneTreeRef`](#gramenegenetreeref) | interface | A gene's tree: its id and the field (tree set) that holds it. |
 | [`GrameneMeta`](#gramenemeta) | interface | Root metadata of {@link grameneGeneTreeSource}. |
 | [`GrameneSearchParams`](#gramenesearchparams) | interface | Parameters of {@link fetchGrameneSearchDocs}. |
+| [`GrameneTreeQueryOptions`](#gramenetreequeryoptions) | interface | Options for the tree-scoped `/search` helpers. |
 | [`Loader`](#loader) | interface |  |
 | [`LoaderOptions`](#loaderoptions) | interface |  |
 | [`LoaderSnapshot`](#loadersnapshot) | interface |  |
@@ -325,7 +330,8 @@ field) for the genes of one tree in a single query: `q=*:*`,
 `fq=gene_tree:<treeId>`, `fq=capabilities:expression_attributes`,
 `fl=id,expr_*__attr_*`, `rows=10000`. Scoping by the capability means
 only genes that actually carry the data come back; the glob `fl` lets
-the columns be discovered from the data. Origin: `Homology.js:293-331`.
+the columns be discovered from the data. `opts.treeField` replaces
+`gene_tree` for a clade tree set. Origin: `Homology.js:293-331`.
 
 ```ts
 function fetchGrameneExprAttrDocs(base: string, treeId: string, opts?: FetchGrameneExprAttrDocsOptions): Promise<Array<Record<string, unknown>>>;
@@ -374,7 +380,7 @@ request answers for the whole tree. Origin: `main.tsx:574-600`,
 `Homology.js:217-247`.
 
 ```ts
-function fetchGrameneNeighborhood(base: string, treeId: string, opts?: GrameneFetchOptions): Promise<Record<GeneId, Neighborhood>>;
+function fetchGrameneNeighborhood(base: string, treeId: string, opts?: GrameneTreeQueryOptions): Promise<Record<GeneId, Neighborhood>>;
 ```
 
 ### `fetchGrameneSearchDocs`
@@ -589,21 +595,18 @@ function fromGrameneGenetree(json: unknown, options?: FromGrameneGenetreeOptions
 
 ### `fromGrameneNeighborhood`
 
-Convert a Gramene `/search` graph-query response into per-gene
-neighbourhood windows.
+```ts
+function fromGrameneNeighborhood(json: unknown, options?: FromGrameneNeighborhoodOptions): Record<GeneId, Neighborhood>;
+```
 
-The response carries every gene within ±10 of any leaf in the source
-tree (3601 docs for a moderately-sized tree). We index by
-`(system_name, region) → sorted-by-gene_idx`, then for every gene we
-emit a `Neighborhood` whose `upstream`/`downstream` arrays are at
-most 10 genes long, sliced from that sorted index.
+### `grameneGeneTreeRef`
 
-Pure: callers do the network fetch, hand us the JSON.
-
-Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:338`.
+Resolve a Gramene gene doc's `homology` to its tree: `gene_tree` when
+present, else the first tree-set entry (an object with a string `id`).
+`null` when the gene has homologues but no tree.
 
 ```ts
-function fromGrameneNeighborhood(json: unknown): Record<GeneId, Neighborhood>;
+function grameneGeneTreeRef(homology: unknown): GrameneGeneTreeRef | null;
 ```
 
 ### `grameneNeighborhoodQuery`
@@ -618,8 +621,12 @@ Origin: `main.tsx:576-586`, `Homology.js:222-226`.
 filterCache `computeIfAbsent`, and Solr's FastLRUCache then throws
 "Recursive update" (HTTP 500) for whichever trees' keys collide.
 
+`treeField` is the Solr field holding the tree id — `gene_tree`, or a
+clade tree set such as `wheat` — and is added to `fl` when it isn't
+`gene_tree`, so the neighbours' family ids come back too.
+
 ```ts
-function grameneNeighborhoodQuery(treeId: string): Record<string, string>;
+function grameneNeighborhoodQuery(treeId: string, treeField?: string): Record<string, string>;
 ```
 
 ### `hostPropsFrom`
@@ -793,6 +800,18 @@ The Gramene REST base the playground uses (`main.tsx:167`).
 
 ```ts
 const GRAMENE_DEFAULT_BASE = "https://data.gramene.org/v69";
+```
+
+### `GRAMENE_DEFAULT_TREE_FIELD`
+
+Where a gene's tree id lives, in the gene doc's `homology` and in Solr,
+for the main Compara trees. Genomes in a clade-specific tree set (v70:
+wheat, oat) carry it under the set's name instead —
+`homology.wheat = { id: 'EplWheatGT_…' }`, Solr field `wheat` — and the
+tree doc's root names the set in `tree_set`.
+
+```ts
+const GRAMENE_DEFAULT_TREE_FIELD = "gene_tree";
 ```
 
 ### `GRAMENE_GENE_STRUCTURE_FL`
@@ -1053,7 +1072,7 @@ interface FetchEnsemblProteinDomainsOptions {
 Options accepted by {@link fetchGrameneExprAttrDocs}.
 
 ```ts
-interface FetchGrameneExprAttrDocsOptions extends GrameneFetchOptions {
+interface FetchGrameneExprAttrDocsOptions extends GrameneTreeQueryOptions {
     /** Solr `rows`; default 10000 (high enough to cover any one tree). */
     rows?: number;
 }
@@ -1207,7 +1226,10 @@ interface FromEnsemblResult {
 ```ts
 interface FromGrameneGeneResult {
     geneId: GeneId;
+    /** The gene's tree id, from `gene_tree` or its clade tree set; `null` when it has none. */
     geneTreeId: string | null;
+    /** Solr field / tree set holding {@link geneTreeId}; `null` with it. */
+    geneTreeField: string | null;
     taxonomyId: number | null;
     systemName: string | null;
     description: string | null;
@@ -1241,6 +1263,39 @@ interface FromGrameneGenetreeResult {
     exonJunctions: Record<GeneId, number[]>;
     /** GeneId → translation accession (for parity with the Ensembl adapter). */
     proteinIdByGeneId: Record<GeneId, string>;
+    /**
+     * The root's `tree_set` — `'gene_tree'` for the main Compara trees, the
+     * clade set (`'wheat'`, `'oat'`, …) otherwise — which is also the Solr
+     * field holding the tree id. {@link GRAMENE_DEFAULT_TREE_FIELD} when the
+     * doc predates tree sets (v69 and earlier).
+     */
+    treeField: string;
+}
+```
+
+### `FromGrameneNeighborhoodOptions`
+
+Convert a Gramene `/search` graph-query response into per-gene
+neighbourhood windows.
+
+The response carries every gene within ±10 of any leaf in the source
+tree (3601 docs for a moderately-sized tree). We index by
+`(system_name, region) → sorted-by-gene_idx`, then for every gene we
+emit a `Neighborhood` whose `upstream`/`downstream` arrays are at
+most 10 genes long, sliced from that sorted index.
+
+Pure: callers do the network fetch, hand us the JSON.
+
+Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:338`.
+
+```ts
+interface FromGrameneNeighborhoodOptions {
+    /**
+     * Field holding each gene's family accession (`NeighborhoodGene.geneTree`);
+     * default {@link GRAMENE_DEFAULT_TREE_FIELD}. For a clade tree pass its set
+     * (`'wheat'`), so neighbours are coloured by the same family ids as the tree.
+     */
+    treeField?: string;
 }
 ```
 
@@ -1256,6 +1311,11 @@ interface GrameneCtx {
     geneId?: string;
     /** Tree id, when already known: skips the `/genes` lookup. */
     treeId?: string;
+    /**
+     * Solr field / tree set holding `treeId`. Rarely needed: the source takes
+     * it from the tree doc's `tree_set`, or from the gene lookup.
+     */
+    treeField?: string;
     /**
      * An already-fetched `/genetrees` response (the bare root doc or the
      * one-element array), normalised with `Array.isArray(x) ? x : [x]`.
@@ -1284,6 +1344,17 @@ interface GrameneFetchOptions {
 }
 ```
 
+### `GrameneGeneTreeRef`
+
+A gene's tree: its id and the field (tree set) that holds it.
+
+```ts
+interface GrameneGeneTreeRef {
+    id: string;
+    field: string;
+}
+```
+
 ### `GrameneMeta`
 
 Root metadata of {@link grameneGeneTreeSource}.
@@ -1291,6 +1362,8 @@ Root metadata of {@link grameneGeneTreeSource}.
 ```ts
 interface GrameneMeta {
     treeId: string;
+    /** Solr field holding `treeId` (`gene_tree`, or a clade set like `wheat`); scopes the tree's `/search` queries. */
+    treeField: string;
     /** The `/genes` lookup result, when the root had to resolve `geneId` to a tree. */
     gene?: FromGrameneGeneResult;
     /** Gene id → translation accession (parity with the Ensembl source). */
@@ -1312,6 +1385,17 @@ interface GrameneSearchParams {
     fl: string;
     /** Solr `rows`; omitted when undefined (the server default applies). */
     rows?: number;
+}
+```
+
+### `GrameneTreeQueryOptions`
+
+Options for the tree-scoped `/search` helpers.
+
+```ts
+interface GrameneTreeQueryOptions extends GrameneFetchOptions {
+    /** Solr field holding the tree id; default `gene_tree` (a clade set such as `wheat` otherwise). */
+    treeField?: string;
 }
 ```
 

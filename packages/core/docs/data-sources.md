@@ -178,11 +178,16 @@ import {
 import { buildExprData } from './exprAttrsZone';
 
 // One slot: fetch the docs for this tree, shape them for the zone, deliver through hostData.
+// root.meta carries the tree id and the Solr field that holds it — gene_tree, or a
+// clade tree set such as wheat — so the query is scoped the same way as the tree.
 const exprAttrsSlot = defineSlot({
   id: 'exprAttrs',
   enabled: (ctx) => ctx.expression === true,
-  run: async ({ ctx, fetch, signal, tree }) =>
-    buildExprData(await fetchGrameneExprAttrDocs(ctx.base, ctx.treeId, { fetch, signal }), tree),
+  run: async ({ ctx, fetch, signal, tree, root }) =>
+    buildExprData(
+      await fetchGrameneExprAttrDocs(ctx.base, root.meta.treeId, { treeField: root.meta.treeField, fetch, signal }),
+      tree,
+    ),
   toHostData: (v) => ({ hostData: { exprAttrs: v } }),
 });
 

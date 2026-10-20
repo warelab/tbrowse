@@ -25,11 +25,15 @@ export {
   fromGrameneGene,
   fromGrameneNeighborhood,
   fromGrameneGeneStructures,
+  grameneGeneTreeRef,
+  GRAMENE_DEFAULT_TREE_FIELD,
 } from './gramene';
 export type {
   FromGrameneGenetreeOptions,
   FromGrameneGenetreeResult,
   FromGrameneGeneResult,
+  FromGrameneNeighborhoodOptions,
+  GrameneGeneTreeRef,
 } from './gramene';
 
 export {

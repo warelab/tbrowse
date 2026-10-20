@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GRAMENE_DEFAULT_TREE_FIELD,
   expandCigar,
   fromGrameneGene,
   fromGrameneGenetree,
   fromGrameneNeighborhood,
+  grameneGeneTreeRef,
 } from './gramene';
 
 describe('expandCigar', () => {
@@ -161,6 +163,13 @@ describe('fromGrameneGenetree', () => {
     expect(taxonomy[3702001]!.commonName).toBe('arabidopsis_thaliana');
   });
 
+  it('reports the tree set as treeField, defaulting to gene_tree', () => {
+    expect(fromGrameneGenetree(sample).treeField).toBe(GRAMENE_DEFAULT_TREE_FIELD);
+    expect(fromGrameneGenetree([{ ...sample[0], tree_set: 'gene_tree' }]).treeField).toBe('gene_tree');
+    expect(fromGrameneGenetree([{ ...sample[0], tree_set: 'wheat' }]).treeField).toBe('wheat');
+    expect(fromGrameneGenetree([{ ...sample[0], tree_set: '' }]).treeField).toBe('gene_tree');
+  });
+
   it('throws on an empty payload', () => {
     expect(() => fromGrameneGenetree([])).toThrow(/non-empty array/);
   });
@@ -181,6 +190,7 @@ describe('fromGrameneGene', () => {
     expect(fromGrameneGene(sample)).toEqual({
       geneId: 'AT1G01040',
       geneTreeId: 'EPlGT00940000166940',
+      geneTreeField: 'gene_tree',
       taxonomyId: 3702001,
       systemName: 'arabidopsis_thaliana',
       description: 'Dicer-like protein 1',
@@ -190,6 +200,28 @@ describe('fromGrameneGene', () => {
   it('returns null geneTreeId when the gene has no tree assignment', () => {
     const withoutTree = [{ _id: 'X', taxon_id: 1 }];
     expect(fromGrameneGene(withoutTree).geneTreeId).toBeNull();
+    expect(fromGrameneGene(withoutTree).geneTreeField).toBeNull();
+  });
+
+  it('reads a clade tree set (v70 wheat) when there is no gene_tree', () => {
+    const wheat = [
+      {
+        _id: 'TraesLDM1A03G00141640',
+        homology: {
+          wheat: { id: 'EplWheatGT_PTHR10438_SF126', root_taxon_id: 147368 },
+          homologous_genes: { ortholog_one2one: ['A'] },
+        },
+      },
+    ];
+    const r = fromGrameneGene(wheat);
+    expect(r.geneTreeId).toBe('EplWheatGT_PTHR10438_SF126');
+    expect(r.geneTreeField).toBe('wheat');
+  });
+
+  it('returns null for homologues without any tree', () => {
+    const r = fromGrameneGene([{ _id: 'Y', homology: { homologous_genes: { within_species_paralog: ['Z'] } } }]);
+    expect(r.geneTreeId).toBeNull();
+    expect(r.geneTreeField).toBeNull();
   });
 
   it('throws on an empty payload', () => {
@@ -198,6 +230,20 @@ describe('fromGrameneGene', () => {
 
   it('throws when _id is missing', () => {
     expect(() => fromGrameneGene([{}])).toThrow(/missing _id/);
+  });
+});
+
+describe('grameneGeneTreeRef', () => {
+  it('prefers gene_tree, then a tree set; skips homologous_genes and supertree', () => {
+    expect(grameneGeneTreeRef({ gene_tree: { id: 'G1' }, wheat: { id: 'W1' } })).toEqual({ id: 'G1', field: 'gene_tree' });
+    expect(grameneGeneTreeRef({ homologous_genes: { id: 'nope' }, oat: { id: 'O1' } })).toEqual({ id: 'O1', field: 'oat' });
+    expect(grameneGeneTreeRef({ supertree: 'ST1', homologous_genes: {} })).toBeNull();
+  });
+
+  it('ignores entries without a usable string id', () => {
+    expect(grameneGeneTreeRef({ gene_tree: { id: '' }, wheat: { id: 7 }, oat: {} })).toBeNull();
+    expect(grameneGeneTreeRef(undefined)).toBeNull();
+    expect(grameneGeneTreeRef('gene_tree')).toBeNull();
   });
 });
 
@@ -373,6 +419,23 @@ describe('fromGrameneNeighborhood', () => {
     expect(out['A']!.center.name).toBe('AlphaName');
     expect(out['B']!.center.strand).toBe(-1);
     expect(out['B']!.center.description).toBe('cool gene');
+  });
+
+  it('takes the family id from options.treeField for a clade tree set', () => {
+    const json = {
+      response: {
+        docs: [
+          { id: 'W1', gene_idx: 1, region: '1A', system_name: 'w', wheat: 'EplWheatGT_1' },
+          { id: 'W2', gene_idx: 2, region: '1A', system_name: 'w', gene_tree: 'EPlGT_9' },
+        ],
+      },
+    };
+    const out = fromGrameneNeighborhood(json, { treeField: 'wheat' });
+    expect(out['W1']!.center.geneTree).toBe('EplWheatGT_1');
+    // A doc without the set's field falls back to gene_tree.
+    expect(out['W2']!.center.geneTree).toBe('EPlGT_9');
+    // The default field ignores the set's.
+    expect(fromGrameneNeighborhood(json)['W1']!.center.geneTree).toBeUndefined();
   });
 
   it('returns an empty map on garbage payload', () => {

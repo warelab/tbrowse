@@ -6,11 +6,11 @@ Generated from the built declaration files; one page per entry point. The root e
 
 | Entry point | Exports | Page | Contents |
 |---|---|---|---|
-| `tbrowse-core` | 270 (61 root-only) | this page | Everything below, plus the data-model types, the table-zone types and aggregators, and the genotype call encoding. |
+| `tbrowse-core` | 275 (61 root-only) | this page | Everything below, plus the data-model types, the table-zone types and aggregators, and the genotype call encoding. |
 | `tbrowse-core/tree` | 37 | [tree.md](./tree.md) | Children index, walks, roll-ups, pruning, pivot, Newick, hierarchy conversion, swaps, validation. |
 | `tbrowse-core/parsers` | 21 | [parsers.md](./parsers.md) | Newick, Nexus and PhyloXML tree parsers; CSV/TSV table parser. |
 | `tbrowse-core/fetch` | 19 | [fetch.md](./fetch.md) | Retrying fetch, JSON and URL helpers, bounded fan-out. |
-| `tbrowse-core/sources` | 90 | [sources.md](./sources.md) | REST adapters, the TreeDataSource / DataSlot / Loader contract, built-in Ensembl, Gramene, BrAPI and file sources. |
+| `tbrowse-core/sources` | 95 | [sources.md](./sources.md) | REST adapters, the TreeDataSource / DataSlot / Loader contract, built-in Ensembl, Gramene, BrAPI and file sources. |
 | `tbrowse-core/cluster` | 8 | [cluster.md](./cluster.md) | UPGMA clustering of genotype dosages. |
 | `tbrowse-core/view` | 23 | [view.md](./view.md) | ViewState construction, normalisation, URL-hash codec, derived prunes, row model. |
 | `tbrowse-core/zone` | 11 | [zone.md](./zone.md) | Row flags, leaf/taxon joins and facet roll-ups for host-defined zones. |
@@ -1098,6 +1098,7 @@ Alphabetical, with the page that documents each name.
 | `FromGrameneGenetreeOptions` | [sources](./sources.md#fromgramenegenetreeoptions) |
 | `FromGrameneGenetreeResult` | [sources](./sources.md#fromgramenegenetreeresult) |
 | `fromGrameneNeighborhood` | [sources](./sources.md#fromgrameneneighborhood) |
+| `FromGrameneNeighborhoodOptions` | [sources](./sources.md#fromgrameneneighborhoodoptions) |
 | `fromHierarchy` | [tree](./tree.md#fromhierarchy) |
 | `FromHierarchyResult` | [tree](./tree.md#fromhierarchyresult) |
 | `fromTreeModel` | [tree](./tree.md#fromtreemodel) |
@@ -1110,13 +1111,17 @@ Alphabetical, with the page that documents each name.
 | `Germplasm` | [root](#germplasm) |
 | `getJson` | [fetch](./fetch.md#getjson) |
 | `GRAMENE_DEFAULT_BASE` | [sources](./sources.md#gramene_default_base) |
+| `GRAMENE_DEFAULT_TREE_FIELD` | [sources](./sources.md#gramene_default_tree_field) |
 | `GRAMENE_GENE_STRUCTURE_FL` | [sources](./sources.md#gramene_gene_structure_fl) |
 | `GrameneCtx` | [sources](./sources.md#gramenectx) |
 | `GrameneFetchOptions` | [sources](./sources.md#gramenefetchoptions) |
+| `grameneGeneTreeRef` | [sources](./sources.md#gramenegenetreeref) |
+| `GrameneGeneTreeRef` | [sources](./sources.md#gramenegenetreeref) |
 | `grameneGeneTreeSource` | [sources](./sources.md#gramenegenetreesource) |
 | `GrameneMeta` | [sources](./sources.md#gramenemeta) |
 | `grameneNeighborhoodQuery` | [sources](./sources.md#grameneneighborhoodquery) |
 | `GrameneSearchParams` | [sources](./sources.md#gramenesearchparams) |
+| `GrameneTreeQueryOptions` | [sources](./sources.md#gramenetreequeryoptions) |
 | `GtCall` | [cluster](./cluster.md#gtcall) |
 | `HierarchyAccessors` | [tree](./tree.md#hierarchyaccessors) |
 | `HostData` | [root](#hostdata) |

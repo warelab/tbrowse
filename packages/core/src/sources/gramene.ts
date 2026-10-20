@@ -12,6 +12,7 @@
 
 import { buildUrl, fanOutChunks, getJson, type FanOutProgress, type FanOutResult, type FetchLike } from '../fetch/index';
 import {
+  GRAMENE_DEFAULT_TREE_FIELD,
   fromGrameneGene,
   fromGrameneGeneStructures,
   fromGrameneGenetree,
@@ -33,6 +34,12 @@ export interface GrameneFetchOptions {
   signal?: AbortSignal;
 }
 
+/** Options for the tree-scoped `/search` helpers. */
+export interface GrameneTreeQueryOptions extends GrameneFetchOptions {
+  /** Solr field holding the tree id; default `gene_tree` (a clade set such as `wheat` otherwise). */
+  treeField?: string;
+}
+
 const transport = (opts: GrameneFetchOptions): { fetch?: FetchLike; signal?: AbortSignal } => ({
   ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
   ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
@@ -52,11 +59,18 @@ const NEIGHBORHOOD_FL =
  * `cache=false` because a cached graph fq caches its seed inside its own
  * filterCache `computeIfAbsent`, and Solr's FastLRUCache then throws
  * "Recursive update" (HTTP 500) for whichever trees' keys collide.
+ *
+ * `treeField` is the Solr field holding the tree id — `gene_tree`, or a
+ * clade tree set such as `wheat` — and is added to `fl` when it isn't
+ * `gene_tree`, so the neighbours' family ids come back too.
  */
-export function grameneNeighborhoodQuery(treeId: string): Record<string, string> {
+export function grameneNeighborhoodQuery(
+  treeId: string,
+  treeField: string = GRAMENE_DEFAULT_TREE_FIELD,
+): Record<string, string> {
   return {
-    fl: NEIGHBORHOOD_FL,
-    fq: `{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1 cache=false}gene_tree:${treeId}`,
+    fl: treeField === GRAMENE_DEFAULT_TREE_FIELD ? NEIGHBORHOOD_FL : `${NEIGHBORHOOD_FL},${treeField}`,
+    fq: `{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1 cache=false}${treeField}:${treeId}`,
     rows: '100000',
     start: '0',
   };
@@ -101,10 +115,11 @@ export async function fetchGrameneGenetree(
 export async function fetchGrameneNeighborhood(
   base: string,
   treeId: string,
-  opts: GrameneFetchOptions = {},
+  opts: GrameneTreeQueryOptions = {},
 ): Promise<Record<GeneId, Neighborhood>> {
-  const json = await getJson(buildUrl(base, '/search', grameneNeighborhoodQuery(treeId)), transport(opts));
-  return fromGrameneNeighborhood(json);
+  const treeField = opts.treeField ?? GRAMENE_DEFAULT_TREE_FIELD;
+  const json = await getJson(buildUrl(base, '/search', grameneNeighborhoodQuery(treeId, treeField)), transport(opts));
+  return fromGrameneNeighborhood(json, { treeField });
 }
 
 /** The narrow field list the playground requests for gene structures (`main.tsx:618`). */
@@ -194,7 +209,7 @@ export async function fetchGrameneSearchDocs<T = Record<string, unknown>>(
 }
 
 /** Options accepted by {@link fetchGrameneExprAttrDocs}. */
-export interface FetchGrameneExprAttrDocsOptions extends GrameneFetchOptions {
+export interface FetchGrameneExprAttrDocsOptions extends GrameneTreeQueryOptions {
   /** Solr `rows`; default 10000 (high enough to cover any one tree). */
   rows?: number;
 }
@@ -205,7 +220,8 @@ export interface FetchGrameneExprAttrDocsOptions extends GrameneFetchOptions {
  * `fq=gene_tree:<treeId>`, `fq=capabilities:expression_attributes`,
  * `fl=id,expr_*__attr_*`, `rows=10000`. Scoping by the capability means
  * only genes that actually carry the data come back; the glob `fl` lets
- * the columns be discovered from the data. Origin: `Homology.js:293-331`.
+ * the columns be discovered from the data. `opts.treeField` replaces
+ * `gene_tree` for a clade tree set. Origin: `Homology.js:293-331`.
  */
 export function fetchGrameneExprAttrDocs(
   base: string,
@@ -216,7 +232,7 @@ export function fetchGrameneExprAttrDocs(
     base,
     {
       q: '*:*',
-      fq: [`gene_tree:${treeId}`, 'capabilities:expression_attributes'],
+      fq: [`${opts.treeField ?? GRAMENE_DEFAULT_TREE_FIELD}:${treeId}`, 'capabilities:expression_attributes'],
       fl: 'id,expr_*__attr_*',
       rows: opts.rows ?? 10000,
     },
@@ -255,6 +271,11 @@ export interface GrameneCtx {
   /** Tree id, when already known: skips the `/genes` lookup. */
   treeId?: string;
   /**
+   * Solr field / tree set holding `treeId`. Rarely needed: the source takes
+   * it from the tree doc's `tree_set`, or from the gene lookup.
+   */
+  treeField?: string;
+  /**
    * An already-fetched `/genetrees` response (the bare root doc or the
    * one-element array), normalised with `Array.isArray(x) ? x : [x]`.
    * Together with `treeId` the root load makes no request at all.
@@ -273,6 +294,8 @@ export interface GrameneCtx {
 /** Root metadata of {@link grameneGeneTreeSource}. */
 export interface GrameneMeta {
   treeId: string;
+  /** Solr field holding `treeId` (`gene_tree`, or a clade set like `wheat`); scopes the tree's `/search` queries. */
+  treeField: string;
   /** The `/genes` lookup result, when the root had to resolve `geneId` to a tree. */
   gene?: FromGrameneGeneResult;
   /** Gene id → translation accession (parity with the Ensembl source). */
@@ -284,7 +307,11 @@ const neighborhoodSlot: DataSlot<Record<GeneId, Neighborhood>, GrameneCtx, Grame
   mode: 'eager',
   enabled: (ctx) => ctx.neighborhood !== false,
   run: ({ ctx, fetch, signal, root }) =>
-    fetchGrameneNeighborhood(ctx.base ?? GRAMENE_DEFAULT_BASE, root.meta.treeId, { fetch, signal }),
+    fetchGrameneNeighborhood(ctx.base ?? GRAMENE_DEFAULT_BASE, root.meta.treeId, {
+      treeField: root.meta.treeField,
+      fetch,
+      signal,
+    }),
   toHostData: (v) => ({ neighborhood: v }),
 };
 
@@ -346,7 +373,13 @@ export const grameneGeneTreeSource: TreeDataSource<GrameneCtx, GrameneMeta> = {
       exonJunctions: r.exonJunctions,
     };
     if (r.msa !== undefined) data.msa = r.msa;
-    const meta: GrameneMeta = { treeId, proteinIdByGeneId: r.proteinIdByGeneId };
+    // The tree doc's tree_set is authoritative; docs without one (v69) fall
+    // back to what the gene lookup or the host said, then to gene_tree.
+    const treeField =
+      r.treeField !== GRAMENE_DEFAULT_TREE_FIELD
+        ? r.treeField
+        : ctx.treeField ?? gene?.geneTreeField ?? GRAMENE_DEFAULT_TREE_FIELD;
+    const meta: GrameneMeta = { treeId, treeField, proteinIdByGeneId: r.proteinIdByGeneId };
     if (gene !== undefined) meta.gene = gene;
     return {
       tree: r.tree,

@@ -61,6 +61,15 @@ describe('GRAMENE_DEFAULT_BASE / grameneNeighborhoodQuery', () => {
   });
 });
 
+describe('grameneNeighborhoodQuery with a clade tree set', () => {
+  it('scopes the graph query by the set and adds it to fl', () => {
+    const q = grameneNeighborhoodQuery('W1', 'wheat');
+    expect(q.fq).toBe('{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1 cache=false}wheat:W1');
+    expect(q.fl).toBe('id,name,gene_tree,gene_idx,region,start,end,strand,biotype,system_name,description,wheat');
+    expect(grameneNeighborhoodQuery('T1', 'gene_tree')).toEqual(grameneNeighborhoodQuery('T1'));
+  });
+});
+
 describe('fetchGrameneGene / fetchGrameneGenetree', () => {
   it('hits /genes?idList=<gene> and reads the tree id', async () => {
     const f = fakeFetch({ [GENE_URL]: { json: geneDoc } });
@@ -184,6 +193,13 @@ describe('fetchGrameneSearchDocs / fetchGrameneExprAttrDocs', () => {
     expect(f.urls()).toEqual([url]);
   });
 
+  it('expr attrs: treeField scopes the query by a clade tree set', async () => {
+    const url = `${BASE}/search?q=*%3A*&fq=wheat%3AW1&fq=capabilities%3Aexpression_attributes&fl=id%2Cexpr_*__attr_*&rows=10000`;
+    const f = fakeFetch({ [url]: { json: { response: { docs: [] } } } });
+    expect(await fetchGrameneExprAttrDocs(BASE, 'W1', { treeField: 'wheat', fetch: f.fetch })).toEqual([]);
+    expect(f.urls()).toEqual([url]);
+  });
+
   it('search docs: q defaults to *:*, rows omitted when undefined, fq repeated', async () => {
     const url = `${BASE}/search?q=*%3A*&fq=a%3A1&fq=b%3A2&fl=id`;
     const f = fakeFetch({ [url]: { json: { response: { docs: [{ id: 'x' }] } } } });
@@ -235,7 +251,11 @@ describe('grameneGeneTreeSource', () => {
     const root = await grameneGeneTreeSource.loadRoot(rootCtx({ treeId: TREE }, f.fetch));
     expect(f.urls()).toEqual([TREE_URL]);
     expect(root.nodeOfInterest).toBeUndefined();
-    expect(root.meta).toEqual({ treeId: TREE, proteinIdByGeneId: { AT1G01040: 'AT1G01040.1', Zm00001eb000010: 'Zm00001eb000010_T001' } });
+    expect(root.meta).toEqual({
+      treeId: TREE,
+      treeField: 'gene_tree',
+      proteinIdByGeneId: { AT1G01040: 'AT1G01040.1', Zm00001eb000010: 'Zm00001eb000010_T001' },
+    });
   });
 
   it('treeId + rawGenetree makes zero fetches, as a bare doc and as an array', async () => {
@@ -268,6 +288,30 @@ describe('grameneGeneTreeSource', () => {
     expect(f.urls()).toEqual([url]);
     expect(Object.keys(slot.toHostData(v, root))).toEqual(['neighborhood']);
     expect(Object.keys(v)).toContain('AT1G01040');
+  });
+
+  it('clade tree: meta.treeField from the tree doc tree_set scopes the neighborhood slot', async () => {
+    const wheatTree = { ...genetreeDoc, tree_set: 'wheat' };
+    const ctx: GrameneCtx = { treeId: 'W1', rawGenetree: wheatTree };
+    const root = await grameneGeneTreeSource.loadRoot(rootCtx(ctx, noFetch.fetch));
+    expect(root.meta.treeField).toBe('wheat');
+    const url = `${BASE}/search?${new URLSearchParams(grameneNeighborhoodQuery('W1', 'wheat')).toString()}`;
+    const docs = { response: { docs: [{ id: 'G', gene_idx: 1, region: '1', system_name: 's', wheat: 'W1' }] } };
+    const f = fakeFetch({ [url]: { json: docs } });
+    const v = await slotOf('neighborhood').run(slotCtx(ctx, f.fetch, root));
+    expect(f.urls()).toEqual([url]);
+    expect(v['G']!.center.geneTree).toBe('W1');
+  });
+
+  it('clade tree: a tree doc without tree_set takes the field from the gene lookup, else ctx', async () => {
+    const wheatGene = [{ _id: 'AT1G01040', homology: { wheat: { id: TREE } } }];
+    const f = fakeFetch({ [GENE_URL]: { json: wheatGene }, [TREE_URL]: { json: [genetreeDoc] } });
+    const root = await grameneGeneTreeSource.loadRoot(rootCtx({ geneId: 'AT1G01040' }, f.fetch));
+    expect(root.meta.treeField).toBe('wheat');
+    const viaCtx = await grameneGeneTreeSource.loadRoot(
+      rootCtx({ treeId: TREE, treeField: 'oat', rawGenetree: genetreeDoc }, noFetch.fetch),
+    );
+    expect(viaCtx.meta.treeField).toBe('oat');
   });
 
   it('geneStructures slot: enabled unless ctx.geneStructures === false; chunk size and fl from ctx', async () => {
