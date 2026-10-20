@@ -306,7 +306,7 @@ export function fromGrameneGene(json: unknown): FromGrameneGeneResult {
  * Subset of the Gramene `/search` doc shape relevant to neighbourhood
  * rendering. The host fetches via the documented graph query
  * (`{!graph from=compara_neighbors_10 to=compara_idx_multi
- * maxDepth=1}gene_tree:<id>`) which returns every gene within ±10 of any
+ * maxDepth=1 cache=false}gene_tree:<id>`) which returns every gene within ±10 of any
  * leaf in the tree, plus the leaves themselves.
  */
 interface GrameneNeighborhoodDoc {

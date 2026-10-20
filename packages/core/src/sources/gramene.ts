@@ -46,13 +46,17 @@ const NEIGHBORHOOD_FL =
  * Query parameters of the Solr graph query that returns every leaf of a
  * gene tree plus its ±10 flanking genes, in the order the origins set
  * them: `fl`, `fq='{!graph from=compara_neighbors_10 to=compara_idx_multi
- * maxDepth=1}gene_tree:<treeId>'`, `rows=100000`, `start=0`. Origin:
- * `main.tsx:576-586`, `Homology.js:222-226`.
+ * maxDepth=1 cache=false}gene_tree:<treeId>'`, `rows=100000`, `start=0`.
+ * Origin: `main.tsx:576-586`, `Homology.js:222-226`.
+ *
+ * `cache=false` because a cached graph fq caches its seed inside its own
+ * filterCache `computeIfAbsent`, and Solr's FastLRUCache then throws
+ * "Recursive update" (HTTP 500) for whichever trees' keys collide.
  */
 export function grameneNeighborhoodQuery(treeId: string): Record<string, string> {
   return {
     fl: NEIGHBORHOOD_FL,
-    fq: `{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1}gene_tree:${treeId}`,
+    fq: `{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1 cache=false}gene_tree:${treeId}`,
     rows: '100000',
     start: '0',
   };

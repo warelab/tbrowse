@@ -45,7 +45,7 @@ const GENE_URL = `${BASE}/genes?idList=AT1G01040`;
 const TREE_URL = `${BASE}/genetrees?idList=${TREE}`;
 const NEIGHBORHOOD_URL =
   `${BASE}/search?fl=id%2Cname%2Cgene_tree%2Cgene_idx%2Cregion%2Cstart%2Cend%2Cstrand%2Cbiotype%2Csystem_name%2Cdescription` +
-  `&fq=%7B%21graph+from%3Dcompara_neighbors_10+to%3Dcompara_idx_multi+maxDepth%3D1%7Dgene_tree%3A${TREE}&rows=100000&start=0`;
+  `&fq=%7B%21graph+from%3Dcompara_neighbors_10+to%3Dcompara_idx_multi+maxDepth%3D1+cache%3Dfalse%7Dgene_tree%3A${TREE}&rows=100000&start=0`;
 const STRUCTURES_URL =
   `${BASE}/genes?idList=AT1G01040%2CZm00001eb000010&rows=-1&fl=_id%2Cname%2Clocation%2Cgene_structure%2Ccanonical_transcript`;
 
@@ -54,7 +54,7 @@ describe('GRAMENE_DEFAULT_BASE / grameneNeighborhoodQuery', () => {
     expect(BASE).toBe('https://data.gramene.org/v69');
     expect(grameneNeighborhoodQuery('T1')).toEqual({
       fl: 'id,name,gene_tree,gene_idx,region,start,end,strand,biotype,system_name,description',
-      fq: '{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1}gene_tree:T1',
+      fq: '{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1 cache=false}gene_tree:T1',
       rows: '100000',
       start: '0',
     });
@@ -92,7 +92,7 @@ describe('fetchGrameneNeighborhood', () => {
     expect(f.urls()).toEqual([NEIGHBORHOOD_URL]);
     const { path, params } = splitUrl(f.urls()[0]!);
     expect(path).toBe(`${BASE}/search`);
-    expect(params.get('fq')).toBe(`{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1}gene_tree:${TREE}`);
+    expect(params.get('fq')).toBe(`{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1 cache=false}gene_tree:${TREE}`);
     expect(n.AT1G01040!.upstream.map((g) => g.id)).toEqual(['AT1G01030']);
     expect(n.AT1G01040!.downstream.map((g) => g.id)).toEqual(['AT1G01050']);
   });
