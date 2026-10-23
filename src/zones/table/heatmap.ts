@@ -1,4 +1,4 @@
-import type { TableData } from './types';
+import type { TableData } from 'tbrowse-core';
 
 export interface HeatmapDomain {
   min: number;

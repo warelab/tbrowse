@@ -4,9 +4,9 @@ import { allFields, builtInFields, providerFields, type LabelField } from './fie
 import { LabelsConfigPopover } from './ConfigPopover';
 import { EditableZoneName } from '../EditableZoneName';
 import { useProviderCache } from './providerCache';
-import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { LEAF_ROW_HEIGHT } from 'tbrowse-core';
 import { compileStringMatcher } from '../../search/fields';
-import { buildChildrenIndex } from '../../treeIndex';
+import { buildChildrenIndex } from 'tbrowse-core';
 import { describeHoveredNodeForHeader } from '../headerInfo';
 
 export interface LabelsZoneState {

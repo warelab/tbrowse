@@ -53,25 +53,40 @@ export default defineConfig(({ command, mode }) => {
         rollupOptions: {
           // Externalise every runtime dependency so consumers'
           // bundlers resolve them from their own node_modules. React
-          // and react-dom are peer deps; zustand is a hard dep listed
-          // in `dependencies`, so npm install pulls it in
-          // automatically.
-          external: ['react', 'react-dom', 'react/jsx-runtime', 'zustand'],
+          // and react-dom are peer deps; zustand and tbrowse-core are
+          // hard deps listed in `dependencies`, so npm install pulls
+          // them in automatically. tbrowse-core is deliberately NOT
+          // aliased in lib mode so the rolled-up d.ts keeps
+          // `from 'tbrowse-core'` instead of inlining its types.
+          external: ['react', 'react-dom', 'react/jsx-runtime', 'zustand', 'tbrowse-core'],
         },
       },
     };
   }
 
-  // Dev server + playground build share the same root and alias —
-  // the playground imports `tbrowse` and the alias resolves directly
-  // into src/, so it tracks the latest sources without a library
-  // pre-build.
+  // Dev server + playground build share the same root and aliases —
+  // the playground imports `tbrowse` and `tbrowse-core` and the aliases
+  // resolve directly into the sources, so it tracks the latest code
+  // without a library pre-build of either package.
   const playgroundConfig = {
     plugins: [react()],
     root: resolve(__dirname, 'examples/playground'),
     resolve: {
       alias: {
         tbrowse: resolve(__dirname, 'src/index.ts'),
+        'tbrowse-core': resolve(__dirname, 'packages/core/src/index.ts'),
+      },
+    },
+    server: {
+      // The playground's BrAPI mode fetches a relative
+      // `/brapi/v2/allelematrix-search?…&tree=upgma` URL. Point the proxy at a
+      // running gramene-g2p API (its default dev port is 8080) or any other
+      // BrAPI v2 server via BRAPI_PROXY_TARGET.
+      proxy: {
+        '/brapi': {
+          target: process.env.BRAPI_PROXY_TARGET ?? 'http://localhost:8080',
+          changeOrigin: true,
+        },
       },
     },
   };

@@ -1,0 +1,70 @@
+[
+  {
+    "id": "ENSG1",
+    "feature_type": "gene",
+    "start": 100,
+    "end": 400,
+    "strand": 1,
+    "seq_region_name": "7",
+    "external_name": "ABC"
+  },
+  {
+    "id": "ENST1",
+    "feature_type": "transcript",
+    "Parent": "ENSG1",
+    "start": 100,
+    "end": 300,
+    "strand": 1,
+    "seq_region_name": "7",
+    "biotype": "protein_coding",
+    "is_canonical": 1,
+    "external_name": "ABC-201"
+  },
+  {
+    "id": "ENST2",
+    "feature_type": "transcript",
+    "Parent": "ENSG1",
+    "start": 150,
+    "end": 400,
+    "strand": 1,
+    "seq_region_name": "7",
+    "biotype": "retained_intron",
+    "is_canonical": 0,
+    "external_name": "ABC-202"
+  },
+  { "id": "ENSE1", "feature_type": "exon", "Parent": "ENST1", "start": 200, "end": 300 },
+  { "id": "ENSE2", "feature_type": "exon", "Parent": "ENST1", "start": 100, "end": 150 },
+  { "id": "CDS1", "feature_type": "cds", "Parent": "ENST1", "start": 120, "end": 150 },
+  { "id": "CDS2", "feature_type": "cds", "Parent": "ENST1", "start": 200, "end": 260 },
+  { "id": "ENSE3", "feature_type": "exon", "Parent": "ENST2", "start": 150, "end": 400 },
+  {
+    "id": "ENSTX",
+    "feature_type": "transcript",
+    "Parent": "ENSG_OTHER",
+    "start": 50,
+    "end": 90,
+    "strand": -1,
+    "seq_region_name": "7",
+    "biotype": "protein_coding",
+    "is_canonical": 1,
+    "external_name": "XYZ-201"
+  },
+  { "id": "ENSEX", "feature_type": "exon", "Parent": "ENSTX", "start": 50, "end": 90 },
+  {
+    "id": "ENSR1",
+    "feature_type": "regulatory",
+    "feature_type_class": "Promoter",
+    "description": "Predicted promoter",
+    "start": 50,
+    "end": 120
+  },
+  {
+    "id": "ENSM1",
+    "feature_type": "motif_feature",
+    "binding_matrix_stable_id": "ENSPFM0001",
+    "start": 130,
+    "end": 140,
+    "strand": -1
+  },
+  { "id": "ENSR_BROKEN", "feature_type": "regulatory", "feature_type_class": "Enhancer", "start": 10 }
+]

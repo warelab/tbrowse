@@ -4,30 +4,69 @@ import { createBrowserRouter, Link, RouterProvider } from 'react-router-dom';
 import {
   TBrowse,
   ensureThemeStylesInjected,
-  computePivotState,
   createGenomeZone,
+  createGenotypeMatrixZone,
   createTableZone,
-  type ZoneDefinition,
-  fromEnsemblGeneTree,
-  fromEnsemblGeneStructure,
-  fromEnsemblGenomeFeatures,
-  fromEnsemblProteinFeatures,
-  fromGrameneGene,
-  fromGrameneGenetree,
-  fromGrameneGeneStructures,
-  fromGrameneNeighborhood,
   labelsZone,
   msaZone,
   neighborhoodZone,
   treeZone,
-  type FromEnsemblResult,
-  type FromGrameneGenetreeResult,
-  type GeneStructure,
-  type Neighborhood,
+  useInitialViewState,
+  useLoader,
   type PrunedNodeStyle,
-  type ProteinDomain,
+  type RootReadyMode,
+  type Tree,
+  type UseLoaderResult,
   type ViewState,
+  type ZoneDefinition,
 } from 'tbrowse';
+// Everything that fetches or parses lives in tbrowse-core (also usable from
+// Node): the data sources and the loader contract, the view-state builders
+// and the URL-hash codec. The viewer only adds the React glue (`useLoader`,
+// `useInitialViewState`).
+import {
+  ENSEMBL_DEFAULT_MIRROR,
+  ENSEMBL_MIRRORS,
+  applyPivot,
+  brapiAlleleMatrixSource,
+  buildInitialViewState,
+  computePivotState,
+  ensemblGeneTreeSource,
+  fileTreeSource,
+  grameneGeneTreeSource,
+  isViewStateLike,
+  normalizeViewState,
+  parseTableFile,
+  readHashState,
+  staticSource,
+  writeHashState,
+  type BrapiCtx,
+  type BrapiMeta,
+  type DataSlot,
+  type EnsemblCtx,
+  type EnsemblMeta,
+  type EnsemblMirror,
+  type FileTreeCtx,
+  type FileTreeMeta,
+  type GrameneCtx,
+  type GrameneMeta,
+  type LoaderSnapshot,
+  type SlotState,
+  type TreeDataSource,
+  type TreeFileFormat,
+} from 'tbrowse-core';
+import {
+  sampleExpressionColumns,
+  sampleExpressionTable,
+  sampleRoot,
+  sampleScoreColumns,
+  sampleScoreTable,
+  type SampleMeta,
+  type SampleSize,
+} from './sampleTree';
+import { Layout } from './Layout';
+import { AboutPage } from './AboutPage';
+import { DevelopersPage } from './DevelopersPage';
 
 const PRUNED_STYLES: { id: PrunedNodeStyle; label: string }[] = [
   { id: 'square', label: 'Square' },
@@ -42,153 +81,17 @@ const PRUNED_STYLES: { id: PrunedNodeStyle; label: string }[] = [
   { id: 'broken', label: 'Broken branch' },
   { id: 'bracket', label: 'Bracket (])' },
 ];
-import {
-  largeSampleTree,
-  sampleExpressionColumns,
-  sampleExpressionTable,
-  sampleGeneMetadata,
-  sampleGeneStructures,
-  sampleGenomeFeatures,
-  sampleGoProvider,
-  sampleMSA,
-  sampleProteinDomains,
-  sampleScoreColumns,
-  sampleScoreTable,
-  sampleTaxonomy,
-  sampleTree,
-} from './sampleTree';
-import { parseTableFile } from './parseTableFile';
-import {
-  parseTreeFile,
-  type ParsedTreeFile,
-  type TreeFileFormat,
-} from './parseTreeFile';
-import { Layout } from './Layout';
-import { AboutPage } from './AboutPage';
-import { DevelopersPage } from './DevelopersPage';
 
 const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
-
-/**
- * Ensembl REST endpoints, newest release first. Each archive host pins a
- * single release and runs on infrastructure separate from the main
- * `rest.ensembl.org` endpoint, which intermittently sheds load with 5xx
- * (and multi-second latency on a bare /info/ping) when traffic spikes.
- * Picking an archive trades currency for consistency.
- *
- * `route` is not cosmetic: the gene-tree member endpoint changed shape
- * mid-history. Releases <= 109 answer only
- * `/genetree/member/id/{gene}`; releases >= 112 answer only
- * `/genetree/member/id/{species}/{gene}`; 110 and 111 accept both.
- * Sending the wrong form gets a 404, so the URL builder switches on it.
- *
- * Release 106 (apr2022) is deliberately absent — that host accepts TCP
- * connections but never responds.
- */
-interface EnsemblMirror {
-  /** Hostname, and the stable id persisted in the URL hash. */
-  host: string;
-  /** Ensembl release served by this host. */
-  release: number;
-  /** Gene-tree member route shape this release understands. */
-  route: 'bare' | 'species';
-}
-
-const ENSEMBL_MIRRORS: readonly EnsemblMirror[] = [
-  { host: 'rest.ensembl.org', release: 116, route: 'species' },
-  // sep2025 takes the archive overflow traffic and measures several
-  // times slower than its neighbours; prefer a lower release if the
-  // per-leaf fan-outs feel sluggish.
-  { host: 'sep2025.rest.ensembl.org', release: 115, route: 'species' },
-  { host: 'may2025.rest.ensembl.org', release: 114, route: 'species' },
-  { host: 'oct2024.rest.ensembl.org', release: 113, route: 'species' },
-  { host: 'may2024.rest.ensembl.org', release: 112, route: 'species' },
-  { host: 'jan2024.rest.ensembl.org', release: 111, route: 'species' },
-  { host: 'jul2023.rest.ensembl.org', release: 110, route: 'species' },
-  { host: 'feb2023.rest.ensembl.org', release: 109, route: 'bare' },
-  { host: 'oct2022.rest.ensembl.org', release: 108, route: 'bare' },
-  { host: 'jul2022.rest.ensembl.org', release: 107, route: 'bare' },
-  { host: 'dec2021.rest.ensembl.org', release: 105, route: 'bare' },
-];
-
-/** The current endpoint, so the playground shows current Ensembl data by
- *  default. It is the load-sensitive one — `fetchWithRetry` absorbs the
- *  transient 5xx, and the picker is there for when it cannot. */
-const ENSEMBL_DEFAULT_MIRROR = 'rest.ensembl.org';
-
-const mirrorFor = (host: string): EnsemblMirror =>
-  ENSEMBL_MIRRORS.find((m) => m.host === host) ??
-  (ENSEMBL_MIRRORS.find((m) => m.host === ENSEMBL_DEFAULT_MIRROR) as EnsemblMirror);
+const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
+// The dev server proxies `/brapi` to BRAPI_PROXY_TARGET (default
+// http://localhost:8080, gramene-g2p's API); without a server there the
+// load fails with an HTTP error in the BrAPI row rather than hanging.
+const BRAPI_DEFAULT_URL =
+  '/brapi/v2/allelematrix-search?variantSetDbId=kg-chr22-big:GRCh37&referenceName=22&start=24000000&end=24050000&minAF=0.05&maxAF=0.95&tree=upgma';
 
 const mirrorLabel = (m: EnsemblMirror) =>
-  `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} \u00b7 r${m.release}`;
-
-const ensemblUrlFor = (geneId: string, host: string) => {
-  const m = mirrorFor(host);
-  // The species segment is only valid on the newer route; older
-  // releases take the gene id directly and infer the species from it.
-  const member =
-    m.route === 'species' ? `homo_sapiens/${geneId}` : `${geneId}`;
-  return (
-    `https://${m.host}/genetree/member/id/${member}` +
-    `?aligned=1&sequence=protein`
-  );
-};
-
-/** Transient statuses worth another attempt. Ensembl sheds load with
- *  5xx and rate-limits with 429; every other 4xx is a real client error
- *  (deprecated accession, unknown id) that retrying cannot fix. */
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524]);
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** Exponential backoff with jitter, capped. Honours `Retry-After` when
- *  the server sends one. The jitter matters for the per-leaf fan-outs:
- *  without it, six workers that fail together retry together forever. */
-function backoffMs(
-  attempt: number,
-  base: number,
-  retryAfter: string | null,
-): number {
-  if (retryAfter) {
-    const secs = Number(retryAfter);
-    if (Number.isFinite(secs) && secs >= 0) {
-      return Math.min(secs * 1000, 30_000);
-    }
-  }
-  const capped = Math.min(base * 2 ** attempt, 8_000);
-  return Math.round(capped * (0.5 + Math.random() * 0.5));
-}
-
-/**
- * `fetch` with bounded retries for the failure modes Ensembl REST shows
- * under load: 429, 5xx, and dropped connections. Returns the final
- * response even when it is still a failure, so callers keep their
- * existing `res.ok` handling; only a network-level error throws.
- */
-async function fetchWithRetry(
-  url: string,
-  init: RequestInit = {},
-  { attempts = 4, baseDelayMs = 500 }: { attempts?: number; baseDelayMs?: number } = {},
-): Promise<Response> {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    try {
-      const res = await fetch(url, init);
-      if (res.ok || !RETRYABLE_STATUS.has(res.status)) return res;
-      if (attempt === attempts - 1) return res;
-      await sleep(backoffMs(attempt, baseDelayMs, res.headers.get('Retry-After')));
-    } catch (err) {
-      lastError = err;
-      if (attempt === attempts - 1) break;
-      await sleep(backoffMs(attempt, baseDelayMs, null));
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(`Network error fetching ${url}`);
-}
+  `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} · r${m.release}`;
 
 // Initial fr-share per zone id. The chassis treats zone widths as
 // fractions of the container so this gives tree 30 % / labels 20 % /
@@ -201,83 +104,391 @@ const INITIAL_ZONE_FR: Record<string, number> = {
   'genome-canonical': 24,
   'table-expression': 12,
   'table-scores': 10,
+  'brapi-genotype': 50,
 };
 
 /**
- * URL-hash round-tripping for the playground's full state — the data
- * source (sample / ensembl / gramene), any source-specific selector
- * (currently only Gramene's gene-id input), and the TBrowse `viewState`
- * prop. Encoded as `#<percent-encoded JSON>` with `history.replaceState`
- * so the back button stays uncluttered. A page reload rehydrates the
- * data source (re-fetching Gramene if needed), then re-applies the
- * stored viewState — collapsed/pruned subtrees, NoI, MSA viewport,
- * label fields, search, zone widths/order, and per-zone state.
+ * Host zone id → the loader slots that feed it. Slot ids are the sources'
+ * (`proteinDomains` / `overlap` from Ensembl, `neighborhood` /
+ * `geneStructures` from Gramene, `germplasm` / `variants` from BrAPI); zone
+ * ids are ours. The loader derives `zoneStatus` from this map, so zone
+ * headers show a spinner / error glyph while their slot is in flight.
  */
-interface UrlState {
-  source?: DataSource;
-  /** Gene id used to load the Gramene tree — only meaningful when
-   *  source === 'gramene'. */
-  grameneGeneId?: string;
-  /** Gene id used to load the Ensembl tree — only meaningful when
-   *  source === 'ensembl'. */
-  ensemblGeneId?: string;
-  /** REST host the Ensembl tree was loaded from. Persisted so a shared
-   *  link reproduces the same release, not just the same gene. */
-  ensemblMirror?: string;
-  viewState?: Partial<ViewState>;
+const ZONE_SLOTS = {
+  msa: ['proteinDomains'],
+  'genome-canonical': ['overlap', 'geneStructures'],
+  neighborhood: ['neighborhood'],
+  labels: ['germplasm'],
+  'brapi-genotype': ['variants'],
+} as const satisfies Record<string, readonly string[]>;
+
+// ─── Data sources ────────────────────────────────────────────────────────────
+
+type SourceKind = 'sample' | 'ensembl' | 'gramene' | 'uploaded' | 'brapi';
+
+interface SampleCtx {
+  size: SampleSize;
 }
 
-function decodeUrlState(): UrlState | null {
-  if (typeof window === 'undefined') return null;
-  const h = window.location.hash;
-  if (!h || h.length < 2) return null;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(h.slice(1))) as unknown;
-    if (parsed && typeof parsed === 'object') return parsed as UrlState;
-  } catch {
-    // Malformed hash — silently ignore so the user lands on a fresh view
-    // rather than a blank screen.
-  }
-  return null;
-}
+/** The composite loader context: which source, plus that source's own ctx. */
+type PlaygroundCtx =
+  | { kind: 'sample'; ctx: SampleCtx }
+  | { kind: 'ensembl'; ctx: EnsemblCtx }
+  | { kind: 'gramene'; ctx: GrameneCtx }
+  | { kind: 'uploaded'; ctx: FileTreeCtx }
+  | { kind: 'brapi'; ctx: BrapiCtx };
 
-function encodeUrlState(s: UrlState): string {
-  return '#' + encodeURIComponent(JSON.stringify(s));
-}
+type PlaygroundMeta = SampleMeta | EnsemblMeta | GrameneMeta | FileTreeMeta | BrapiMeta;
 
-function buildInitialViewState(zoneIds: string[]): ViewState {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySource = TreeDataSource<any, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySlot = DataSlot<any, any, any>;
+
+/** The bundled tree as a data source; "toggle tree size" is a ctx change. */
+const sampleSource = staticSource((ctx: SampleCtx) => sampleRoot(ctx.size));
+
+const SOURCES: Record<SourceKind, AnySource> = {
+  sample: sampleSource,
+  ensembl: ensemblGeneTreeSource,
+  gramene: grameneGeneTreeSource,
+  uploaded: fileTreeSource,
+  brapi: brapiAlleleMatrixSource,
+};
+
+/**
+ * Lifts one source's slot into the composite source: it only runs when
+ * the composite ctx names its source, and it sees that source's own ctx.
+ * Everything else (`toHostData`, `patchMeta`, `failWhen`, …) is reused.
+ */
+function liftSlot(kind: SourceKind, slot: AnySlot): DataSlot<unknown, PlaygroundCtx, PlaygroundMeta> {
   return {
-    selectedNodeId: null,
-    collapsedNodeIds: [],
-    prunedNodeIds: [],
-    swappedNodeIds: [],
-    compressedNodeIds: [],
-    nodeOfInterestId: null,
-    zones: zoneIds.map((id) => ({
-      id,
-      width: INITIAL_ZONE_FR[id] ?? 25,
-      visible: true,
-    })),
-    zoneStates: {},
-    search: null,
+    ...slot,
+    enabled: (c, root) => c.kind === kind && slot.enabled?.(c.ctx, root) !== false,
+    run: (sc) => slot.run({ ...sc, ctx: sc.ctx.ctx }),
   };
 }
 
-/** Mount-time helper: prefers viewState encoded in the URL hash, falls
- *  back to a fresh `buildInitialViewState`. Only used at first render —
- *  the app's reset / data-source-switch paths build fresh state. */
-function buildBootstrapViewState(zoneIds: string[]): ViewState {
-  const url = decodeUrlState();
-  const base = buildInitialViewState(zoneIds);
-  return url?.viewState ? { ...base, ...url.viewState } : base;
+/**
+ * The ONE source the playground runs: `loadRoot` dispatches on
+ * `ctx.kind`, and the slots are every source's slots lifted with an
+ * `enabled` guard (the ids never collide: `proteinDomains` / `overlap`,
+ * `neighborhood` / `geneStructures`, `germplasm` / `variants`). A single
+ * loader — rather than one per kind — keeps `snapshot.generation`
+ * monotonic across source switches, which the playground's own
+ * `activeRequestedAt` watermark and `swapsAppliedFor` guard rely on, and
+ * keeps one `snapshot.slots` map for the toolbar readouts.
+ * (`useInitialViewState` does not depend on it: it seeds once per
+ * `snapshot.tree` object.)
+ */
+const playgroundSource: TreeDataSource<PlaygroundCtx, PlaygroundMeta> = {
+  id: 'playground',
+  label: 'Playground',
+  loadRoot: ({ ctx, fetch, signal }) => SOURCES[ctx.kind].loadRoot({ ctx: ctx.ctx, fetch, signal }),
+  slots: (Object.keys(SOURCES) as SourceKind[]).flatMap((kind) =>
+    SOURCES[kind].slots.map((slot: AnySlot) => liftSlot(kind, slot)),
+  ),
+};
+
+/**
+ * What the loader is running: the loader ctx, the restart key for
+ * `useLoader`, and what to do with the view state once this root is ready.
+ * It flips on every click; what is on screen is a `LoadedRoot`, which
+ * only follows once the load succeeds.
+ */
+type ActiveSource = PlaygroundCtx & {
+  /** Restart identity: bumps on every explicit load, so re-clicking "Load" refetches. */
+  key: string;
+  /**
+   * View-state policy for `useInitialViewState.onRootReady` (`'reset'` is
+   * implied whenever there is no previous state): `'soft'` clears the
+   * node-level fields but keeps the zone layout — a source / gene switch;
+   * `'keep'` leaves the view untouched — a mirror switch (same gene, new
+   * host) or the first root after a URL-hash bootstrap, whose stored view
+   * must win over the pivot.
+   */
+  onReady: Exclude<RootReadyMode, 'reset'>;
+};
+type OnReady = ActiveSource['onReady'];
+
+/** A root that loaded: the source it came from, its snapshot and the host props built from it. */
+interface LoadedRoot {
+  source: ActiveSource;
+  snapshot: LoaderSnapshot<PlaygroundMeta>;
+  props: NonNullable<UseLoaderResult<PlaygroundCtx, PlaygroundMeta>['hostProps']>;
 }
 
-type DataSource = 'sample' | 'ensembl' | 'gramene' | 'uploaded';
+let loadSeq = 0;
+const keyFor = (kind: SourceKind, descriptor: string): string =>
+  `${kind}:${descriptor}#${++loadSeq}`;
 
-const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
-const GRAMENE_BASE = 'https://data.gramene.org/v69';
+const sampleActive = (size: SampleSize, onReady: OnReady): ActiveSource => ({
+  kind: 'sample',
+  ctx: { size },
+  key: keyFor('sample', size),
+  onReady,
+});
+const ensemblActive = (geneId: string, host: string, onReady: OnReady): ActiveSource => ({
+  kind: 'ensembl',
+  ctx: { geneId, host },
+  key: keyFor('ensembl', `${host}/${geneId}`),
+  onReady,
+});
+const grameneActive = (geneId: string, onReady: OnReady): ActiveSource => ({
+  kind: 'gramene',
+  ctx: { geneId },
+  key: keyFor('gramene', geneId),
+  onReady,
+});
+const uploadedActive = (file: File, onReady: OnReady): ActiveSource => ({
+  kind: 'uploaded',
+  ctx: { file },
+  key: keyFor('uploaded', `${file.name}:${file.size}:${file.lastModified}`),
+  onReady,
+});
+const brapiActive = (matrixUrl: string, onReady: OnReady): ActiveSource => ({
+  kind: 'brapi',
+  ctx: { matrixUrl },
+  key: keyFor('brapi', matrixUrl),
+  onReady,
+});
+
+/** Human-readable name of what is loading, for the status panel. */
+function sourceLabel(a: ActiveSource): string {
+  switch (a.kind) {
+    case 'sample':
+      return `the ${a.ctx.size} sample tree`;
+    case 'ensembl':
+      return `Ensembl gene tree for ${a.ctx.geneId}`;
+    case 'gramene':
+      return `Gramene gene tree for ${a.ctx.geneId ?? a.ctx.treeId ?? '?'}`;
+    case 'uploaded':
+      return typeof a.ctx.file === 'string' ? 'uploaded tree' : a.ctx.file.name ?? 'uploaded tree';
+    case 'brapi':
+      return 'BrAPI allele matrix';
+  }
+}
+
+// ─── URL hash ────────────────────────────────────────────────────────────────
+
+/**
+ * URL-hash round-tripping for the playground's full state — the data
+ * source, the serialisable part of its ctx (gene ids, REST host, matrix
+ * URL; never a `File`), and the TBrowse `viewState` prop. Written with
+ * `history.replaceState` so the back button stays uncluttered. A reload
+ * restarts the same source, then the stored viewState is kept over the
+ * fresh pivot — collapsed/pruned subtrees, NoI, MSA viewport, label
+ * fields, search, zone widths/order and per-zone state all survive.
+ */
+interface PlaygroundUrlCtx {
+  geneId?: string;
+  host?: string;
+  matrixUrl?: string;
+  size?: SampleSize;
+}
+
+interface PlaygroundUrlState {
+  source?: SourceKind;
+  ctx?: PlaygroundUrlCtx;
+  viewState?: Partial<ViewState>;
+  /** Written by earlier playground builds; still honoured so old links keep working. */
+  ensemblGeneId?: string;
+  ensemblMirror?: string;
+  grameneGeneId?: string;
+}
+
+const isPlaygroundUrlState = (v: unknown): v is PlaygroundUrlState =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function urlCtxOf(a: ActiveSource): PlaygroundUrlCtx {
+  switch (a.kind) {
+    case 'sample':
+      return { size: a.ctx.size };
+    case 'ensembl':
+      return { geneId: a.ctx.geneId, ...(a.ctx.host !== undefined ? { host: a.ctx.host } : {}) };
+    case 'gramene':
+      return a.ctx.geneId !== undefined ? { geneId: a.ctx.geneId } : {};
+    case 'uploaded':
+      return {};
+    case 'brapi':
+      return { matrixUrl: a.ctx.matrixUrl };
+  }
+}
+
+interface Bootstrap {
+  active: ActiveSource;
+  /** The stored view, normalised; `null` when the hash carried none. */
+  viewState: ViewState | null;
+  ensemblGene: string;
+  ensemblHost: string;
+  grameneGene: string;
+  brapiUrl: string;
+}
+
+/**
+ * Mount-time decode of the hash: which source to start, the input values
+ * to seed, and the view state to hand `useInitialViewState` as `initial`.
+ * A bad or absent hash lands on the sample tree with a fresh view.
+ */
+function bootstrapFromUrl(): Bootstrap {
+  const url = readHashState<PlaygroundUrlState>(isPlaygroundUrlState);
+  const source = url?.source;
+  const ctx = url?.ctx ?? {};
+  const viewState =
+    url?.viewState !== undefined && isViewStateLike(url.viewState)
+      ? normalizeViewState(url.viewState)
+      : null;
+  // Only a stored view can be kept; otherwise the root's own pivot applies.
+  const onReady: OnReady = viewState ? 'keep' : 'soft';
+  const ensemblGene =
+    (source === 'ensembl' ? ctx.geneId : undefined) ?? url?.ensemblGeneId ?? ENSEMBL_DEFAULT_GENE;
+  const ensemblHost =
+    (source === 'ensembl' ? ctx.host : undefined) ?? url?.ensemblMirror ?? ENSEMBL_DEFAULT_MIRROR;
+  const grameneGene =
+    (source === 'gramene' ? ctx.geneId : undefined) ?? url?.grameneGeneId ?? GRAMENE_DEFAULT_GENE;
+  const brapiUrl = (source === 'brapi' ? ctx.matrixUrl : undefined) ?? BRAPI_DEFAULT_URL;
+  let active: ActiveSource;
+  switch (source) {
+    case 'ensembl':
+      active = ensemblActive(ensemblGene, ensemblHost, onReady);
+      break;
+    case 'gramene':
+      active = grameneActive(grameneGene, onReady);
+      break;
+    case 'brapi':
+      active = brapiActive(brapiUrl, onReady);
+      break;
+    default:
+      // An uploaded tree cannot be restored (the File never reaches the
+      // URL): fall back to the sample tree, keeping the stored layout but
+      // not node ids that belonged to the upload.
+      active = sampleActive(
+        ctx.size === 'large' ? 'large' : 'small',
+        source === 'uploaded' ? 'soft' : onReady,
+      );
+  }
+  return { active, viewState, ensemblGene, ensemblHost, grameneGene, brapiUrl };
+}
+
+// ─── View state ──────────────────────────────────────────────────────────────
+
+/**
+ * Every zone visible at its playground width. The kitchen-sink demo shows
+ * everything up front rather than honouring the zones' own
+ * `defaultVisible` / exclusive-group defaults, so this goes in as
+ * `overrides.zones` (which `buildInitialViewState` spreads last).
+ */
+const allZonesVisible = (zs: readonly ZoneDefinition<any>[]) =>
+  zs.map((z) => ({ id: z.id, width: INITIAL_ZONE_FR[z.id] ?? 25, visible: true }));
+
+function freshViewState(zs: readonly ZoneDefinition<any>[]): ViewState {
+  return buildInitialViewState(zs, { overrides: { zones: allZonesVisible(zs) } });
+}
+
+function countLeaves(tree: Tree): number {
+  let n = 0;
+  for (const node of Object.values(tree.nodes)) if (node.isLeaf) n++;
+  return n;
+}
+
+// ─── The playground ──────────────────────────────────────────────────────────
 
 export function Playground() {
+  // Decoded once per mount (StrictMode's double call is harmless: the
+  // function is pure apart from the restart-key counter).
+  const [boot] = useState(bootstrapFromUrl);
+  /** What the loader runs; switches on every click (through `activate`). What is on screen is `shown`, below. */
+  const [active, setActive] = useState<ActiveSource>(boot.active);
+  const [sampleSize, setSampleSize] = useState<SampleSize>(
+    boot.active.kind === 'sample' ? boot.active.ctx.size : 'small',
+  );
+  const [ensemblGeneInput, setEnsemblGeneInput] = useState(boot.ensemblGene);
+  /** Picker selection; the host the tree was actually loaded from is `active.ctx.host`. */
+  const [ensemblMirror, setEnsemblMirror] = useState(boot.ensemblHost);
+  const [grameneGeneInput, setGrameneGeneInput] = useState(boot.grameneGene);
+  const [brapiUrl, setBrapiUrl] = useState(boot.brapiUrl);
+  /** The last tree file that PARSED (format + leaf count captured when its
+   *  root arrived); "View uploaded" re-runs it through the file source. A
+   *  file the source rejected is only ever reported in the row's error. */
+  const [uploaded, setUploaded] = useState<{
+    file: File;
+    format: TreeFileFormat;
+    leaves: number;
+  } | null>(null);
+  /** Uploads are scoped to the data source they were added under, so a
+   *  CSV uploaded while looking at the sample tree doesn't follow the
+   *  user into Gramene mode (where its gene ids would resolve to
+   *  nothing) and vice versa. The chassis hides any zone whose
+   *  `isAvailable(data)` returns false anyway, but keeping uploads
+   *  partitioned avoids stale entries from cluttering the Zones list. */
+  const [uploadedZonesBySource, setUploadedZonesBySource] = useState<
+    Record<SourceKind, ZoneDefinition[]>
+  >({ sample: [], ensembl: [], gramene: [], uploaded: [], brapi: [] });
+  const [uploadStatus, setUploadStatus] = useState<{
+    state: 'idle' | 'error';
+    message?: string;
+  }>({ state: 'idle' });
+
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  // Embedding / cosmetic props (TBrowseProps.showHeader / rowHeight / fontSize).
+  const [showHeader, setShowHeader] = useState(true);
+  const [rowHeight, setRowHeight] = useState(24);
+  const [fontSize, setFontSize] = useState(12);
+
+  // ── The one loader. `active` is the ctx; `active.key` restarts it. ──
+  const { snapshot, loader, hostProps } = useLoader(playgroundSource, active, {
+    key: active.key,
+    zoneSlots: ZONE_SLOTS,
+  });
+
+  // `useLoader` restarts in an effect, so the render that changes `active`
+  // still sees the previous run's snapshot. Every switch therefore records
+  // the loader generation it was requested at: only a newer snapshot is
+  // `active`'s own; an older one belongs to whatever loaded before. (Read
+  // off the loader rather than the rendered `snapshot` so the watermark is
+  // the live value even if a store update has not rendered yet.)
+  const activeRequestedAt = useRef(-1);
+  const activate = (next: ActiveSource) => {
+    activeRequestedAt.current = loader.getSnapshot().generation;
+    setActive(next);
+  };
+  const isActiveSnapshot = snapshot.generation > activeRequestedAt.current;
+  /** `active`'s own root status — `'loading'` until the loader has picked it up. */
+  const activeStatus = isActiveSnapshot && snapshot.status !== 'idle' ? snapshot.status : 'loading';
+
+  // ── What is on screen ──
+  // `active` flips on click, but the playground's MODE — the zone list,
+  // the toolbar enablement, the stats line and the URL hash — follows the
+  // root that actually loaded, as the old per-source state did: a 4xx from
+  // Ensembl or an unparseable file leaves the previous tree and mode in
+  // place and is only reported in that source's toolbar row. `loaded` is
+  // `active`'s own ready root (null while in flight or failed); `shownRoot`
+  // keeps the last one across the gap, so the chassis only swaps once the
+  // next root is ready.
+  const loaded = useMemo<LoadedRoot | null>(
+    () => (hostProps && isActiveSnapshot ? { source: active, snapshot, props: hostProps } : null),
+    [hostProps, isActiveSnapshot, active, snapshot],
+  );
+  const lastLoaded = useRef<LoadedRoot | null>(null);
+  useEffect(() => {
+    if (loaded) lastLoaded.current = loaded;
+  }, [loaded]);
+  const shownRoot = loaded ?? lastLoaded.current;
+  /** The source whose tree is on screen; the bootstrapped one until a first root arrives. */
+  const shown: ActiveSource = shownRoot?.source ?? boot.active;
+  const shownMeta = shownRoot?.snapshot.root?.meta ?? null;
+  const brapiMeta = shown.kind === 'brapi' && shownMeta !== null && 'matrix' in shownMeta ? shownMeta : null;
+  const fileMeta =
+    shown.kind === 'uploaded' && shownMeta !== null && 'warnings' in shownMeta ? shownMeta : null;
+  // From the last READY BrAPI root rather than the live snapshot (whose
+  // root is null while a BrAPI → BrAPI reload is in flight), so the
+  // genotype zone stays registered across the reload and keeps the user's
+  // width / visibility, as `'soft'` promises. Still replaced when the
+  // `variants` slot patches REF/ALT into the matrix: that swaps
+  // `snapshot.root` while the status stays `'ready'`, so `loaded` — and
+  // with it this matrix — is rebuilt.
+  const matrix = brapiMeta?.matrix ?? null;
+
   const expressionZone = useMemo(
     () =>
       createTableZone({
@@ -311,28 +522,23 @@ export function Playground() {
       }),
     [],
   );
-  // The data-source state has to be declared BEFORE the `zones` useMemo
-  // because that memo's factory references `dataSource` synchronously
-  // on the first render — JS const declarations live in a temporal
-  // dead zone until their declaration line, so reading them earlier
-  // throws.
-  const bootstrappedUrl = useMemo(() => decodeUrlState(), []);
-  const [dataSource, setDataSource] = useState<DataSource>(
-    bootstrappedUrl?.source ?? 'sample',
+  // BrAPI genotype-matrix zone — rebuilt whenever the matrix changes (a
+  // new root, or the `variants` slot enriching it) so the factory
+  // captures the current data; same id, so `ensureZones` keeps its view
+  // entry. Null until a BrAPI root is ready.
+  const genotypeZone = useMemo(
+    () =>
+      matrix
+        ? createGenotypeMatrixZone({
+            id: 'brapi-genotype',
+            displayName: 'Genotypes',
+            matrix,
+            defaultWidth: 50,
+            minWidth: 240,
+          })
+        : null,
+    [matrix],
   );
-  /** Uploads are scoped to the data source they were added under, so a
-   *  CSV uploaded while looking at the sample tree doesn't follow the
-   *  user into Gramene mode (where its gene ids would resolve to
-   *  nothing) and vice versa. The chassis hides any zone whose
-   *  `isAvailable(data)` returns false anyway, but keeping uploads
-   *  partitioned avoids stale entries from cluttering the Zones list. */
-  const [uploadedZonesBySource, setUploadedZonesBySource] = useState<
-    Record<DataSource, ZoneDefinition[]>
-  >({ sample: [], ensembl: [], gramene: [], uploaded: [] });
-  const [uploadStatus, setUploadStatus] = useState<{
-    state: 'idle' | 'error';
-    message?: string;
-  }>({ state: 'idle' });
   const zones = useMemo(
     () => [
       treeZone,
@@ -342,596 +548,147 @@ export function Playground() {
       genomeZone,
       // The sample-scoped factory tables live alongside the sample's
       // own uploads under the 'sample' bucket; together they're only
-      // wired in when the active source is 'sample'.
-      ...(dataSource === 'sample' ? [expressionZone, scoresZone] : []),
-      ...(uploadedZonesBySource[dataSource] ?? []),
+      // wired in while the sample tree is the one on screen.
+      ...(shown.kind === 'sample' ? [expressionZone, scoresZone] : []),
+      ...(genotypeZone ? [genotypeZone] : []),
+      ...(uploadedZonesBySource[shown.kind] ?? []),
     ],
-    [genomeZone, expressionZone, scoresZone, uploadedZonesBySource, dataSource],
+    [genomeZone, expressionZone, scoresZone, genotypeZone, uploadedZonesBySource, shown.kind],
   );
-  const zoneIds = useMemo(() => zones.map((z) => z.id), [zones]);
 
-  const [tree, setTree] = useState(sampleTree);
-  const [viewState, setViewState] = useState<ViewState>(() => buildBootstrapViewState(zoneIds));
-  const [ensemblGeneInput, setEnsemblGeneInput] = useState(
-    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblGeneId
-      ? bootstrappedUrl.ensemblGeneId
-      : ENSEMBL_DEFAULT_GENE,
-  );
-  /** Tracks the gene id that successfully drove the most recent
-   *  Ensembl fetch. Drives the URL hash, the NoI prop, and the
-   *  pivot-on-load logic. */
-  const [loadedEnsemblGeneId, setLoadedEnsemblGeneId] = useState<string | null>(
-    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblGeneId
-      ? bootstrappedUrl.ensemblGeneId
-      : null,
-  );
-  /** Picker selection. Applied on the next load; `loadedEnsemblMirror`
-   *  is what the fan-outs actually use, so domains and gene structures
-   *  can never be fetched from a different release than the tree. */
-  const [ensemblMirror, setEnsemblMirror] = useState<string>(
-    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblMirror
-      ? bootstrappedUrl.ensemblMirror
-      : ENSEMBL_DEFAULT_MIRROR,
-  );
-  const [loadedEnsemblMirror, setLoadedEnsemblMirror] = useState<string>(
-    bootstrappedUrl?.source === 'ensembl' && bootstrappedUrl.ensemblMirror
-      ? bootstrappedUrl.ensemblMirror
-      : ENSEMBL_DEFAULT_MIRROR,
-  );
-  const [ensemblData, setEnsemblData] = useState<FromEnsemblResult | null>(null);
-  const [ensemblStatus, setEnsemblStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [ensemblError, setEnsemblError] = useState<string | null>(null);
-  const [ensemblDomains, setEnsemblDomains] = useState<
-    Record<string, ProteinDomain[]> | null
-  >(null);
-  const [domainStatus, setDomainStatus] = useState<{
-    state: 'idle' | 'loading' | 'error';
-    done?: number;
-    total?: number;
-    /** Leaves whose domain call never succeeded, after retries. A
-     *  non-zero count is reported but does not fail the batch. */
-    failed?: number;
-    error?: string;
-  }>({ state: 'idle' });
-  const [ensemblGeneStructures, setEnsemblGeneStructures] = useState<
-    Record<string, GeneStructure> | null
-  >(null);
-  const [ensemblGenomeFeatures, setEnsemblGenomeFeatures] = useState<
-    Record<string, GenomeFeature[]> | null
-  >(null);
-  const [ensemblGeneStructureErrors, setEnsemblGeneStructureErrors] = useState<
-    Record<string, string> | null
-  >(null);
-  const [overlapStatus, setOverlapStatus] = useState<{
-    state: 'idle' | 'loading' | 'error';
-    done?: number;
-    total?: number;
-    error?: string;
-  }>({ state: 'idle' });
+  const overrides = useMemo(() => ({ zones: allZonesVisible(zones) }), [zones]);
+  const [viewState, setViewState] = useInitialViewState(zones, snapshot, {
+    overrides,
+    initial: boot.viewState,
+    onRootReady: (_snap, prev) => (prev === null ? 'reset' : active.onReady),
+  });
 
-  const [grameneGeneInput, setGrameneGeneInput] = useState(
-    bootstrappedUrl?.source === 'gramene' && bootstrappedUrl.grameneGeneId
-      ? bootstrappedUrl.grameneGeneId
-      : GRAMENE_DEFAULT_GENE,
-  );
-  const [grameneData, setGrameneData] = useState<FromGrameneGenetreeResult | null>(null);
-  const [grameneNeighborhood, setGrameneNeighborhood] = useState<
-    Record<string, Neighborhood> | null
-  >(null);
-  const [grameneGeneStructures, setGrameneGeneStructures] = useState<
-    Record<string, GeneStructure> | null
-  >(null);
-  const [grameneStatus, setGrameneStatus] = useState<{
-    state: 'idle' | 'loading' | 'error';
-    error?: string;
-  }>({ state: 'idle' });
-
-  // Uploaded-tree state. The parser auto-detects format and returns
-  // either a `Tree` (always) plus an optional `taxonomy` (PhyloXML).
-  const [uploadedTree, setUploadedTree] = useState<ParsedTreeFile | null>(null);
-  const [uploadedTreeFilename, setUploadedTreeFilename] = useState<string | null>(
-    null,
-  );
-  const [uploadTreeError, setUploadTreeError] = useState<string | null>(null);
-
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  // Embedding / cosmetic props (TBrowseProps.showHeader / rowHeight / fontSize).
-  const [showHeader, setShowHeader] = useState(true);
-  const [rowHeight, setRowHeight] = useState(24);
-  const [fontSize, setFontSize] = useState(12);
-
-  const applyEnsemblViewState = (data: FromEnsemblResult, geneId: string) => {
-    const pivot = computePivotState(data.tree, geneId);
-    const initial = buildInitialViewState(zoneIds);
-    setViewState(
-      pivot
+  // BrAPI: once the root is in, reproduce the server's leaf order (the
+  // swaps `fromBRAPITree` computed) and default the labels to
+  // germplasm-flavoured fields, since the leaves are samples, not genes.
+  // Runs after useInitialViewState's own seeding (declared above) in the
+  // same commit; once per loader generation (a `variants` patch replaces
+  // `shownRoot` but not its generation); skipped for a URL bootstrap,
+  // whose stored view already carries both.
+  const swapsAppliedFor = useRef(-1);
+  useEffect(() => {
+    if (!brapiMeta || !shownRoot) return;
+    if (swapsAppliedFor.current === shownRoot.snapshot.generation) return;
+    swapsAppliedFor.current = shownRoot.snapshot.generation;
+    if (shownRoot.source.onReady === 'keep') return;
+    const swappedNodeIds = brapiMeta.swappedNodeIds;
+    setViewState((vs) =>
+      vs
         ? {
-            ...initial,
-            collapsedNodeIds: pivot.collapsedNodeIds,
-            swappedNodeIds: pivot.swappedNodeIds,
-            nodeOfInterestId: pivot.targetId,
+            ...vs,
+            swappedNodeIds,
+            zoneStates: {
+              ...vs.zoneStates,
+              labels: {
+                ...(vs.zoneStates.labels as Record<string, unknown> | undefined),
+                visibleFields: ['germplasm.id', 'germplasm.species'],
+              },
+            },
           }
-        : initial,
+        : vs,
     );
-  };
+  }, [brapiMeta, shownRoot, setViewState]);
 
-  const loadEnsembl = async (
-    geneIdRaw: string,
-    opts: { applyPivot?: boolean; mirror?: string } = {},
-  ) => {
+  // Remember what the uploaded file parsed to, for the toolbar readout and
+  // "View uploaded" — only once its root is on screen, so neither is
+  // offered for a file the source rejected.
+  useEffect(() => {
+    if (!shownRoot) return;
+    const { source, snapshot: loadedSnapshot, props } = shownRoot;
+    if (source.kind !== 'uploaded') return;
+    const meta = loadedSnapshot.root?.meta;
+    const file = source.ctx.file;
+    if (!(file instanceof File) || !meta || !('warnings' in meta)) return;
+    setUploaded({ file, format: meta.format, leaves: countLeaves(props.tree) });
+  }, [shownRoot]);
+
+  // Mirror the SHOWN source + ctx + viewState into the URL hash so the
+  // playground state is shareable; a failed load never reaches the URL.
+  useEffect(() => {
+    if (!viewState) return;
+    writeHashState({ source: shown.kind, ctx: urlCtxOf(shown), viewState }, 'replace');
+  }, [shown, viewState]);
+
+  // ── Source switches: each one is just a new `active` (via `activate`) ──
+
+  const loadEnsembl = (geneIdRaw: string) => {
     const geneId = geneIdRaw.trim();
     if (geneId === '') return;
-    const applyPivot = opts.applyPivot ?? true;
-    // Explicit override lets the picker re-load from the newly chosen
-    // host without waiting for the `ensemblMirror` state to settle.
-    const host = opts.mirror ?? ensemblMirror;
-    setEnsemblStatus('loading');
-    setEnsemblError(null);
-    try {
-      const res = await fetchWithRetry(ensemblUrlFor(geneId, host), {
-        headers: { Accept: 'application/json' },
-      });
-      if (!res.ok) {
-        const m = mirrorFor(host);
-        // A 404 here is almost always the route-shape mismatch rather
-        // than a missing gene, so name the cause instead of the code.
-        throw new Error(
-          res.status === 404
-            ? `HTTP 404 from ${m.host} (release ${m.release}) — no gene tree for ${geneId}`
-            : `HTTP ${res.status} from ${m.host}`,
-        );
-      }
-      const json = (await res.json()) as unknown;
-      const data = fromEnsemblGeneTree(json);
-      setEnsemblData(data);
-      setLoadedEnsemblMirror(host);
-      setEnsemblDomains(null);
-      setDomainStatus({ state: 'idle' });
-      setEnsemblGeneStructures(null);
-      setEnsemblGenomeFeatures(null);
-      setEnsemblGeneStructureErrors(null);
-      setOverlapStatus({ state: 'idle' });
-      setLoadedEnsemblGeneId(geneId);
-      setDataSource('ensembl');
-      if (applyPivot) applyEnsemblViewState(data, geneId);
-      setEnsemblStatus('idle');
-    } catch (err) {
-      setEnsemblError(err instanceof Error ? err.message : String(err));
-      setEnsemblStatus('error');
-    }
-  };
-
-  /**
-   * Fan out to /overlap/translation/{ENSP}?feature=protein_feature for
-   * every leaf with a known translation id, with a small concurrency cap
-   * so we don't slam the Ensembl REST API. Each response is shoved through
-   * `fromEnsemblProteinFeatures` (the pure converter) and accumulated by
-   * GeneId, so the network code stays in the host and the package only
-   * sees normalized data.
-   */
-  const loadEnsemblDomains = async () => {
-    if (!ensemblData) return;
-    if (ensemblDomains) return;
-    const entries = Object.entries(ensemblData.proteinIdByGeneId);
-    if (entries.length === 0) {
-      setDomainStatus({ state: 'error', error: 'No protein ids on this tree' });
-      return;
-    }
-    setDomainStatus({ state: 'loading', done: 0, total: entries.length });
-    const host = loadedEnsemblMirror;
-    const result: Record<string, ProteinDomain[]> = {};
-    let done = 0;
-    let failed = 0;
-    let lastError = '';
-    const concurrency = 6;
-    let cursor = 0;
-    // A single leaf failing used to abort the whole fan-out, which made
-    // one transient 5xx out of ~175 requests lose the entire batch.
-    // Failures are now counted and skipped — `fetchWithRetry` has
-    // already backed off and retried before we get here.
-    const worker = async () => {
-      while (cursor < entries.length) {
-        const idx = cursor++;
-        const [geneId, ensp] = entries[idx];
-        try {
-          const res = await fetchWithRetry(
-            `https://${host}/overlap/translation/${ensp}?feature=protein_feature`,
-            { headers: { Accept: 'application/json' } },
-          );
-          if (!res.ok) throw new Error(`HTTP ${res.status} for ${ensp}`);
-          const json = (await res.json()) as unknown;
-          // Filter to Pfam + Smart for v1; users can broaden by editing
-          // this option list. Drop the option to keep every source.
-          result[geneId] = fromEnsemblProteinFeatures(json, {
-            sources: ['Pfam', 'Smart'],
-          });
-        } catch (err) {
-          failed++;
-          lastError = err instanceof Error ? err.message : String(err);
-        }
-        done++;
-        setDomainStatus({
-          state: 'loading',
-          done,
-          total: entries.length,
-          failed,
-        });
-      }
-    };
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    if (Object.keys(result).length === 0) {
-      setDomainStatus({
-        state: 'error',
-        error: `All ${entries.length} domain requests failed (${lastError})`,
-      });
-      return;
-    }
-    setEnsemblDomains(result);
-    setDomainStatus({
-      state: 'idle',
-      done,
-      total: entries.length,
-      failed,
-    });
-  };
-
-  /**
-   * Fan out to /overlap/id/{geneId}?feature=transcript;feature=exon;
-   * feature=cds;feature=regulatory;feature=motif for every leaf in the
-   * loaded tree. The single endpoint produces both `GeneStructure` (gene
-   * model exons + CDS) and `GenomeFeature[]` (regulatory + motif
-   * elements) — they're split out by the two converter functions so
-   * the playground can wire them into the matching TBrowse props.
-   *
-   * Same concurrency-capped pattern as `loadEnsemblDomains` — stays
-   * under the Ensembl REST API's 15 req/s limit, retries the transient
-   * statuses via `fetchWithRetry`, and surfaces whatever still fails
-   * per gene rather than aborting the batch.
-   */
-  const loadEnsemblOverlap = async () => {
-    if (!ensemblData) return;
-    if (ensemblGeneStructures) return;
-    const leaves = Object.values(ensemblData.tree.nodes)
-      .filter((n) => n.isLeaf && typeof n.geneId === 'string')
-      .map((n) => n.geneId as string);
-    if (leaves.length === 0) {
-      setOverlapStatus({ state: 'error', error: 'No leaves on this tree' });
-      return;
-    }
-    setOverlapStatus({ state: 'loading', done: 0, total: leaves.length });
-    const host = loadedEnsemblMirror;
-    const structures: Record<string, GeneStructure> = {};
-    const features: Record<string, GenomeFeature[]> = {};
-    const errors: Record<string, string> = {};
-    let done = 0;
-    const concurrency = 6;
-    let cursor = 0;
-    // Per-gene failures (HTTP 4xx, parse errors, dropped connections)
-    // are recorded in `errors` rather than aborting the whole batch —
-    // some genes legitimately 400 from Ensembl (deprecated ids, region
-    // misalignments) and we still want partial results for the rest of
-    // the tree. The genome zone reads `geneStructureErrors` and paints
-    // a ⚠ glyph in the strand-indicator slot for those rows.
-    const worker = async () => {
-      while (cursor < leaves.length) {
-        const idx = cursor++;
-        const geneId = leaves[idx];
-        try {
-          const url =
-            `https://${host}/overlap/id/${geneId}` +
-            `?feature=transcript;feature=exon;feature=cds` +
-            `;feature=regulatory;feature=motif`;
-          const res = await fetchWithRetry(url, {
-            headers: { Accept: 'application/json' },
-          });
-          if (!res.ok) {
-            errors[geneId] = `HTTP ${res.status}`;
-          } else {
-            const json = (await res.json()) as unknown;
-            const gs = fromEnsemblGeneStructure(json, geneId);
-            if (gs) structures[geneId] = gs;
-            else errors[geneId] = 'no gene structure in response';
-            const gf = fromEnsemblGenomeFeatures(json);
-            if (gf.length > 0) features[geneId] = gf;
-          }
-        } catch (err) {
-          errors[geneId] = err instanceof Error ? err.message : String(err);
-        }
-        done++;
-        setOverlapStatus({ state: 'loading', done, total: leaves.length });
-      }
-    };
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    setEnsemblGeneStructures(structures);
-    setEnsemblGenomeFeatures(Object.keys(features).length > 0 ? features : null);
-    setEnsemblGeneStructureErrors(
-      Object.keys(errors).length > 0 ? errors : null,
-    );
-    setOverlapStatus({ state: 'idle', done, total: leaves.length });
+    activate(ensemblActive(geneId, ensemblMirror, 'soft'));
   };
 
   /**
    * Switching release invalidates everything derived from the tree —
    * alignment width, protein ids and gene models all differ between
-   * Ensembl releases. Drop the derived data, then re-fetch the current
-   * gene from the new host, preserving the viewState so the user keeps
-   * their collapsed/pruned subtrees across the switch.
+   * Ensembl releases. Restarting the loader drops the slots, then
+   * re-fetches from the new host. Which gene, and with which view policy,
+   * depends on what is on screen:
+   * - the Ensembl tree being shown (`shown`; `active` may hold an
+   *   unrelated failed load): the same gene with `'keep'`, so the user
+   *   keeps their collapsed/pruned subtrees;
+   * - an Ensembl load that FAILED, or asked for a gene other than the one
+   *   on screen: that gene with `'soft'` — its tree was never shown, so
+   *   there is no view to keep and the pivot must apply;
+   * - no Ensembl tree shown or pending: nothing to reload; the picker just
+   *   sets the host for the next load.
    */
   const handleMirrorChange = (host: string) => {
     if (host === ensemblMirror) return;
     setEnsemblMirror(host);
-    setEnsemblDomains(null);
-    setEnsemblGeneStructures(null);
-    setEnsemblGenomeFeatures(null);
-    setEnsemblGeneStructureErrors(null);
-    setDomainStatus({ state: 'idle' });
-    setOverlapStatus({ state: 'idle' });
-    if (dataSource === 'ensembl' && loadedEnsemblGeneId) {
-      void loadEnsembl(loadedEnsemblGeneId, {
-        applyPivot: false,
-        mirror: host,
-      });
+    const onScreen = shown.kind === 'ensembl' ? shown.ctx.geneId : null;
+    const requested = active.kind === 'ensembl' ? active.ctx.geneId : null;
+    if (requested !== null && requested !== onScreen) {
+      activate(ensemblActive(requested, host, 'soft'));
+    } else if (onScreen !== null) {
+      activate(ensemblActive(onScreen, host, 'keep'));
     }
   };
 
-  /**
-   * Two-step Gramene fetch:
-   *  1) /genes?idList=<gene>  → read homology.gene_tree.id
-   *  2) /genetrees?idList=<treeId>  → tree + MSA + per-leaf domain hits
-   * The genetree response already contains the per-leaf protein domains
-   * with residue ranges, so there's no fan-out — one HTTP call beyond the
-   * gene lookup is enough.
-   */
-  /**
-   * Fetch +/-10 flanking genes around every leaf in the named tree via
-   * the Gramene Solr graph query, then convert via
-   * `fromGrameneNeighborhood` and stash on state. Errors are logged
-   * and otherwise non-fatal — the rest of the view still works without
-   * neighbourhood data.
-   */
-  const loadGrameneNeighborhood = async (treeId: string) => {
-    try {
-      const url = new URL(`${GRAMENE_BASE}/search`);
-      url.searchParams.set(
-        'fl',
-        'id,name,gene_tree,gene_idx,region,start,end,strand,biotype,system_name,description',
-      );
-      url.searchParams.set(
-        'fq',
-        `{!graph from=compara_neighbors_10 to=compara_idx_multi maxDepth=1}gene_tree:${treeId}`,
-      );
-      url.searchParams.set('rows', '100000');
-      url.searchParams.set('start', '0');
-      const res = await fetch(url.toString(), {
-        headers: { Accept: 'application/json' },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} on /search`);
-      const json = (await res.json()) as unknown;
-      const map = fromGrameneNeighborhood(json);
-      setGrameneNeighborhood(map);
-    } catch (err) {
-      // Non-fatal: surface to the console so the user can debug, but
-      // keep the rest of the playground working.
-      // eslint-disable-next-line no-console
-      console.warn('Neighborhood fetch failed:', err);
-    }
+  const loadGramene = (geneIdRaw: string) => {
+    const geneId = geneIdRaw.trim();
+    if (geneId === '') return;
+    activate(grameneActive(geneId, 'soft'));
   };
 
-  /**
-   * Fetch `gene_structure` (+ `location` + `name`) for every leaf in the
-   * tree, in chunks so the URL stays under typical proxy limits, and
-   * convert via `fromGrameneGeneStructures`. Errors are logged but
-   * non-fatal — the rest of the view keeps working without gene
-   * structures.
-   */
-  const loadGrameneGeneStructures = async (geneIds: string[]) => {
-    try {
-      const CHUNK = 200;
-      const accumulated: Record<string, GeneStructure> = {};
-      for (let i = 0; i < geneIds.length; i += CHUNK) {
-        const slice = geneIds.slice(i, i + CHUNK);
-        const url = new URL(`${GRAMENE_BASE}/genes`);
-        url.searchParams.set('rows', '-1');
-        url.searchParams.set(
-          'fl',
-          '_id,name,location,gene_structure,canonical_transcript',
-        );
-        url.searchParams.set('idList', slice.join(','));
-        const res = await fetch(url.toString(), {
-          headers: { Accept: 'application/json' },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status} on /genes`);
-        const json = (await res.json()) as unknown;
-        const map = fromGrameneGeneStructures(json);
-        for (const k of Object.keys(map)) accumulated[k] = map[k];
-      }
-      setGrameneGeneStructures(accumulated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('Gene-structure fetch failed:', err);
-    }
+  const loadBrapi = (urlRaw: string) => {
+    const url = urlRaw.trim();
+    if (url === '') return;
+    activate(brapiActive(url, 'soft'));
   };
 
-  /** Track which Gramene gene is currently loaded so the URL hash can
-   *  reflect it. Set on success, cleared when the user switches away. */
-  const [loadedGrameneGeneId, setLoadedGrameneGeneId] = useState<string | null>(
-    null,
-  );
+  const switchToSample = () => activate(sampleActive(sampleSize, 'soft'));
 
-  const loadGramene = async (
-    geneId: string,
-    opts: { applyPivot?: boolean } = {},
-  ) => {
-    const applyPivot = opts.applyPivot ?? true;
-    setGrameneStatus({ state: 'loading' });
-    try {
-      const geneRes = await fetch(
-        `${GRAMENE_BASE}/genes?idList=${encodeURIComponent(geneId)}`,
-        { headers: { Accept: 'application/json' } },
-      );
-      if (!geneRes.ok) throw new Error(`HTTP ${geneRes.status} on /genes`);
-      const geneJson = (await geneRes.json()) as unknown;
-      const gene = fromGrameneGene(geneJson);
-      if (!gene.geneTreeId) {
-        throw new Error(`Gene ${gene.geneId} has no gene tree assigned`);
-      }
-      const treeRes = await fetch(
-        `${GRAMENE_BASE}/genetrees?idList=${encodeURIComponent(gene.geneTreeId)}`,
-        { headers: { Accept: 'application/json' } },
-      );
-      if (!treeRes.ok) throw new Error(`HTTP ${treeRes.status} on /genetrees`);
-      const treeJson = (await treeRes.json()) as unknown;
-      const data = fromGrameneGenetree(treeJson);
-      setGrameneData(data);
-      // Reset any cached neighborhood from a previous tree, then kick
-      // off the (potentially large) Solr graph fetch in the background.
-      setGrameneNeighborhood(null);
-      void loadGrameneNeighborhood(gene.geneTreeId);
-      // Same pattern for gene structures: fan out to /genes for every
-      // leaf, in chunks. Runs concurrently with the neighborhood fetch.
-      setGrameneGeneStructures(null);
-      const leafIds = Object.values(data.tree.nodes)
-        .filter((n) => n.isLeaf && typeof n.geneId === 'string')
-        .map((n) => n.geneId as string);
-      if (leafIds.length > 0) {
-        void loadGrameneGeneStructures(leafIds);
-      }
-      setDataSource('gramene');
-      setLoadedGrameneGeneId(gene.geneId);
-      if (applyPivot) {
-        // Center on the originating gene so the user lands looking at it.
-        const initial = buildInitialViewState(zoneIds);
-        const pivot = computePivotState(data.tree, gene.geneId);
-        setViewState(
-          pivot
-            ? {
-                ...initial,
-                collapsedNodeIds: pivot.collapsedNodeIds,
-                swappedNodeIds: pivot.swappedNodeIds,
-                nodeOfInterestId: pivot.targetId,
-              }
-            : initial,
-        );
-      }
-      // When applyPivot is false, the URL-restored viewState that was
-      // applied at mount stays untouched — collapsed/pruned/NoI/etc.
-      // resolve against the just-loaded tree.
-      setGrameneStatus({ state: 'idle' });
-    } catch (err) {
-      setGrameneStatus({
-        state: 'error',
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+  const toggleSampleSize = () => {
+    const next: SampleSize = sampleSize === 'small' ? 'large' : 'small';
+    setSampleSize(next);
+    activate(sampleActive(next, 'soft'));
   };
 
-  /** Soft reset on data-source switches — clears per-tree fields
-   *  (selection, collapse, prune, NoI, search) but preserves the
-   *  `zones` list and per-zone state. Avoids two issues:
-   *   (a) `zoneIds` closure-stales so a fresh `buildInitialViewState`
-   *       drops the zones registered only for the new source.
-   *   (b) The chassis's `autoEnabledRef` won't re-add a zone that's
-   *       previously been auto-enabled, so wiping its entry leaves
-   *       the zone hidden until the user re-enables it manually. */
-  const softResetForSourceSwitch = () =>
-    setViewState((vs) => ({
-      ...vs,
-      selectedNodeId: null,
-      collapsedNodeIds: [],
-      prunedNodeIds: [],
-      swappedNodeIds: [],
-      compressedNodeIds: [],
-      nodeOfInterestId: null,
-      search: null,
-    }));
-
-  const switchToSample = () => {
-    setDataSource('sample');
-    softResetForSourceSwitch();
+  /** Hand a Newick / Nexus / PhyloXML file off an <input type=file> to the
+   *  file source. Parse errors surface as the source's root error (the
+   *  toolbar's "tree:" span) and leave the previous tree in place; soft
+   *  warnings (duplicate labels, trailing junk) arrive in `meta.warnings`
+   *  and become a status line. The file is only remembered (`uploaded`)
+   *  once its root loaded. */
+  const handleUploadedTree = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    activate(uploadedActive(file, 'soft'));
   };
 
-  /** Take a Newick / Nexus / PhyloXML file off an <input type=file>,
-   *  parse + validate it, and switch the chassis to the new tree. The
-   *  parser throws on hard failures (unknown format, malformed Newick)
-   *  — those are surfaced in the toolbar's error span; soft warnings
-   *  (duplicate labels, trailing junk) flow through `parsed.warnings`
-   *  and become a status line so the user knows the tree came up but
-   *  with caveats. */
-  const handleUploadedTree = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    setUploadTreeError(null);
-    try {
-      const text = await file.text();
-      const parsed = parseTreeFile(text, file.name);
-      setUploadedTree(parsed);
-      setUploadedTreeFilename(file.name);
-      setDataSource('uploaded');
-      softResetForSourceSwitch();
-      if (parsed.warnings.length > 0) {
-        setUploadTreeError(parsed.warnings.join('; '));
-      }
-    } catch (err) {
-      setUploadTreeError(err instanceof Error ? err.message : String(err));
-    }
+  const viewUploaded = () => {
+    if (uploaded) activate(uploadedActive(uploaded.file, 'soft'));
   };
 
-  // On mount, if the URL hash says we should be looking at a Gramene
-  // or Ensembl gene, kick off the load with `applyPivot: false` so the
-  // URL's viewState (already restored by buildBootstrapViewState)
-  // wins. The ref guard prevents StrictMode's double-mount from firing
-  // twice.
-  const bootstrappedRef = useRef(false);
-  useEffect(() => {
-    if (bootstrappedRef.current) return;
-    bootstrappedRef.current = true;
-    if (
-      bootstrappedUrl?.source === 'gramene' &&
-      bootstrappedUrl.grameneGeneId
-    ) {
-      void loadGramene(bootstrappedUrl.grameneGeneId, { applyPivot: false });
-    } else if (
-      bootstrappedUrl?.source === 'ensembl' &&
-      bootstrappedUrl.ensemblGeneId
-    ) {
-      void loadEnsembl(bootstrappedUrl.ensemblGeneId, {
-        applyPivot: false,
-        mirror: bootstrappedUrl.ensemblMirror ?? ENSEMBL_DEFAULT_MIRROR,
-      });
-    }
-  }, [bootstrappedUrl]);
-
-  // Mirror data source + per-source gene id + viewState into the URL
-  // hash so the playground state is shareable. `replaceState` keeps
-  // the back button uncluttered.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const next = encodeUrlState({
-      source: dataSource,
-      grameneGeneId: loadedGrameneGeneId ?? undefined,
-      ensemblGeneId: loadedEnsemblGeneId ?? undefined,
-      // Only meaningful alongside a loaded gene id — omitted otherwise
-      // so sample/Gramene links don't carry a stray Ensembl host.
-      ensemblMirror: loadedEnsemblGeneId ? loadedEnsemblMirror : undefined,
-      viewState,
-    });
-    if (window.location.hash !== next) {
-      const url =
-        window.location.pathname + window.location.search + next;
-      window.history.replaceState(null, '', url);
-    }
-  }, [
-    dataSource,
-    loadedGrameneGeneId,
-    loadedEnsemblGeneId,
-    loadedEnsemblMirror,
-    viewState,
-  ]);
-
-  const handleUploadedFiles = async (
-    files: FileList | null,
-    source: DataSource,
-  ) => {
+  /** CSV / TSV → `parseTableFile` → one table zone per file, filed under
+   *  the source it was uploaded for. `useInitialViewState` appends the
+   *  zone's view entry when it joins the zone list. */
+  const handleUploadedFiles = async (files: FileList | null, source: SourceKind) => {
     if (!files || files.length === 0) return;
     setUploadStatus({ state: 'idle' });
     for (const file of Array.from(files)) {
@@ -959,19 +716,6 @@ export function Playground() {
           ...prev,
           [source]: [...(prev[source] ?? []), zone],
         }));
-        // Append zoneState entry so the chassis lays the new zone out
-        // immediately. Only does so when the user is currently viewing
-        // the source the upload was scoped to, so the new column
-        // doesn't pop into a tree it doesn't apply to.
-        if (source === dataSource) {
-          setViewState((vs) => ({
-            ...vs,
-            zones: [
-              ...vs.zones,
-              { id, width: zone.defaultWidth, visible: true },
-            ],
-          }));
-        }
         if (parsed.warnings.length > 0) {
           setUploadStatus({
             state: 'error',
@@ -987,102 +731,80 @@ export function Playground() {
     }
   };
 
-  const setCollapsed = (ids: string[]) =>
-    setViewState((vs) => ({ ...vs, collapsedNodeIds: ids }));
-  const setPruned = (ids: string[]) =>
-    setViewState((vs) => ({ ...vs, prunedNodeIds: ids }));
-  const reset = () => setViewState(buildInitialViewState(zoneIds));
+  // ── Lazy slots (Ensembl fan-outs) ──
+
+  const loadSlot = (id: string) => {
+    loader.load(id).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn(`load(${id}) failed:`, err);
+    });
+  };
+  const slotOf = (id: string): SlotState | undefined => snapshot.slots[id];
+  const domainsSlot = active.kind === 'ensembl' ? slotOf('proteinDomains') : undefined;
+  const overlapSlot = active.kind === 'ensembl' ? slotOf('overlap') : undefined;
+  const failedCount = (s: SlotState | undefined): number =>
+    s?.itemErrors ? Object.keys(s.itemErrors).length : 0;
+  const progressOf = (s: SlotState): string =>
+    `${s.progress?.done ?? 0}/${s.progress?.total ?? 0}`;
+  /** `"<slot>: <error>"` for every errored slot among `ids`. */
+  const slotErrors = (ids: readonly string[]): string[] =>
+    ids.flatMap((id) => {
+      const s = slotOf(id);
+      return s?.status === 'error' ? [`${id}: ${s.error}`] : [];
+    });
+
+  // The per-row loading / error readouts follow `active` (the load the
+  // user asked for); the mode follows `shown`.
+  const loadingKind = activeStatus === 'loading' ? active.kind : null;
+  const errorFor = (kind: SourceKind): string | null =>
+    active.kind === kind && activeStatus === 'error' ? snapshot.error : null;
+
+  // ── View-state controls ──
+
+  const patchViewState = (patch: Partial<ViewState>) =>
+    setViewState((vs) => (vs ? { ...vs, ...patch } : vs));
+  const setCollapsed = (ids: string[]) => patchViewState({ collapsedNodeIds: ids });
+  const setPruned = (ids: string[]) => patchViewState({ prunedNodeIds: ids });
+  const reset = () => setViewState(freshViewState(zones));
 
   const prunedStyle =
-    ((viewState.zoneStates.tree as { prunedNodeStyle?: PrunedNodeStyle } | undefined)
+    ((viewState?.zoneStates.tree as { prunedNodeStyle?: PrunedNodeStyle } | undefined)
       ?.prunedNodeStyle) ?? 'triangle';
   const setPrunedStyle = (next: PrunedNodeStyle) =>
-    setViewState((vs) => ({
-      ...vs,
-      zoneStates: {
-        ...vs.zoneStates,
-        tree: { ...(vs.zoneStates.tree ?? {}), prunedNodeStyle: next },
-      },
-    }));
+    setViewState((vs) =>
+      vs
+        ? {
+            ...vs,
+            zoneStates: {
+              ...vs.zoneStates,
+              tree: { ...(vs.zoneStates.tree ?? {}), prunedNodeStyle: next },
+            },
+          }
+        : vs,
+    );
 
   const pivotTo = (identifier: string) => {
-    const treeForPivot =
-      dataSource === 'sample'
-        ? tree
-        : dataSource === 'ensembl'
-          ? ensemblData?.tree
-          : dataSource === 'gramene'
-            ? grameneData?.tree
-            : uploadedTree?.tree;
-    if (!treeForPivot) return;
-    const pivot = computePivotState(treeForPivot, identifier);
+    const tree = shownRoot?.props.tree;
+    if (!tree) return;
+    const pivot = computePivotState(tree, identifier);
     if (!pivot) return;
-    setViewState((vs) => ({
-      ...buildInitialViewState(zoneIds),
-      collapsedNodeIds: pivot.collapsedNodeIds,
-      swappedNodeIds: pivot.swappedNodeIds,
-      nodeOfInterestId: pivot.targetId,
-      zones: vs.zones,
-      zoneStates: vs.zoneStates,
-    }));
+    setViewState((vs) =>
+      applyPivot(
+        {
+          ...freshViewState(zones),
+          ...(vs ? { zones: vs.zones, zoneStates: vs.zoneStates } : {}),
+        },
+        pivot,
+      ),
+    );
   };
 
-  const dataProps =
-    dataSource === 'gramene' && grameneData
-      ? {
-          tree: grameneData.tree,
-          taxonomy: grameneData.taxonomy,
-          geneMetadata: grameneData.geneMetadata,
-          msa: grameneData.msa,
-          proteinDomains: grameneData.proteinDomains,
-          exonJunctions: grameneData.exonJunctions,
-          neighborhood: grameneNeighborhood ?? undefined,
-          geneStructures: grameneGeneStructures ?? undefined,
-          labelProviders: undefined,
-        }
-      : dataSource === 'ensembl' && ensemblData
-        ? {
-            tree: ensemblData.tree,
-            taxonomy: ensemblData.taxonomy,
-            geneMetadata: ensemblData.geneMetadata,
-            msa: ensemblData.msa,
-            proteinDomains: ensemblDomains ?? undefined,
-            geneStructures: ensemblGeneStructures ?? undefined,
-            genomeFeatures: ensemblGenomeFeatures ?? undefined,
-            geneStructureErrors:
-              ensemblGeneStructureErrors ?? undefined,
-            labelProviders: undefined,
-          }
-        : dataSource === 'uploaded' && uploadedTree
-          ? {
-              tree: uploadedTree.tree,
-              taxonomy: uploadedTree.taxonomy,
-              labelProviders: undefined,
-            }
-          : {
-              tree,
-              taxonomy: sampleTaxonomy,
-              geneMetadata: sampleGeneMetadata,
-              msa: sampleMSA,
-              proteinDomains: sampleProteinDomains,
-              geneStructures: sampleGeneStructures,
-              genomeFeatures: sampleGenomeFeatures,
-              labelProviders: [sampleGoProvider],
-            };
-
-  const statsTree =
-    dataSource === 'ensembl' && ensemblData
-      ? ensemblData
-      : dataSource === 'gramene' && grameneData
-        ? grameneData
-        : null;
-  const stats = statsTree
+  const stats = shownRoot
     ? {
-        source: dataSource,
-        nodes: Object.keys(statsTree.tree.nodes).length,
-        leaves: Object.values(statsTree.tree.nodes).filter((n) => n.isLeaf).length,
-        taxa: Object.keys(statsTree.taxonomy).length,
-        msaLength: statsTree.msa?.length ?? 0,
+        leaves: countLeaves(shownRoot.props.tree),
+        nodes: Object.keys(shownRoot.props.tree.nodes).length,
+        taxa: Object.keys(shownRoot.snapshot.root?.taxonomy ?? {}).length,
+        msaLength: shownRoot.snapshot.data.msa?.length ?? 0,
       }
     : null;
 
@@ -1113,62 +835,44 @@ export function Playground() {
       >
         {/* 1 — Sample tree + sample-only operations */}
         <ToolbarRow label="Sample">
-          <button
-            onClick={switchToSample}
-            disabled={dataSource === 'sample'}
-          >
+          <button onClick={switchToSample} disabled={shown.kind === 'sample'}>
             Sample
           </button>
-          <button
-            onClick={() => setCollapsed(['n1'])}
-            disabled={dataSource !== 'sample'}
-          >
+          <button onClick={() => setCollapsed(['n1'])} disabled={shown.kind !== 'sample'}>
             collapse n1
           </button>
-          <button
-            onClick={() => setCollapsed(['n3'])}
-            disabled={dataSource !== 'sample'}
-          >
+          <button onClick={() => setCollapsed(['n3'])} disabled={shown.kind !== 'sample'}>
             collapse n3
           </button>
-          <button
-            onClick={() => setPruned(['n1'])}
-            disabled={dataSource !== 'sample'}
-          >
+          <button onClick={() => setPruned(['n1'])} disabled={shown.kind !== 'sample'}>
             prune n1
           </button>
-          <button
-            onClick={() => setPruned(['n4'])}
-            disabled={dataSource !== 'sample'}
-          >
+          <button onClick={() => setPruned(['n4'])} disabled={shown.kind !== 'sample'}>
             prune n4
           </button>
           <button
             onClick={() => pivotTo('ENSG00000000001')}
-            disabled={dataSource !== 'sample'}
+            disabled={shown.kind !== 'sample'}
           >
             pivot to Human
           </button>
           <button
             onClick={() => pivotTo('ENSDARG00000001')}
-            disabled={dataSource !== 'sample'}
+            disabled={shown.kind !== 'sample'}
           >
             pivot to Zebrafish
           </button>
-          <button
-            onClick={() => setTree((t) => (t === sampleTree ? largeSampleTree : sampleTree))}
-            disabled={dataSource !== 'sample'}
-          >
+          <button onClick={toggleSampleSize} disabled={shown.kind !== 'sample'}>
             toggle tree size
           </button>
         </ToolbarRow>
 
-        {/* 2 — Ensembl tree + Pfam domains fan-out + ensembl-scoped uploads */}
+        {/* 2 — Ensembl tree + lazy fan-out slots + ensembl-scoped uploads */}
         <ToolbarRow label="Ensembl">
           <select
             value={ensemblMirror}
             onChange={(e) => handleMirrorChange(e.target.value)}
-            disabled={ensemblStatus === 'loading'}
+            disabled={loadingKind === 'ensembl'}
             style={{ fontSize: 12 }}
             title={
               'REST host to fetch from. Archive hosts pin one Ensembl ' +
@@ -1188,118 +892,142 @@ export function Playground() {
             value={ensemblGeneInput}
             onChange={(e) => setEnsemblGeneInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && ensemblGeneInput.trim()) {
-                loadEnsembl(ensemblGeneInput.trim());
-              }
+              if (e.key === 'Enter' && ensemblGeneInput.trim()) loadEnsembl(ensemblGeneInput);
             }}
             placeholder="Ensembl gene id"
             style={{ width: 180, fontSize: 12 }}
-            disabled={ensemblStatus === 'loading'}
+            disabled={loadingKind === 'ensembl'}
           />
           <button
-            onClick={() => loadEnsembl(ensemblGeneInput.trim())}
-            disabled={
-              ensemblStatus === 'loading' || !ensemblGeneInput.trim()
-            }
+            onClick={() => loadEnsembl(ensemblGeneInput)}
+            disabled={loadingKind === 'ensembl' || !ensemblGeneInput.trim()}
           >
-            {ensemblStatus === 'loading' ? 'Loading…' : 'Load Ensembl tree'}
+            {loadingKind === 'ensembl' ? 'Loading…' : 'Load Ensembl tree'}
           </button>
           <button
-            onClick={loadEnsemblDomains}
+            onClick={() => loadSlot('proteinDomains')}
             disabled={
-              dataSource !== 'ensembl' ||
-              !ensemblData ||
-              !!ensemblDomains ||
-              domainStatus.state === 'loading'
+              !domainsSlot ||
+              !loaded ||
+              domainsSlot.status === 'loading' ||
+              domainsSlot.status === 'ready'
             }
-            title="Fan out to /overlap/translation/{ENSP} for each leaf and feed through fromEnsemblProteinFeatures."
+            title="Runs the source's lazy `proteinDomains` slot: /overlap/translation/{ENSP} for each leaf, through fromEnsemblProteinFeatures."
           >
-            {domainStatus.state === 'loading'
-              ? `Loading domains ${domainStatus.done ?? 0}/${domainStatus.total ?? 0}…`
-              : ensemblDomains
-                ? domainStatus.failed
-                  ? `Pfam domains (cached, ${domainStatus.failed} failed)`
-                  : 'Pfam domains (cached)'
-                : 'Load Pfam domains'}
+            {!domainsSlot || domainsSlot.status === 'idle' || domainsSlot.status === 'error'
+              ? 'Load Pfam domains'
+              : domainsSlot.status === 'loading'
+                ? `Loading domains ${progressOf(domainsSlot)}…`
+                : failedCount(domainsSlot)
+                  ? `Pfam domains (cached, ${failedCount(domainsSlot)} failed)`
+                  : 'Pfam domains (cached)'}
           </button>
           <button
-            onClick={loadEnsemblOverlap}
+            onClick={() => loadSlot('overlap')}
             disabled={
-              dataSource !== 'ensembl' ||
-              !ensemblData ||
-              !!ensemblGeneStructures ||
-              overlapStatus.state === 'loading'
+              !overlapSlot ||
+              !loaded ||
+              overlapSlot.status === 'loading' ||
+              overlapSlot.status === 'ready'
             }
-            title="Fan out to /overlap/id/{geneId} for each leaf — drives the Genome zone (gene structure + regulatory features)."
+            title="Runs the source's lazy `overlap` slot: /overlap/id/{geneId} for each leaf — drives the Genome zone (gene structure + regulatory features)."
           >
-            {overlapStatus.state === 'loading'
-              ? `Loading gene structures ${overlapStatus.done ?? 0}/${overlapStatus.total ?? 0}…`
-              : ensemblGeneStructures
-                ? 'Gene structures (cached)'
-                : 'Load gene structures'}
+            {!overlapSlot || overlapSlot.status === 'idle' || overlapSlot.status === 'error'
+              ? 'Load gene structures'
+              : overlapSlot.status === 'loading'
+                ? `Loading gene structures ${progressOf(overlapSlot)}…`
+                : 'Gene structures (cached)'}
           </button>
           <UploadDataLabel
             source="ensembl"
             count={uploadedZonesBySource.ensembl.length}
             onFiles={handleUploadedFiles}
           />
-          {domainStatus.state === 'error' && (
-            <span style={{ color: '#c0392b', fontSize: 12 }}>
-              domains error: {domainStatus.error}
-            </span>
+          {domainsSlot?.status === 'error' && (
+            <ErrorText>domains error: {domainsSlot.error}</ErrorText>
           )}
-          {overlapStatus.state === 'error' && (
-            <span style={{ color: '#c0392b', fontSize: 12 }}>
-              overlap error: {overlapStatus.error}
-            </span>
+          {overlapSlot?.status === 'error' && (
+            <ErrorText>overlap error: {overlapSlot.error}</ErrorText>
           )}
-          {ensemblError && (
-            <span style={{ color: '#c0392b', fontSize: 12 }}>
-              error: {ensemblError}
-            </span>
-          )}
+          {errorFor('ensembl') && <ErrorText>error: {errorFor('ensembl')}</ErrorText>}
         </ToolbarRow>
 
-        {/* 3 — Gramene tree + gramene-scoped data uploads */}
+        {/* 3 — Gramene tree (+ eager neighborhood / gene-structure slots) + gramene-scoped uploads */}
         <ToolbarRow label="Gramene">
           <input
             type="text"
             value={grameneGeneInput}
             onChange={(e) => setGrameneGeneInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && grameneGeneInput.trim()) {
-                loadGramene(grameneGeneInput.trim());
-              }
+              if (e.key === 'Enter' && grameneGeneInput.trim()) loadGramene(grameneGeneInput);
             }}
             placeholder="Gramene gene id"
             style={{ width: 180, fontSize: 12 }}
-            disabled={grameneStatus.state === 'loading'}
+            disabled={loadingKind === 'gramene'}
           />
           <button
-            onClick={() => loadGramene(grameneGeneInput.trim())}
-            disabled={grameneStatus.state === 'loading' || !grameneGeneInput.trim()}
-            title="Two-step Gramene fetch: /genes → /genetrees, all per-leaf MSA + domain hits in one tree call."
+            onClick={() => loadGramene(grameneGeneInput)}
+            disabled={loadingKind === 'gramene' || !grameneGeneInput.trim()}
+            title="Two-step Gramene fetch: /genes → /genetrees, all per-leaf MSA + domain hits in one tree call; neighbourhoods and gene structures follow as eager slots."
           >
-            {grameneStatus.state === 'loading' ? 'Loading…' : 'Load Gramene'}
+            {loadingKind === 'gramene' ? 'Loading…' : 'Load Gramene'}
           </button>
           <UploadDataLabel
             source="gramene"
             count={uploadedZonesBySource.gramene.length}
             onFiles={handleUploadedFiles}
           />
-          {grameneStatus.state === 'error' && (
-            <span style={{ color: '#c0392b', fontSize: 12 }}>
-              gramene error: {grameneStatus.error}
-            </span>
-          )}
+          {errorFor('gramene') && <ErrorText>gramene error: {errorFor('gramene')}</ErrorText>}
+          {active.kind === 'gramene' &&
+            slotErrors(['neighborhood', 'geneStructures']).map((msg) => (
+              <ErrorText key={msg}>{msg}</ErrorText>
+            ))}
           {uploadStatus.state === 'error' && uploadStatus.message && (
-            <span style={{ color: '#c0392b', fontSize: 12 }}>
-              upload: {uploadStatus.message}
-            </span>
+            <ErrorText>upload: {uploadStatus.message}</ErrorText>
           )}
         </ToolbarRow>
 
-        {/* 4 — host-uploaded tree + uploaded-source data uploads */}
+        {/* 4 — BrAPI allele matrix: tree + genotype zone, germplasm + variants slots */}
+        <ToolbarRow label="BrAPI">
+          <input
+            type="text"
+            value={brapiUrl}
+            onChange={(e) => setBrapiUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && brapiUrl.trim()) loadBrapi(brapiUrl);
+            }}
+            placeholder="/brapi/v2/allelematrix-search?…"
+            style={{ width: 460, fontSize: 12 }}
+            disabled={loadingKind === 'brapi'}
+          />
+          <button
+            onClick={() => loadBrapi(brapiUrl)}
+            disabled={loadingKind === 'brapi' || !brapiUrl.trim()}
+            title="Fetch a BrAPI allele-matrix response (with tree=upgma to get the embedded tree, else clustered locally) and render the genotype-matrix zone; /germplasm and /variants follow as eager slots."
+          >
+            {loadingKind === 'brapi' ? 'Loading…' : 'Load BrAPI'}
+          </button>
+          <UploadDataLabel
+            source="brapi"
+            count={uploadedZonesBySource.brapi.length}
+            onFiles={handleUploadedFiles}
+          />
+          {matrix && (
+            <MutedText>
+              {matrix.variants.length} variants · {Object.keys(matrix.callsByGeneId).length}{' '}
+              samples
+              {matrix.regionLabel ? ` · ${matrix.regionLabel}` : ''}
+              {brapiMeta?.treeMethod ? ` · tree: ${brapiMeta.treeMethod}` : ''}
+            </MutedText>
+          )}
+          {errorFor('brapi') && <ErrorText>brapi error: {errorFor('brapi')}</ErrorText>}
+          {active.kind === 'brapi' &&
+            slotErrors(['germplasm', 'variants']).map((msg) => (
+              <ErrorText key={msg}>{msg}</ErrorText>
+            ))}
+        </ToolbarRow>
+
+        {/* 5 — host-uploaded tree + uploaded-source data uploads */}
         <ToolbarRow label="Upload tree">
           <span
             style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
@@ -1326,21 +1054,14 @@ export function Playground() {
                 style={{ display: 'none' }}
               />
             </label>
-            {uploadedTree && uploadedTreeFilename && (
-              <span style={{ fontSize: 11, color: 'var(--tbrowse-text-muted)' }}>
-                {uploadedTreeFilename} ({describeFormat(uploadedTree.format)},
-                {' '}{countLeaves(uploadedTree)} leaves)
-              </span>
+            {uploaded && (
+              <MutedText small>
+                {uploaded.file.name} ({describeFormat(uploaded.format)}, {uploaded.leaves} leaves)
+              </MutedText>
             )}
           </span>
-          {uploadedTree && (
-            <button
-              onClick={() => {
-                setDataSource('uploaded');
-                softResetForSourceSwitch();
-              }}
-              disabled={dataSource === 'uploaded'}
-            >
+          {uploaded && (
+            <button onClick={viewUploaded} disabled={shown.kind === 'uploaded'}>
               View uploaded
             </button>
           )}
@@ -1349,17 +1070,20 @@ export function Playground() {
             count={uploadedZonesBySource.uploaded.length}
             onFiles={handleUploadedFiles}
           />
-          {uploadTreeError && (
-            <span style={{ color: '#c0392b', fontSize: 12 }}>
-              tree: {uploadTreeError}
-            </span>
+          {errorFor('uploaded') && (
+            <ErrorText>
+              tree: {sourceLabel(active)}: {errorFor('uploaded')}
+            </ErrorText>
+          )}
+          {fileMeta && fileMeta.warnings.length > 0 && (
+            <ErrorText>tree: {fileMeta.warnings.join('; ')}</ErrorText>
           )}
         </ToolbarRow>
 
-        {/* 5 — global controls + status readouts */}
+        {/* 6 — global controls + status readouts */}
         <ToolbarRow label="Controls">
           <button onClick={reset}>reset</button>
-          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+          <MutedText>
             theme:&nbsp;
             <button
               type="button"
@@ -1369,7 +1093,7 @@ export function Playground() {
             >
               {theme === 'light' ? '☀ light' : '☾ dark'}
             </button>
-          </span>
+          </MutedText>
           <label style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
             <input
               type="checkbox"
@@ -1378,7 +1102,7 @@ export function Playground() {
             />
             &nbsp;header
           </label>
-          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+          <MutedText>
             row&nbsp;
             <input
               type="range"
@@ -1391,8 +1115,8 @@ export function Playground() {
               style={{ verticalAlign: 'middle', width: 90 }}
             />
             &nbsp;{rowHeight}px
-          </span>
-          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+          </MutedText>
+          <MutedText>
             font&nbsp;
             <input
               type="range"
@@ -1405,8 +1129,8 @@ export function Playground() {
               style={{ verticalAlign: 'middle', width: 90 }}
             />
             &nbsp;{fontSize}px
-          </span>
-          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
+          </MutedText>
+          <MutedText>
             pruned-mark:&nbsp;
             <select
               value={prunedStyle}
@@ -1418,37 +1142,76 @@ export function Playground() {
                 </option>
               ))}
             </select>
-          </span>
-          <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
-            selected: {viewState.selectedNodeId ?? '—'}
-          </span>
+          </MutedText>
+          <MutedText>selected: {viewState?.selectedNodeId ?? '—'}</MutedText>
           {stats && (
-            <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: 12 }}>
-              {stats.source}: {stats.leaves} leaves · {stats.nodes} nodes ·{' '}
-              {stats.taxa} taxa · MSA {stats.msaLength} cols
-            </span>
+            <MutedText>
+              {shown.kind}: {stats.leaves} leaves · {stats.nodes} nodes
+              {stats.taxa > 0 ? ` · ${stats.taxa} taxa` : ''}
+              {stats.msaLength > 0 ? ` · MSA ${stats.msaLength} cols` : ''}
+            </MutedText>
           )}
         </ToolbarRow>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
-        <TBrowse
-          {...dataProps}
-          nodeOfInterest={
-            dataSource === 'ensembl' && loadedEnsemblGeneId
-              ? loadedEnsemblGeneId
-              : undefined
-          }
-          zones={zones}
-          viewState={viewState}
-          onViewStateChange={setViewState}
-          theme={theme}
-          showHeader={showHeader}
-          rowHeight={rowHeight}
-          fontSize={fontSize}
-        />
+        {shownRoot && viewState ? (
+          <TBrowse
+            {...shownRoot.props}
+            zones={zones}
+            viewState={viewState}
+            onViewStateChange={setViewState}
+            theme={theme}
+            showHeader={showHeader}
+            rowHeight={rowHeight}
+            fontSize={fontSize}
+          />
+        ) : (
+          <LoadStatus active={active} status={activeStatus} error={snapshot.error} />
+        )}
       </div>
       <PlaygroundFooter />
     </div>
+  );
+}
+
+/** Shown in place of the chassis until the first root has arrived. */
+function LoadStatus({
+  active,
+  status,
+  error,
+}: {
+  active: ActiveSource;
+  status: LoaderSnapshot<PlaygroundMeta>['status'];
+  error: string | null;
+}) {
+  const failed = status === 'error';
+  const label = sourceLabel(active);
+  return (
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        color: failed ? '#c0392b' : 'var(--tbrowse-text-muted)',
+        fontSize: 13,
+      }}
+    >
+      {failed ? `${label}: ${error}` : `Loading ${label}…`}
+    </div>
+  );
+}
+
+function ErrorText({ children }: { children: React.ReactNode }) {
+  return <span style={{ color: '#c0392b', fontSize: 12 }}>{children}</span>;
+}
+
+function MutedText({ children, small }: { children: React.ReactNode; small?: boolean }) {
+  return (
+    <span style={{ color: 'var(--tbrowse-text-muted)', fontSize: small ? 11 : 12 }}>
+      {children}
+    </span>
   );
 }
 
@@ -1469,11 +1232,12 @@ function PlaygroundIntro() {
     >
       <strong style={{ fontSize: 14 }}>Playground</strong> — a live sandbox for
       TBrowse. Start with the bundled <em>Sample</em> tree, or load a real gene
-      tree from <strong>Ensembl</strong> or <strong>Gramene</strong> by id, or
-      upload your own Newick / PhyloXML / Nexus file. Then explore: collapse and
-      prune subtrees, search, resize and reorder zones, and toggle the
-      light/dark theme. Your view is encoded into the URL, so you can copy the
-      link to share an exact state. New here?{' '}
+      tree from <strong>Ensembl</strong> or <strong>Gramene</strong> by id, a
+      sample tree with genotypes from a <strong>BrAPI</strong> allele matrix,
+      or upload your own Newick / PhyloXML / Nexus file. Then explore:
+      collapse and prune subtrees, search, resize and reorder zones, and
+      toggle the light/dark theme. Your view is encoded into the URL, so you
+      can copy the link to share an exact state. New here?{' '}
       <Link to="/" style={{ color: 'var(--tbrowse-accent)' }}>
         Read about TBrowse
       </Link>{' '}
@@ -1541,24 +1305,18 @@ function describeFormat(f: TreeFileFormat): string {
   return f === 'phyloxml' ? 'PhyloXML' : f === 'nexus' ? 'Nexus' : 'Newick';
 }
 
-function countLeaves(p: ParsedTreeFile): number {
-  let n = 0;
-  for (const node of Object.values(p.tree.nodes)) if (node.isLeaf) n++;
-  return n;
-}
-
-/** Upload-CSV-as-table-zone control. Shared between the Ensembl and
- *  Gramene toolbar rows; passes its `source` to the host so the new
- *  table zone is filed under the right per-source bucket and only
+/** Upload-CSV-as-table-zone control. Shared between the Ensembl, Gramene,
+ *  BrAPI and upload toolbar rows; passes its `source` to the host so the
+ *  new table zone is filed under the right per-source bucket and only
  *  shows up when the user is actually viewing that source's tree. */
 function UploadDataLabel({
   source,
   count,
   onFiles,
 }: {
-  source: DataSource;
+  source: SourceKind;
   count: number;
-  onFiles: (files: FileList | null, source: DataSource) => void;
+  onFiles: (files: FileList | null, source: SourceKind) => void;
 }) {
   return (
     <span
@@ -1598,7 +1356,7 @@ function UploadDataLabel({
 
 /** One row of the playground toolbar. Labels are aligned in a small
  *  fixed-width column so the section headings line up vertically across
- *  the four rows. */
+ *  the rows. */
 function ToolbarRow({
   label,
   children,

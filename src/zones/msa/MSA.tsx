@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildChildrenIndex, subtreeIdsOf } from '../../treeIndex';
+import { buildChildrenIndex, subtreeIdsOf } from 'tbrowse-core';
 import type {
   GeneId,
   MSA,
@@ -13,7 +13,7 @@ import { computeMSAMask, unmaskedMSA, type MSAMask } from './mask';
 import { MSAConfigPopover } from './ConfigPopover';
 import { Minimap } from './Minimap';
 import { EditableZoneName } from '../EditableZoneName';
-import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { LEAF_ROW_HEIGHT } from 'tbrowse-core';
 import { useTBrowseStore, DEFAULT_FONT_SIZE } from '../../store';
 import {
   buildResidueToColumn,

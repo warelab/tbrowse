@@ -1,0 +1,683 @@
+import type {
+  Exon,
+  GeneId,
+  GeneMetadata,
+  GeneStructure,
+  MSA,
+  Neighborhood,
+  NeighborhoodGene,
+  NodeId,
+  ProteinDomain,
+  Taxonomy,
+  Transcript,
+  Tree,
+  TreeNode,
+} from '../types';
+
+/**
+ * Subset of the Gramene `/genetrees` JSON shape that we consume.
+ * https://data.gramene.org/v69/genetrees?idList=...
+ *
+ * Internal nodes carry: node_id, distance_to_parent, taxon_id/name,
+ * node_type ("speciation"|"duplication"|...), bootstrap, children.
+ *
+ * Leaves additionally carry: gene_stable_id, protein_stable_id, taxon_id,
+ * taxon_name, system_name, sequence (UNALIGNED protein), cigar (run-length
+ * gap encoding used to derive the aligned row), and domains[] (per-leaf
+ * InterPro hits with residue ranges).
+ */
+interface GrameneNode {
+  /** Root only: the tree set the tree belongs to (see {@link GRAMENE_DEFAULT_TREE_FIELD}). */
+  tree_set?: string;
+  node_id?: number;
+  distance_to_parent?: number;
+  taxon_id?: number;
+  taxon_name?: string;
+  bootstrap?: number;
+  node_type?: string;
+  children?: GrameneNode[];
+  // Leaf-only fields
+  system_name?: string;
+  gene_stable_id?: string;
+  protein_stable_id?: string;
+  gene_description?: string;
+  /** Human-friendly gene name when present (e.g. "DCL1"). Surfaced as
+   *  `displayName` on geneMetadata, matching the convention the Labels
+   *  zone uses to render a leaf's primary label. */
+  gene_display_label?: string;
+  sequence?: string;
+  cigar?: string;
+  domains?: Array<GrameneLeafDomain>;
+  /** 1-based unaligned residue positions where one exon ends and the
+   *  next begins (per leaf). Surfaced unchanged via `exonJunctions`. */
+  exon_junctions?: number[];
+}
+
+interface GrameneLeafDomain {
+  /** InterPro accession, e.g. "IPR001650". */
+  id?: string;
+  /** Numeric InterPro id (matches the domains endpoint's `_id`). */
+  root?: number;
+  start?: number;
+  end?: number;
+  name?: string;
+  description?: string;
+}
+
+export interface FromGrameneGenetreeOptions {
+  /**
+   * Override the MSA alphabet. Defaults to 'protein' (Gramene gene-tree
+   * leaves carry protein sequences).
+   */
+  alphabet?: MSA['alphabet'];
+}
+
+export interface FromGrameneGenetreeResult {
+  tree: Tree;
+  taxonomy: Taxonomy;
+  msa?: MSA;
+  geneMetadata: GeneMetadata;
+  /** Per-leaf protein-domain hits, ready to drop into HostData.proteinDomains. */
+  proteinDomains: Record<GeneId, ProteinDomain[]>;
+  /** Per-leaf splice-junction positions (1-based unaligned residue),
+   *  ready to drop into HostData.exonJunctions. */
+  exonJunctions: Record<GeneId, number[]>;
+  /** GeneId → translation accession (for parity with the Ensembl adapter). */
+  proteinIdByGeneId: Record<GeneId, string>;
+  /**
+   * The root's `tree_set` — `'gene_tree'` for the main Compara trees, the
+   * clade set (`'wheat'`, `'oat'`, …) otherwise — which is also the Solr
+   * field holding the tree id. {@link GRAMENE_DEFAULT_TREE_FIELD} when the
+   * doc predates tree sets (v69 and earlier).
+   */
+  treeField: string;
+}
+
+/**
+ * Convert a Gramene `/genetrees?idList=...` response (an array containing
+ * a single root node) into TBrowse's normalized inputs. Pure — host owns
+ * the network call.
+ *
+ * Synthetic node ids (`n0`, `n1`, ...) are assigned in preorder so they
+ * round-trip stably through URL state.
+ *
+ * Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:95`.
+ */
+export function fromGrameneGenetree(
+  json: unknown,
+  options: FromGrameneGenetreeOptions = {},
+): FromGrameneGenetreeResult {
+  if (!Array.isArray(json) || json.length === 0) {
+    throw new Error(
+      'fromGrameneGenetree: expected a non-empty array of genetree root nodes',
+    );
+  }
+  const root = json[0] as GrameneNode;
+
+  const nodes: Record<NodeId, TreeNode> = {};
+  const taxonomy: Taxonomy = {};
+  const sequences: Record<string, string> = {};
+  const geneMetadata: GeneMetadata = {};
+  const proteinDomains: Record<GeneId, ProteinDomain[]> = {};
+  const exonJunctions: Record<GeneId, number[]> = {};
+  const proteinIdByGeneId: Record<GeneId, string> = {};
+  let nextId = 0;
+
+  const walk = (gn: GrameneNode, parentId: NodeId | null): NodeId => {
+    const id: NodeId = `n${nextId++}`;
+    const isLeaf = !gn.children || gn.children.length === 0;
+
+    const node: TreeNode = {
+      id,
+      parentId,
+      distance: typeof gn.distance_to_parent === 'number' ? gn.distance_to_parent : 0,
+      isLeaf,
+    };
+
+    if (typeof gn.taxon_id === 'number') {
+      node.taxonomyId = gn.taxon_id;
+      if (!taxonomy[gn.taxon_id]) {
+        const tax: Taxonomy[number] = {};
+        if (gn.taxon_name) tax.scientificName = gn.taxon_name;
+        // Gramene exposes the lower-case slug as system_name on leaves;
+        // surface it as commonName when present so the labels zone has
+        // something friendly to render.
+        if (isLeaf && gn.system_name) tax.commonName = gn.system_name;
+        taxonomy[gn.taxon_id] = tax;
+      }
+    }
+
+    if (gn.node_type === 'speciation' || gn.node_type === 'duplication') {
+      node.eventType = gn.node_type;
+    }
+    if (typeof gn.bootstrap === 'number') node.bootstrap = gn.bootstrap;
+
+    if (isLeaf) {
+      const accession = gn.gene_stable_id;
+      if (accession) {
+        node.geneId = accession;
+        // Aligned protein row: expand `cigar` against the unaligned
+        // `sequence` so all leaves share a common MSA length.
+        if (gn.sequence) {
+          const aligned = gn.cigar ? expandCigar(gn.sequence, gn.cigar) : gn.sequence;
+          sequences[accession] = aligned;
+        }
+        const meta: Record<string, unknown> = {};
+        // Prefer the curated short label ("DCL1") for the leaf's primary
+        // display name; fall back to the gene's stable id so labels are
+        // never empty.
+        if (gn.gene_display_label) meta.displayName = gn.gene_display_label;
+        if (gn.gene_description) meta.description = gn.gene_description;
+        if (gn.protein_stable_id) meta.proteinId = gn.protein_stable_id;
+        if (Object.keys(meta).length > 0) geneMetadata[accession] = meta;
+        if (gn.protein_stable_id) proteinIdByGeneId[accession] = gn.protein_stable_id;
+        if (gn.exon_junctions && gn.exon_junctions.length > 0) {
+          // Filter to positive numbers and de-duplicate, defensively.
+          const seen = new Set<number>();
+          const clean: number[] = [];
+          for (const j of gn.exon_junctions) {
+            if (typeof j !== 'number' || !Number.isFinite(j) || j <= 0) continue;
+            if (seen.has(j)) continue;
+            seen.add(j);
+            clean.push(j);
+          }
+          if (clean.length > 0) exonJunctions[accession] = clean;
+        }
+        if (gn.domains && gn.domains.length > 0) {
+          const hits: ProteinDomain[] = [];
+          for (const d of gn.domains) {
+            if (typeof d.id !== 'string' || d.id === '') continue;
+            if (typeof d.start !== 'number' || typeof d.end !== 'number') continue;
+            hits.push({
+              id: d.id,
+              name: d.name ?? d.description ?? d.id,
+              start: d.start,
+              end: d.end,
+              source: 'InterPro',
+            });
+          }
+          if (hits.length > 0) proteinDomains[accession] = hits;
+        }
+      }
+    }
+
+    nodes[id] = node;
+
+    if (gn.children) {
+      for (const child of gn.children) walk(child, id);
+    }
+    return id;
+  };
+
+  const rootId = walk(root, null);
+
+  const sequenceList = Object.values(sequences);
+  let msa: MSA | undefined;
+  if (sequenceList.length > 0) {
+    // After CIGAR expansion all rows should match in length, but pad the
+    // odd short row defensively so the MSA invariant holds.
+    const length = sequenceList.reduce((m, s) => Math.max(m, s.length), 0);
+    for (const k of Object.keys(sequences)) {
+      const s = sequences[k]!;
+      if (s.length < length) sequences[k] = s.padEnd(length, '-');
+    }
+    msa = { alphabet: options.alphabet ?? 'protein', length, sequences };
+  }
+
+  return {
+    tree: { rootId, nodes },
+    taxonomy,
+    ...(msa !== undefined ? { msa } : {}),
+    geneMetadata,
+    proteinDomains,
+    exonJunctions,
+    proteinIdByGeneId,
+    treeField:
+      typeof root.tree_set === 'string' && root.tree_set !== '' ? root.tree_set : GRAMENE_DEFAULT_TREE_FIELD,
+  };
+}
+
+/**
+ * Expand a Gramene CIGAR string against an unaligned protein sequence.
+ *
+ * The encoding here only uses `M` (consume <run> residues from the unaligned
+ * sequence) and `D` (emit <run> gap characters). E.g. `expandCigar("MKLV", "2M1D2M")`
+ * → `"MK-LV"`. Run length defaults to 1 when omitted (e.g. `"M1DM"`).
+ *
+ * Public so hosts that fetch Gramene leaf documents themselves can
+ * reconstruct aligned rows without going through `fromGrameneGenetree`.
+ *
+ * Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:235`.
+ */
+export function expandCigar(sequence: string, cigar: string): string {
+  if (!cigar) return sequence;
+  const out: string[] = [];
+  let pos = 0;
+  for (const match of cigar.matchAll(/(\d*)([MD])/g)) {
+    const len = match[1] === '' ? 1 : parseInt(match[1]!, 10);
+    if (match[2] === 'M') {
+      out.push(sequence.substr(pos, len));
+      pos += len;
+    } else {
+      out.push('-'.repeat(len));
+    }
+  }
+  return out.join('');
+}
+
+// ─── Gene endpoint ────────────────────────────────────────────────────────────
+
+/**
+ * Where a gene's tree id lives, in the gene doc's `homology` and in Solr,
+ * for the main Compara trees. Genomes in a clade-specific tree set (v70:
+ * wheat, oat) carry it under the set's name instead —
+ * `homology.wheat = { id: 'EplWheatGT_…' }`, Solr field `wheat` — and the
+ * tree doc's root names the set in `tree_set`.
+ */
+export const GRAMENE_DEFAULT_TREE_FIELD = 'gene_tree';
+
+/** A gene's tree: its id and the field (tree set) that holds it. */
+export interface GrameneGeneTreeRef {
+  id: string;
+  field: string;
+}
+
+const NOT_TREE_KEYS = new Set(['homologous_genes', 'supertree']);
+
+/**
+ * Resolve a Gramene gene doc's `homology` to its tree: `gene_tree` when
+ * present, else the first tree-set entry (an object with a string `id`).
+ * `null` when the gene has homologues but no tree.
+ */
+export function grameneGeneTreeRef(homology: unknown): GrameneGeneTreeRef | null {
+  if (!homology || typeof homology !== 'object') return null;
+  const h = homology as Record<string, unknown>;
+  const idOf = (v: unknown): string | null => {
+    const id = v && typeof v === 'object' ? (v as { id?: unknown }).id : undefined;
+    return typeof id === 'string' && id !== '' ? id : null;
+  };
+  const main = idOf(h[GRAMENE_DEFAULT_TREE_FIELD]);
+  if (main) return { id: main, field: GRAMENE_DEFAULT_TREE_FIELD };
+  for (const key of Object.keys(h)) {
+    if (NOT_TREE_KEYS.has(key)) continue;
+    const id = idOf(h[key]);
+    if (id) return { id, field: key };
+  }
+  return null;
+}
+
+interface GrameneGeneDoc {
+  _id?: string;
+  name?: string;
+  description?: string;
+  biotype?: string;
+  taxon_id?: number;
+  system_name?: string;
+  homology?: Record<string, unknown>;
+}
+
+export interface FromGrameneGeneResult {
+  geneId: GeneId;
+  /** The gene's tree id, from `gene_tree` or its clade tree set; `null` when it has none. */
+  geneTreeId: string | null;
+  /** Solr field / tree set holding {@link geneTreeId}; `null` with it. */
+  geneTreeField: string | null;
+  taxonomyId: number | null;
+  systemName: string | null;
+  description: string | null;
+}
+
+/**
+ * Convert a Gramene `/genes?idList=<single-id>` response into the minimal
+ * pieces a host needs to discover the gene's tree id and bootstrap a
+ * tbrowse view. Returns `geneTreeId: null` when the gene has no tree
+ * assignment so the caller can decide what to do (fall back to the gene
+ * record alone, surface an error, etc.).
+ *
+ * Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:278`.
+ */
+export function fromGrameneGene(json: unknown): FromGrameneGeneResult {
+  if (!Array.isArray(json) || json.length === 0) {
+    throw new Error('fromGrameneGene: expected a non-empty array of gene docs');
+  }
+  const doc = json[0] as GrameneGeneDoc;
+  if (typeof doc._id !== 'string' || doc._id === '') {
+    throw new Error('fromGrameneGene: gene doc is missing _id');
+  }
+  const ref = grameneGeneTreeRef(doc.homology);
+  return {
+    geneId: doc._id,
+    geneTreeId: ref ? ref.id : null,
+    geneTreeField: ref ? ref.field : null,
+    taxonomyId: typeof doc.taxon_id === 'number' ? doc.taxon_id : null,
+    systemName: doc.system_name ?? null,
+    description: doc.description ?? null,
+  };
+}
+
+// ─── Neighbourhood (Solr graph) endpoint ──────────────────────────────────────
+
+/**
+ * Subset of the Gramene `/search` doc shape relevant to neighbourhood
+ * rendering. The host fetches via the documented graph query
+ * (`{!graph from=compara_neighbors_10 to=compara_idx_multi
+ * maxDepth=1 cache=false}gene_tree:<id>`) which returns every gene within ±10 of any
+ * leaf in the tree, plus the leaves themselves.
+ */
+interface GrameneNeighborhoodDoc {
+  id?: string;
+  name?: string;
+  description?: string;
+  /** Genome strand: 1 = forward, -1 = reverse. */
+  strand?: number;
+  start?: number;
+  end?: number;
+  biotype?: string;
+  /** Gene-tree (family) accession. */
+  gene_tree?: string;
+  /** Clade tree-set fields (`wheat`, `oat`, …) carry the accession instead. */
+  [treeField: string]: unknown;
+  /** Position within the species' chromosome — the ordering key for
+   *  identifying flanking genes. */
+  gene_idx?: number;
+  region?: string;
+  system_name?: string;
+}
+
+interface GrameneSearchResponse {
+  response?: { docs?: GrameneNeighborhoodDoc[] };
+}
+
+/**
+ * Convert a Gramene `/search` graph-query response into per-gene
+ * neighbourhood windows.
+ *
+ * The response carries every gene within ±10 of any leaf in the source
+ * tree (3601 docs for a moderately-sized tree). We index by
+ * `(system_name, region) → sorted-by-gene_idx`, then for every gene we
+ * emit a `Neighborhood` whose `upstream`/`downstream` arrays are at
+ * most 10 genes long, sliced from that sorted index.
+ *
+ * Pure: callers do the network fetch, hand us the JSON.
+ *
+ * Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:338`.
+ */
+export interface FromGrameneNeighborhoodOptions {
+  /**
+   * Field holding each gene's family accession (`NeighborhoodGene.geneTree`);
+   * default {@link GRAMENE_DEFAULT_TREE_FIELD}. For a clade tree pass its set
+   * (`'wheat'`), so neighbours are coloured by the same family ids as the tree.
+   */
+  treeField?: string;
+}
+
+export function fromGrameneNeighborhood(
+  json: unknown,
+  options: FromGrameneNeighborhoodOptions = {},
+): Record<GeneId, Neighborhood> {
+  const treeField = options.treeField ?? GRAMENE_DEFAULT_TREE_FIELD;
+  const docs = (json as GrameneSearchResponse | null)?.response?.docs;
+  if (!Array.isArray(docs)) return {};
+
+  // Group by (system_name, region) — only docs with a usable gene_idx
+  // can participate in neighbour ordering.
+  const groups = new Map<string, GrameneNeighborhoodDoc[]>();
+  for (const doc of docs) {
+    if (typeof doc.id !== 'string' || doc.id === '') continue;
+    if (typeof doc.gene_idx !== 'number' || !Number.isFinite(doc.gene_idx)) continue;
+    if (typeof doc.region !== 'string' || doc.region === '') continue;
+    if (typeof doc.system_name !== 'string' || doc.system_name === '') continue;
+    const key = `${doc.system_name}\t${doc.region}`;
+    let arr = groups.get(key);
+    if (!arr) {
+      arr = [];
+      groups.set(key, arr);
+    }
+    arr.push(doc);
+  }
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => (a.gene_idx ?? 0) - (b.gene_idx ?? 0));
+  }
+
+  const toGene = (d: GrameneNeighborhoodDoc): NeighborhoodGene => {
+    const gene: NeighborhoodGene = {
+      id: d.id!,
+      strand: d.strand === -1 ? -1 : 1,
+      start: typeof d.start === 'number' ? d.start : 0,
+      end: typeof d.end === 'number' ? d.end : 0,
+    };
+    if (d.name) gene.name = d.name;
+    // Some non-coding entries serialise an empty description as the
+    // literal string '""'; strip those.
+    if (d.description && d.description !== '""') gene.description = d.description;
+    if (d.region) gene.region = d.region;
+    if (d.biotype) gene.biotype = d.biotype;
+    const family = d[treeField] ?? d.gene_tree;
+    if (typeof family === 'string' && family !== '') gene.geneTree = family;
+    return gene;
+  };
+
+  const FLANK = 10;
+  const out: Record<GeneId, Neighborhood> = {};
+  for (const arr of groups.values()) {
+    for (let i = 0; i < arr.length; i++) {
+      const center = arr[i]!;
+      const lo = Math.max(0, i - FLANK);
+      const hi = Math.min(arr.length, i + FLANK + 1);
+      out[center.id!] = {
+        center: toGene(center),
+        upstream: arr.slice(lo, i).map(toGene),
+        downstream: arr.slice(i + 1, hi).map(toGene),
+      };
+    }
+  }
+  return out;
+}
+
+// ─── Gene structure (`/genes?fl=_id,location,gene_structure,...`) ───────────
+
+interface GrameneRelExon {
+  id?: string;
+  start?: number;
+  end?: number;
+}
+
+interface GrameneTranscriptDoc {
+  exons?: string[];
+  length?: number;
+  /** CDS bounds in cDNA (transcript) coordinates, 1-based inclusive. */
+  cds?: { start?: number; end?: number };
+  translation?: { id?: string; length?: number };
+  biotype?: string;
+}
+
+interface GrameneGeneStructureDoc {
+  _id?: string;
+  name?: string;
+  /** Absolute genome location of the whole gene. `start <= end` regardless
+   *  of strand; `strand` distinguishes 5'→3' direction. */
+  location?: {
+    region?: string;
+    start?: number;
+    end?: number;
+    strand?: number;
+    map?: string;
+  };
+  gene_structure?: {
+    exons?: GrameneRelExon[];
+    transcripts?: GrameneTranscriptDoc[];
+  };
+  /** When present, names the canonical transcript by translation id. The
+   *  /genes endpoint does NOT always return this — fall back to the
+   *  longest-CDS transcript when missing. */
+  canonical_transcript?: string;
+}
+
+/**
+ * Convert one or more Gramene `/genes` documents (each carrying
+ * `location` + `gene_structure`) into the normalized
+ * `GeneStructure` shape the genome browser zone consumes.
+ *
+ * Gramene encodes exon coordinates RELATIVE to the gene's 5' end, in
+ * transcript direction — relative position 1 is the 5'-most base of the
+ * gene. We turn them into absolute genomic coordinates (always
+ * `start <= end`) so the renderer doesn't have to know about Gramene's
+ * convention. CDS bounds, given in cDNA (spliced-transcript) coords,
+ * are walked through the exon list to mark the per-exon
+ * `cdsStart`/`cdsEnd` ranges in genomic coords.
+ *
+ * Skips genes that lack `location` or `gene_structure`. Pure: callers
+ * own the network fetch.
+ *
+ * Origin: moved verbatim from `tbrowse/src/adapters/gramene.ts:453`.
+ */
+export function fromGrameneGeneStructures(
+  json: unknown,
+): Record<GeneId, GeneStructure> {
+  if (!Array.isArray(json)) return {};
+  const out: Record<GeneId, GeneStructure> = {};
+  for (const docRaw of json) {
+    const doc = docRaw as GrameneGeneStructureDoc;
+    if (typeof doc._id !== 'string' || doc._id === '') continue;
+    const loc = doc.location;
+    const gs = doc.gene_structure;
+    if (!loc || !gs) continue;
+    if (
+      typeof loc.region !== 'string' ||
+      loc.region === '' ||
+      typeof loc.start !== 'number' ||
+      typeof loc.end !== 'number' ||
+      loc.end < loc.start
+    ) {
+      continue;
+    }
+    const strand: 1 | -1 = loc.strand === -1 ? -1 : 1;
+
+    const exonsById = new Map<string, GrameneRelExon>();
+    for (const e of gs.exons ?? []) {
+      if (
+        typeof e.id === 'string' &&
+        typeof e.start === 'number' &&
+        typeof e.end === 'number' &&
+        e.end >= e.start
+      ) {
+        exonsById.set(e.id, e);
+      }
+    }
+    if (exonsById.size === 0) continue;
+
+    const transcripts: Transcript[] = [];
+    for (const t of gs.transcripts ?? []) {
+      if (!Array.isArray(t.exons) || t.exons.length === 0) continue;
+      const orderedRel: GrameneRelExon[] = [];
+      for (const eid of t.exons) {
+        const rel = exonsById.get(eid);
+        if (rel) orderedRel.push(rel);
+      }
+      if (orderedRel.length === 0) continue;
+
+      const cdsCs = t.cds?.start;
+      const cdsCe = t.cds?.end;
+      const useCds =
+        typeof cdsCs === 'number' &&
+        typeof cdsCe === 'number' &&
+        cdsCe >= cdsCs;
+
+      const exonsOut: Exon[] = [];
+      let cdnaCursor = 0;
+      for (const rel of orderedRel) {
+        const exonLen = rel.end! - rel.start! + 1;
+        const exonCdnaStart = cdnaCursor + 1;
+        const exonCdnaEnd = cdnaCursor + exonLen;
+        let gStart: number;
+        let gEnd: number;
+        if (strand === 1) {
+          gStart = loc.start + rel.start! - 1;
+          gEnd = loc.start + rel.end! - 1;
+        } else {
+          gStart = loc.end - rel.end! + 1;
+          gEnd = loc.end - rel.start! + 1;
+        }
+        let cdsStart: number | undefined;
+        let cdsEnd: number | undefined;
+        if (useCds) {
+          const ovS = Math.max(exonCdnaStart, cdsCs!);
+          const ovE = Math.min(exonCdnaEnd, cdsCe!);
+          if (ovE >= ovS) {
+            const localStart = ovS - exonCdnaStart; // 0-based offset in exon
+            const localEnd = ovE - exonCdnaStart;
+            if (strand === 1) {
+              cdsStart = gStart + localStart;
+              cdsEnd = gStart + localEnd;
+            } else {
+              cdsStart = gEnd - localEnd;
+              cdsEnd = gEnd - localStart;
+            }
+          }
+        }
+        exonsOut.push({
+          start: gStart,
+          end: gEnd,
+          ...(cdsStart !== undefined ? { cdsStart } : {}),
+          ...(cdsEnd !== undefined ? { cdsEnd } : {}),
+        });
+        cdnaCursor = exonCdnaEnd;
+      }
+
+      // Renderer expects exons in genomic-ascending order.
+      exonsOut.sort((a, b) => a.start - b.start);
+
+      const tid =
+        t.translation?.id && t.translation.id !== ''
+          ? t.translation.id
+          : `${doc._id}_t${transcripts.length + 1}`;
+      const biotype = useCds ? 'protein_coding' : t.biotype;
+      transcripts.push({
+        id: tid,
+        ...(biotype !== undefined ? { biotype } : {}),
+        exons: exonsOut,
+      });
+    }
+    if (transcripts.length === 0) continue;
+
+    let canonical = transcripts[0]!;
+    if (typeof doc.canonical_transcript === 'string') {
+      const named = transcripts.find((tr) => tr.id === doc.canonical_transcript);
+      if (named) canonical = named;
+    } else {
+      // Fall back: longest CDS wins. Ties broken by total exon length.
+      let bestCds = -1;
+      let bestExonLen = -1;
+      for (const tr of transcripts) {
+        let cdsLen = 0;
+        let exonLen = 0;
+        for (const e of tr.exons) {
+          if (e.cdsStart !== undefined && e.cdsEnd !== undefined) {
+            cdsLen += e.cdsEnd - e.cdsStart + 1;
+          }
+          exonLen += e.end - e.start + 1;
+        }
+        if (
+          cdsLen > bestCds ||
+          (cdsLen === bestCds && exonLen > bestExonLen)
+        ) {
+          bestCds = cdsLen;
+          bestExonLen = exonLen;
+          canonical = tr;
+        }
+      }
+    }
+    canonical.isCanonical = true;
+
+    out[doc._id] = {
+      region: loc.region,
+      strand,
+      start: loc.start,
+      end: loc.end,
+      canonicalTranscriptId: canonical.id,
+      transcripts,
+      ...(typeof doc.name === 'string' && doc.name !== '' ? { name: doc.name } : {}),
+    };
+  }
+  return out;
+}

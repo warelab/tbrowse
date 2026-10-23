@@ -1,6 +1,6 @@
 {
   "name": "tbrowse",
-  "version": "2.10.0",
+  "version": "2.13.0",
   "description": "Embeddable React component for visualizing phylogenetic trees and pluggable data zones.",
   "type": "module",
   "main": "./dist/tbrowse.cjs",
@@ -20,19 +20,28 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:core": "npm run build -w packages/core",
+    "prebuild": "npm run build:core",
     "build:playground": "vite build --mode playground",
     "preview:playground": "vite preview --mode playground",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "rm -rf dist && npm run build && npm run typecheck && npm test",
+    "pretypecheck": "npm run build:core",
+    "typecheck:playground": "tsc -p examples/playground/tsconfig.json --noEmit",
+    "check:exports": "node scripts/check-exports.mjs",
+    "prepublishOnly": "rm -rf dist && node scripts/check-core-published.mjs && npm run build && npm run typecheck && npm test && npm run check:exports",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:all": "vitest run && npm test -w packages/core",
+    "test:watch": "vitest",
+    "docs:api": "npm run docs:api -w packages/core",
+    "release:core": "npm publish -w packages/core"
   },
   "peerDependencies": {
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },
   "dependencies": {
+    "tbrowse-core": ">=1.0.0 <2.0.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -59,5 +68,8 @@
     "tree",
     "msa",
     "bioinformatics"
+  ],
+  "workspaces": [
+    "packages/*"
   ]
 }

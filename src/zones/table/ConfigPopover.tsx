@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTBrowseStore } from '../../store';
 import { GearIcon } from '../../icons/GearIcon';
-import { AGGREGATE_METHODS, methodForKind } from './aggregators';
+import { AGGREGATE_METHODS, methodForKind } from 'tbrowse-core';
 import {
   autoPalette,
   paletteById,
@@ -16,7 +16,7 @@ import type {
   TableColumnOverride,
   TableDisplayMode,
   TableZoneState,
-} from './types';
+} from 'tbrowse-core';
 
 const DISPLAY_MODES: { id: TableDisplayMode; label: string; supports: ColumnKind[] }[] = [
   { id: 'text', label: 'Text', supports: ['number', 'boolean', 'string'] },

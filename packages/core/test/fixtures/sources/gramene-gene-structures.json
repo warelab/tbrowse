@@ -1,0 +1,19 @@
+[
+  {
+    "_id": "AT1G01040",
+    "name": "DCL1",
+    "location": { "region": "1", "start": 200, "end": 300, "strand": 1 },
+    "gene_structure": {
+      "exons": [{ "id": "e1", "start": 1, "end": 40 }, { "id": "e2", "start": 61, "end": 101 }],
+      "transcripts": [{ "exons": ["e1", "e2"], "cds": { "start": 11, "end": 60 }, "translation": { "id": "AT1G01040.1", "length": 16 } }]
+    }
+  },
+  {
+    "_id": "Zm00001eb000010",
+    "location": { "region": "2", "start": 5000, "end": 5059, "strand": -1 },
+    "gene_structure": {
+      "exons": [{ "id": "x1", "start": 1, "end": 60 }],
+      "transcripts": [{ "exons": ["x1"], "cds": { "start": 5, "end": 35 }, "translation": { "id": "Zm00001eb000010_T001" } }]
+    }
+  }
+]

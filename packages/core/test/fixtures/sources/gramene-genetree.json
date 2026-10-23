@@ -1,0 +1,37 @@
+{
+  "_id": "EPlGT00940000166940",
+  "tree_stable_id": "EPlGT00940000166940",
+  "node_id": 1,
+  "distance_to_parent": 0,
+  "taxon_id": 33090,
+  "taxon_name": "Viridiplantae",
+  "node_type": "speciation",
+  "children": [
+    {
+      "node_id": 2,
+      "distance_to_parent": 0.05,
+      "taxon_id": 3702001,
+      "taxon_name": "Arabidopsis thaliana",
+      "system_name": "arabidopsis_thaliana",
+      "gene_stable_id": "AT1G01040",
+      "protein_stable_id": "AT1G01040.1",
+      "gene_description": "Dicer-like protein 1",
+      "gene_display_label": "DCL1",
+      "sequence": "MKLV",
+      "cigar": "2M1D2M",
+      "exon_junctions": [2],
+      "domains": [{ "id": "IPR000999", "root": 999, "start": 1, "end": 4, "name": "RNase III" }]
+    },
+    {
+      "node_id": 3,
+      "distance_to_parent": 0.06,
+      "taxon_id": 4577001,
+      "taxon_name": "Zea mays",
+      "system_name": "zea_mays",
+      "gene_stable_id": "Zm00001eb000010",
+      "protein_stable_id": "Zm00001eb000010_T001",
+      "sequence": "MKLLV",
+      "cigar": "5M"
+    }
+  ]
+}

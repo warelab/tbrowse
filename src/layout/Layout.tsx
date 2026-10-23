@@ -8,13 +8,13 @@ import {
   type RefObject,
 } from 'react';
 import { useTBrowseStore } from '../store';
-import { computePivotState } from '../pivot';
+import { computePivotState } from 'tbrowse-core';
 import {
   buildChildrenIndex,
   EMPTY_NODE_ID_SET,
   subtreeIdsOf,
-} from '../treeIndex';
-import { computeVisibleRows } from '../visibleRows';
+} from 'tbrowse-core';
+import { computeVisibleRows } from 'tbrowse-core';
 import type {
   HostData,
   NodeId,
@@ -22,13 +22,14 @@ import type {
   VisibleRow,
   ZoneDefinition,
   ZoneRenderProps,
+  ZoneStatusMap,
 } from '../types';
 import { BUILTIN_SEARCH_FIELDS, type SearchField } from '../search/fields';
 import { resolveMatches } from '../search/resolveMatches';
 import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
 import { Toolbar } from './Toolbar';
-import { computeRowRange } from './rowRange';
+import { computeRowRange } from 'tbrowse-core';
 
 export const HEADER_HEIGHT = 56;
 /** Top portion of the header where the reorder handle lives. Other zones can
@@ -47,7 +48,7 @@ const easeOut = (t: number) => 1 - Math.pow(1 - t, 2);
 
 interface LayoutProps {
   data: HostData;
-  zones: ZoneDefinition[];
+  zones: ZoneDefinition<any>[];
   /** Host-supplied search fields appended to the built-in set. */
   searchFields?: SearchField[];
   /** Hotkey opt-out forwarded from `TBrowseProps.hotkeys`. */
@@ -56,7 +57,7 @@ interface LayoutProps {
    *  forwarded from `TBrowseProps.defaultOpenSections`. */
   defaultOpenSections?: { search?: boolean; zones?: boolean; display?: boolean };
   /** Per-zone load status — forwarded from `TBrowseProps.zoneStatus`. */
-  zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
+  zoneStatus?: ZoneStatusMap;
   /** Show the top toolbar. Forwarded from `TBrowseProps.showHeader`. */
   showHeader?: boolean;
   /** Initial per-row height in px. Forwarded from `TBrowseProps.rowHeight`;

@@ -1,0 +1,52 @@
+[
+  {
+    "_id": "GA",
+    "name": "GeneA",
+    "location": { "region": "1", "start": 1000, "end": 1099, "strand": 1 },
+    "gene_structure": {
+      "exons": [
+        { "id": "e1", "start": 1, "end": 20 },
+        { "id": "e2", "start": 41, "end": 70 },
+        { "id": "e3", "start": 81, "end": 100 }
+      ],
+      "transcripts": [
+        {
+          "exons": ["e1", "e2", "e3"],
+          "cds": { "start": 11, "end": 60 },
+          "translation": { "id": "GA.1", "length": 16 }
+        },
+        {
+          "exons": ["e1", "e3"],
+          "biotype": "retained_intron"
+        }
+      ]
+    }
+  },
+  {
+    "_id": "GB",
+    "location": { "region": "2", "start": 5000, "end": 5059, "strand": -1 },
+    "gene_structure": {
+      "exons": [
+        { "id": "x1", "start": 1, "end": 10 },
+        { "id": "x2", "start": 31, "end": 60 }
+      ],
+      "transcripts": [
+        {
+          "exons": ["x1", "x2"],
+          "cds": { "start": 5, "end": 35 },
+          "translation": { "id": "GB.1" }
+        },
+        {
+          "exons": ["x2"],
+          "cds": { "start": 1, "end": 30 },
+          "translation": { "id": "GB.2" }
+        }
+      ]
+    },
+    "canonical_transcript": "GB.2"
+  },
+  {
+    "_id": "GC",
+    "location": { "region": "3", "start": 10, "end": 20, "strand": 1 }
+  }
+]

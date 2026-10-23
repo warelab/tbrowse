@@ -9,13 +9,14 @@ import { SearchControls } from './SearchBar';
 import { ZoneToggles } from './ChromeStrip';
 import { TBrowseLogo } from '../icons/TBrowseLogo';
 import { useTBrowseStore, DEFAULT_FONT_SIZE } from '../store';
-import { LEAF_ROW_HEIGHT } from '../visibleRows';
+import { LEAF_ROW_HEIGHT } from 'tbrowse-core';
 import type { SearchField } from '../search/fields';
 import type {
   HostData,
   SearchResults,
   SearchState,
   ZoneDefinition,
+  ZoneStatusMap,
 } from '../types';
 
 interface ToolbarProps {
@@ -35,7 +36,7 @@ interface ToolbarProps {
    *  `TBrowseProps.defaultOpenSections`. */
   defaultOpenSections?: { search?: boolean; zones?: boolean; display?: boolean };
   /** Per-zone load status — forwarded from `TBrowseProps.zoneStatus`. */
-  zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
+  zoneStatus?: ZoneStatusMap;
   /** Host controls rendered right-aligned in the toolbar. */
   headerActions?: ReactNode;
   /** Show the Display section (row-height / font-size sliders). */

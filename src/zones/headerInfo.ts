@@ -1,5 +1,5 @@
-import type { ChildrenIndex } from '../treeIndex';
-import { countLeavesInSubtree } from '../treeIndex';
+import type { ChildrenIndex } from 'tbrowse-core';
+import { countLeavesInSubtree } from 'tbrowse-core';
 import type { HostData, NodeId } from '../types';
 
 /**

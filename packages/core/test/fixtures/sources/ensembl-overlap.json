@@ -1,0 +1,8 @@
+[
+  { "id": "ENSG00000139618", "feature_type": "gene", "start": 100, "end": 300, "strand": 1, "seq_region_name": "13" },
+  { "id": "ENST1", "feature_type": "transcript", "Parent": "ENSG00000139618", "start": 100, "end": 300, "strand": 1, "seq_region_name": "13", "biotype": "protein_coding", "is_canonical": 1, "external_name": "BRCA2-201" },
+  { "id": "ENSE1", "feature_type": "exon", "Parent": "ENST1", "start": 100, "end": 150 },
+  { "id": "ENSE2", "feature_type": "exon", "Parent": "ENST1", "start": 200, "end": 300 },
+  { "id": "CDS1", "feature_type": "cds", "Parent": "ENST1", "start": 120, "end": 150 },
+  { "id": "ENSR1", "feature_type": "regulatory", "feature_type_class": "Promoter", "description": "Predicted promoter", "start": 50, "end": 120 }
+]

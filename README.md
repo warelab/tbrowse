@@ -34,7 +34,8 @@ const msa: MSA = { alphabet: 'protein', length: 60, sequences: { /* geneId → s
 The bundled Vite playground (`npm run dev`) has a "Load Ensembl tree" button that fetches a real gene tree (BRCA2 — `ENSG00000139618`), runs it through `fromEnsemblGeneTree`, and renders it pivoted to put human BRCA2 at the top. Demonstrates the entire stack against live data.
 
 ```ts
-import { fromEnsemblGeneTree, computePivotState, TBrowse } from 'tbrowse';
+import { TBrowse } from 'tbrowse';
+import { fromEnsemblGeneTree, computePivotState } from 'tbrowse-core';
 
 const json = await fetch(
   'https://rest.ensembl.org/genetree/member/id/homo_sapiens/ENSG00000139618?aligned=1&sequence=protein',
@@ -94,7 +95,40 @@ interface TBrowseProps {
 }
 ```
 
-`Tree.nodes` is flat: `{ id, parentId, distance, isLeaf, taxonomyId?, geneId?, eventType?, bootstrap? }`. `MSA.sequences` is keyed by gene id. The Ensembl adapter (`fromEnsemblGeneTree`) walks the nested REST response into this normalized shape.
+`Tree.nodes` is flat: `{ id, parentId, distance, isLeaf, taxonomyId?, geneId?, eventType?, bootstrap? }`. `MSA.sequences` is keyed by gene id. `taxonomyId` is `string | number` (gene trees carry numeric NCBI ids; a species tree keyed by `String(taxonId)` works unchanged). The Ensembl adapter (`fromEnsemblGeneTree`, in tbrowse-core) walks the nested REST response into this normalized shape.
+
+## Data loading: tbrowse-core
+
+`<TBrowse>` never fetches. Everything that turns a file or an API response into the props above lives in the companion package [`tbrowse-core`](./packages/core) — a dependency-free TypeScript library that also runs in Node:
+
+| Subpath | What |
+|---|---|
+| `tbrowse-core` (root) | The data model types plus everything below. |
+| `tbrowse-core/tree` | Children index, pre/post-order walks, leaf order with swaps, roll-ups (`sumLeafCounts`, `maximalExcludedClades`), pruning, `computePivotState`, `toNewick`, tree-model / hierarchy conversion, LCA, node heights, validation. |
+| `tbrowse-core/parsers` | Newick, Nexus, PhyloXML (`parseTreeFile`) and CSV/TSV (`parseTableFile`). |
+| `tbrowse-core/fetch` | `fetchWithRetry` (backoff + jitter + `Retry-After`), `getJson`, `buildUrl`, bounded `fanOut` with partial-failure accounting. |
+| `tbrowse-core/sources` | The adapters (`fromEnsemblGeneTree`, `fromGrameneGenetree`, `fromBrAPIAlleleMatrix`, …), the `TreeDataSource` / `DataSlot` / `Loader` contract with `createLoader`, `extendSource`, `staticSource`, and the built-in sources `ensemblGeneTreeSource`, `grameneGeneTreeSource`, `brapiAlleleMatrixSource`, `fileTreeSource`. |
+| `tbrowse-core/cluster` | UPGMA over genotype dosages (`upgma`, `upgmaFromCalls`, `dosagesFromGenotypeMatrix`). |
+| `tbrowse-core/view` | `buildInitialViewState`, `applyPivot`, URL-hash codec, derived-prune layer, `computeVisibleRows` / `computeRowRange`. |
+| `tbrowse-core/zone` | Row flags and leaf/taxon joins for host-defined zones (`rowsWithFlags` in tbrowse adds the theme colours). |
+
+The viewer re-exports every type from the core, so a host can import `Tree` from either package. The core's own documentation: [README](./packages/core/README.md) (model diagram, complete entry-point table, a headless Node example), [Writing a data source](./packages/core/docs/data-sources.md), [Writing a zone with the row helpers](./packages/core/docs/zones.md) and the [API reference](./packages/core/docs/api/tbrowse-core.md) generated from the type declarations.
+
+Two hooks wire a core data source to the component:
+
+```tsx
+import { TBrowse, treeZone, labelsZone, msaZone, useLoader, useInitialViewState } from 'tbrowse';
+import { ensemblGeneTreeSource } from 'tbrowse-core';
+
+const zones = [treeZone, labelsZone, msaZone];
+const ctx = useMemo(() => ({ geneId }), [geneId]);
+const { hostProps, snapshot, loader } = useLoader(ensemblGeneTreeSource, ctx, { zoneSlots: { msa: ['proteinDomains'] } });
+const [viewState, setViewState] = useInitialViewState(zones, snapshot);
+if (!hostProps || !viewState) return snapshot.error ?? 'Loading…';
+return <TBrowse {...hostProps} zones={zones} viewState={viewState} onViewStateChange={setViewState} />;
+```
+
+`useLoader` restarts when `ctx` (or an explicit `key`) changes and exposes `loader.load('proteinDomains')` for lazy slots; `useInitialViewState` rebuilds the view when a root arrives ('reset' / 'soft' / 'keep' via `onRootReady`) and keeps the zone list in step.
 
 ## ViewState
 
@@ -106,11 +140,18 @@ interface ViewState {
   collapsedNodeIds: NodeId[];          // internal nodes shown as triangles
   prunedNodeIds: NodeId[];             // subtrees hidden + replaced with stub glyphs
   swappedNodeIds: NodeId[];            // internal nodes whose children render in reversed order
-  zones: { id: string; width: number; visible: boolean }[];
+  compressedNodeIds: NodeId[];         // per-branch overrides of the auto branch-length compression
+  nodeOfInterestId: NodeId | null;     // the pivoted leaf
+  zones: { id: string; width: number; visible: boolean; userToggled?: boolean }[];
   zoneStates: Record<string, unknown>; // per-zone state slot (built-ins use well-known keys)
-  search: { field: string; query: string } | null;
+  rowHeight?: number;                  // Display control; falls back to the rowHeight prop
+  fontSize?: number;                   // Display control; falls back to the fontSize prop
+  unlinkedZoneGroups?: string[];       // exclusive groups the user decoupled
+  search: { query: string; excludedFields?: string[]; caseSensitive?: boolean; regex?: boolean } | null;
 }
 ```
+
+`buildInitialViewState(zones, options)` from `tbrowse-core` produces one from a zone list (the same routine the chassis uses in uncontrolled mode), and `normalizeViewState` repairs a persisted blob from an older version.
 
 All chassis interactions (resize, reorder, collapse via tooltip, prune via tooltip, swap, MSA pan/zoom, label-field picker, show/hide) write to this object via `onViewStateChange`. Persist it to a URL fragment for shareable views.
 
@@ -143,35 +184,41 @@ Both `Header` and `Body` receive the same `ZoneRenderProps`: `visibleRows` (alre
 
 ## Helpers
 
-| Export | What |
-|---|---|
-| `computeVisibleRows` | Pure derivation: `(tree, collapsed, pruned, swapped) → VisibleRow[]`. |
-| `computeTreeLayout` | Pure phylogram layout against a column width. |
-| `computePivotState` | Resolve a gene id / node id and return collapse + swap sets that pivot the tree. |
-| `fromEnsemblGeneTree` | Convert Ensembl REST gene-tree JSON to TBrowse inputs. |
-| `createStubZone` | Build a placeholder zone for development. |
+| Export | Package | What |
+|---|---|---|
+| `computeVisibleRows` | tbrowse-core | Pure derivation: `({ tree, collapsedNodeIds, prunedNodeIds, swappedNodeIds?, rowHeight? }) → VisibleRow[]`. |
+| `computePivotState` | tbrowse-core | Resolve a gene id / node id and return collapse + swap sets that pivot the tree. |
+| `buildInitialViewState` | tbrowse-core | Initial `ViewState` for a zone list (widths, visibility, exclusive groups, pivot). |
+| `fromEnsemblGeneTree` | tbrowse-core | Convert Ensembl REST gene-tree JSON to TBrowse inputs. |
+| `rowsWithFlags` | tbrowse | Rows in the virtualised range with hover/selection flags and theme background, for host-defined zone bodies. |
+| `createStubZone` | tbrowse | Build a placeholder zone for development. |
+
+The deprecated re-exports of the core helpers from `tbrowse` itself remain through 2.x.
 
 ## Bundle
 
-ESM + CJS, types via `vite-plugin-dts`. Peer-deps on `react` / `react-dom` only; runtime dep on `zustand`. Current bundle ~14 kB gzipped (CJS).
+ESM + CJS, types via `vite-plugin-dts`. Peer-deps on `react` / `react-dom` only; runtime deps on `zustand` and `tbrowse-core`. Current bundle ~14 kB gzipped (CJS).
 
 ## Project layout
 
 ```
-src/
-  TBrowse.tsx, types.ts, store.tsx, treeIndex.ts
-  visibleRows.ts        chassis row derivation
-  pivot.ts              nodeOfInterest helper
+src/                    the viewer (React)
+  TBrowse.tsx, types.ts, store.tsx
   layout/               grid + virtualization + animation
   zones/
     tree/               SVG branches, glyphs, triangles, tooltip
     labels/             field picker, label-provider cache
     msa/                canvas paint, minimap, color schemes
-  adapters/
-    ensembl.ts          Ensembl REST → TBrowse inputs
+    rows.ts             row prologue for host-defined zones
   *.test.ts             vitest unit tests
+packages/core/          tbrowse-core (headless; npm workspace)
+  src/types.ts          data model
+  src/tree, parsers, fetch, adapters, view, zone
 examples/playground/    Vite dev app (kitchen-sink demo)
+scripts/                export-surface and packaging guards
 ```
+
+Workspace commands: `npm run build:core` builds the core (also run automatically before `build` and `typecheck`), `npm run test:all` runs both suites, `npm run check:exports` verifies the 2.x export surface, `node scripts/smoke-core.mjs` packs and loads the core in an empty project.
 
 ## License
 

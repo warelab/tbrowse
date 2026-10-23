@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LEAF_ROW_HEIGHT } from '../../visibleRows';
+import { LEAF_ROW_HEIGHT } from 'tbrowse-core';
 import { EditableZoneName } from '../EditableZoneName';
 import type {
   GeneId,

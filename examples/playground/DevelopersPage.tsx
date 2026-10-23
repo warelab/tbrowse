@@ -55,7 +55,9 @@ function GeneTree({ tree, taxonomy, msa, geneMetadata }) {
       <h2 style={h2Style}>The data model</h2>
       <p>
         Inputs are independent and mostly optional. The component never
-        fetches — you pass already-loaded data as props:
+        fetches — you pass already-loaded data as props, or let a{' '}
+        <Code>tbrowse-core</Code> data source load them for you (see{' '}
+        <em>Loading data</em> below):
       </p>
       <ul style={listStyle}>
         <li>
@@ -131,12 +133,58 @@ const zones = [
         .
       </p>
 
+      <h2 style={h2Style}>Loading data</h2>
+      <p>
+        The headless <Code>tbrowse-core</Code> package ships ready-made data
+        sources — <Code>ensemblGeneTreeSource</Code>,{' '}
+        <Code>grameneGeneTreeSource</Code>, <Code>brapiAlleleMatrixSource</Code>,{' '}
+        <Code>fileTreeSource</Code> — plus <Code>staticSource</Code> for
+        in-memory trees. A source loads a <em>root</em> (the tree and whatever
+        arrived with it) and declares <em>slots</em>: independently fetched
+        per-leaf data such as Pfam domains or gene structures, eager or lazy.
+        The viewer&apos;s <Code>useLoader</Code> runs one and hands you the
+        props; <Code>useInitialViewState</Code> keeps a controlled view state
+        in step with each new root.
+      </p>
+      <CodeBlock>{`import { TBrowse, useLoader, useInitialViewState, treeZone, labelsZone, msaZone } from 'tbrowse';
+import { ensemblGeneTreeSource } from 'tbrowse-core';
+
+const zones = [treeZone, labelsZone, msaZone];
+
+function GeneTree({ geneId }) {
+  const { hostProps, snapshot, loader } = useLoader(ensemblGeneTreeSource, { geneId }, {
+    key: geneId,                                  // restart identity (default: the ctx reference)
+    zoneSlots: { msa: ['proteinDomains'] },       // zone id -> slots feeding it (drives zoneStatus)
+  });
+  const [viewState, setViewState] = useInitialViewState(zones, snapshot);
+
+  if (!hostProps || !viewState) return snapshot.error ?? 'Loading…';
+  return (
+    <>
+      <button onClick={() => loader.load('proteinDomains')}>Load Pfam domains</button>
+      <TBrowse {...hostProps} zones={zones} viewState={viewState} onViewStateChange={setViewState} />
+    </>
+  );
+}`}</CodeBlock>
+      <p style={{ color: 'var(--tbrowse-text-muted)', fontSize: 14 }}>
+        <Code>snapshot.slots[id]</Code> carries each slot&apos;s status,
+        progress and per-leaf errors for your own readouts, and{' '}
+        <Code>snapshot.root.meta</Code> the source-specific extras (the Ensembl
+        mirror, a BrAPI genotype matrix, an uploaded file&apos;s warnings). The{' '}
+        <Link to="/playground" style={{ color: 'var(--tbrowse-accent)' }}>
+          Playground
+        </Link>{' '}
+        runs every one of its modes — sample, Ensembl, Gramene, BrAPI, uploaded
+        files — through this pair of hooks.
+      </p>
+
       <h2 style={h2Style}>Adapters</h2>
       <p>
-        Source-shaped payloads are converted with helper adapters, keeping the
-        core data-source-agnostic:
+        Underneath the sources, source-shaped payloads are converted with pure
+        adapters you can also call directly, keeping the core
+        data-source-agnostic:
       </p>
-      <CodeBlock>{`import { fromEnsemblGeneTree, fromGrameneGenetree } from 'tbrowse';
+      <CodeBlock>{`import { fromEnsemblGeneTree, fromGrameneGenetree } from 'tbrowse-core';
 
 const { tree, taxonomy, msa, geneMetadata } = fromEnsemblGeneTree(payload);`}</CodeBlock>
 

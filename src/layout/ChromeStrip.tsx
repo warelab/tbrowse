@@ -1,12 +1,12 @@
 import { useTBrowseStore } from '../store';
-import type { HostData, ViewState, ZoneDefinition } from '../types';
+import type { HostData, ViewState, ZoneDefinition, ZoneStatusMap } from '../types';
 
 interface ZoneTogglesProps {
   zones: ZoneDefinition[];
   data: HostData;
   /** Optional per-zone host-supplied load status. Drives the visual
    *  loading-pulse / error-tint without changing toggle behaviour. */
-  zoneStatus?: Record<string, 'loading' | 'error' | 'ready'>;
+  zoneStatus?: ZoneStatusMap;
 }
 
 /** Segmented-control wrapper: rounded outer corners + a single outer
