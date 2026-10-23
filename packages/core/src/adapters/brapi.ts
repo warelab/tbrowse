@@ -28,6 +28,22 @@ export interface FromBrAPIAlleleMatrixResult {
   treeMetric?: string;
   /** Server-supplied display order of leaves, when present. */
   leafOrder?: string[];
+  /**
+   * The matrix dimensions as the server paged them: a standard BrAPI v2
+   * `/allelematrix` response carries one entry per dimension (VARIANTS
+   * and CALLSETS). When `totalCount` exceeds what the response holds,
+   * the window is one page of a larger matrix.
+   */
+  pagination?: BrapiMatrixPagination[];
+}
+
+/** One dimension of a standard `/allelematrix` response's `pagination` array. */
+export interface BrapiMatrixPagination {
+  dimension: string;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
 }
 
 export interface FromBrAPIAlleleMatrixOptions {
@@ -129,6 +145,23 @@ export function fromBrAPIAlleleMatrix(
     ? (r.variantSetDbIds as unknown[]).map(String)
     : [];
 
+  // Dimension paging (standard /allelematrix only; g2p's search endpoint
+  // returns the whole window and has no pagination block).
+  const pagination = Array.isArray(r.pagination)
+    ? (r.pagination as unknown[]).flatMap((p): BrapiMatrixPagination[] => {
+        if (!p || typeof p !== 'object') return [];
+        const q = p as Record<string, unknown>;
+        const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+        return [{
+          dimension: typeof q.dimension === 'string' ? q.dimension : '',
+          page: n(q.page),
+          pageSize: n(q.pageSize),
+          totalCount: n(q.totalCount),
+          totalPages: n(q.totalPages),
+        }];
+      })
+    : undefined;
+
   // Region label: prefer the caller's, otherwise synthesise from the
   // first/last variant positions when they share a chromosome.
   let regionLabel = opts.regionLabel;
@@ -162,6 +195,7 @@ export function fromBrAPIAlleleMatrix(
     ...(treeMethod !== undefined ? { treeMethod } : {}),
     ...(treeMetric !== undefined ? { treeMetric } : {}),
     ...(leafOrder !== undefined ? { leafOrder } : {}),
+    ...(pagination !== undefined ? { pagination } : {}),
   };
 }
 
@@ -270,15 +304,25 @@ export interface FromBrAPIVariantsOptions {
 }
 
 /**
- * Convert the long-form BrAPI `/variants` response of gramene-g2p — one row
- * per (sample, variant): `{ sample, pos, ref?, alleles, GT }`, wrapped in
- * `result.data` or given as a bare array — into one `VariantSite` per
- * position (first row per `pos` wins, in order of first appearance). `ref`
- * is the row's `ref`, `alt` is `alleles.slice(1)` (`alleles[0]` is REF),
- * and the id is synthesised as `${reference ?? ''}:${pos}` so it matches
- * the matrix's variantDbIds (g2p `brapi/genotyping.ts:426`). Rows without a
- * numeric `pos` are skipped.
- * Origin: stale worktree `examples/playground/main.tsx:679-700` (`loadBrapiVariants`).
+ * Convert a BrAPI `/variants` response (`result.data`, or a bare array)
+ * into one `VariantSite` per variant. Two row shapes are understood, and
+ * may be mixed:
+ *
+ * - Standard BrAPI v2 variant objects (`variantDbId`, `referenceName`,
+ *   `start`, `referenceBases`, `alternateBases`, …): the id is the
+ *   `variantDbId`, so the site joins the matrix's `variantDbIds` by id or
+ *   by position; `position` is `start` when numeric. The first row per id
+ *   wins.
+ * - gramene-g2p's long-form rows — one per (sample, variant):
+ *   `{ sample, pos, ref?, alleles, GT }` — collapsed to one site per
+ *   position (first row per `pos` wins, in order of first appearance).
+ *   `ref` is the row's `ref`, `alt` is `alleles.slice(1)` (`alleles[0]`
+ *   is REF), and the id is synthesised as `${reference ?? ''}:${pos}` so
+ *   it matches the matrix's variantDbIds (g2p `brapi/genotyping.ts:426`).
+ *   Rows without a numeric `pos` are skipped.
+ *
+ * Origin of the long-form branch: stale worktree
+ * `examples/playground/main.tsx:679-700` (`loadBrapiVariants`).
  */
 export function fromBrAPIVariants(raw: unknown, opts: FromBrAPIVariantsOptions = {}): VariantSite[] {
   const result = (raw as { result?: unknown })?.result ?? raw;
@@ -287,10 +331,32 @@ export function fromBrAPIVariants(raw: unknown, opts: FromBrAPIVariantsOptions =
     : result;
   if (!Array.isArray(data)) return [];
   const seen = new Set<number>();
+  const seenIds = new Set<string>();
   const out: VariantSite[] = [];
   for (const rec of data as unknown[]) {
     if (!rec || typeof rec !== 'object') continue;
     const row = rec as Record<string, unknown>;
+    if (typeof row.variantDbId === 'string' && row.variantDbId !== '') {
+      // Standard BrAPI v2 variant object.
+      const id = row.variantDbId;
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      const start = row.start;
+      const alt = Array.isArray(row.alternateBases)
+        ? ((row.alternateBases as unknown[]).filter((a) => typeof a === 'string') as string[])
+        : undefined;
+      const reference = typeof row.referenceName === 'string' && row.referenceName !== ''
+        ? row.referenceName
+        : opts.reference;
+      out.push({
+        id,
+        ...(reference !== undefined ? { reference } : {}),
+        ...(typeof start === 'number' && Number.isFinite(start) ? { position: start } : {}),
+        ...(typeof row.referenceBases === 'string' && row.referenceBases !== '' ? { ref: row.referenceBases } : {}),
+        ...(alt !== undefined ? { alt } : {}),
+      });
+      continue;
+    }
     const pos = row.pos;
     if (typeof pos !== 'number' || !Number.isFinite(pos)) continue;
     if (seen.has(pos)) continue;
@@ -312,10 +378,11 @@ export function fromBrAPIVariants(raw: unknown, opts: FromBrAPIVariantsOptions =
 
 /**
  * Merge REF/ALT (and allele-frequency) detail from `sites` into the
- * matrix's variant columns. The join is by POSITION: a matrix variant with
- * a `position` takes the site at the same position; one without a position
- * matches a site by `id` only when that site also lacks a position. On a
- * hit, `ref`, `alt` and `alleleFrequency` are taken from the site when it
+ * matrix's variant columns. A matrix variant with a `position` takes the
+ * site at the same position (g2p synthesises `chr:pos` ids on both sides,
+ * so position is the reliable key there); failing that, the site with the
+ * same `id` — which is how standard BrAPI servers join, their
+ * `variantDbId`s being opaque. On a hit, `ref`, `alt` and `alleleFrequency` are taken from the site when it
  * defines them and kept otherwise. Returns a new `GenotypeMatrix` (new
  * `variants` array) when at least one column changed, and the SAME object
  * when nothing matched, so a loader can tell a no-op from a change.
@@ -325,15 +392,12 @@ export function mergeVariantSites(matrix: GenotypeMatrix, sites: VariantSite[]):
   const byPos = new Map<number, VariantSite>();
   const byId = new Map<string, VariantSite>();
   for (const s of sites) {
-    if (s.position !== undefined) {
-      if (!byPos.has(s.position)) byPos.set(s.position, s);
-    } else if (!byId.has(s.id)) {
-      byId.set(s.id, s);
-    }
+    if (s.position !== undefined && !byPos.has(s.position)) byPos.set(s.position, s);
+    if (!byId.has(s.id)) byId.set(s.id, s);
   }
   let changed = false;
   const variants = matrix.variants.map((v) => {
-    const hit = v.position !== undefined ? byPos.get(v.position) : byId.get(v.id);
+    const hit = (v.position !== undefined ? byPos.get(v.position) : undefined) ?? byId.get(v.id);
     if (!hit) return v;
     changed = true;
     return {

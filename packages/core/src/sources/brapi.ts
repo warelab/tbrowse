@@ -1,8 +1,9 @@
 /**
  * BrAPI v2 genotyping endpoints and the `brapiAlleleMatrixSource` data
- * source: an `/allelematrix-search` response (with or without a server-side
- * tree) becomes a tree + `GenotypeMatrix`, then `/germplasm` and
- * `/variants` fill in per-leaf metadata and REF/ALT alleles.
+ * source: an allele-matrix response — a standard `/allelematrix` page or
+ * gramene-g2p's `/allelematrix-search` window (with or without a
+ * server-side tree) — becomes a tree + `GenotypeMatrix`, then `/germplasm`
+ * and `/variants` fill in per-leaf metadata and REF/ALT alleles.
  *
  * Origin: the stale worktree's playground
  * (`stupefied-davinci-b87dec/examples/playground/main.tsx:679-830`:
@@ -20,6 +21,7 @@ import {
   fromBrAPITree,
   fromBrAPIVariants,
   mergeVariantSites,
+  type BrapiMatrixPagination,
   type FromBrAPIAlleleMatrixResult,
 } from '../adapters/brapi';
 import { DOSAGE_L1_MEAN, distanceMatrix, dosagesFromGenotypeMatrix, upgma } from '../cluster/upgma';
@@ -97,30 +99,75 @@ export function brapiBaseOf(matrixUrl: string): string {
   return cut === -1 ? '' : noTrailing.slice(0, cut);
 }
 
+/** Query parameters a standard BrAPI v2 `/variants` call understands (besides paging). */
+const STANDARD_VARIANTS_PARAMS: ReadonlySet<string> = new Set([
+  'variantDbId', 'variantSetDbId', 'referenceDbId', 'referenceSetDbId', 'referenceName',
+  'start', 'end', 'callSetDbId', 'germplasmDbId', 'germplasmName', 'germplasmPUI',
+  'studyDbId', 'studyName', 'externalReferenceId', 'externalReferenceSource',
+]);
+
+/** `pageSize` put on a standard `/variants` URL (the servers' own defaults can be tiny). */
+export const BRAPI_VARIANTS_PAGE_SIZE = 1000;
+
 /**
- * The `/variants` URL for the window an `/allelematrix-search` URL covers:
- * the path's `/allelematrix-search…` tail becomes `/variants` (or
- * `/variants` is appended to `brapiBaseOf(matrixUrl)` when that tail is
- * absent), and EVERY query parameter is kept except `tree` — the region,
- * sample and allele-frequency filters must match the matrix exactly
- * (`main.tsx:681-684`).
+ * The `/variants` URL for the window a matrix URL covers.
+ *
+ * - gramene-g2p style (`…/allelematrix-search?…`): the path tail becomes
+ *   `/variants` and EVERY query parameter is kept except `tree` — the
+ *   region, sample and allele-frequency filters must match the matrix
+ *   exactly (`main.tsx:681-684`).
+ * - standard BrAPI v2 (`…/allelematrix?…`, or any other path): `/variants`
+ *   under `brapiBaseOf(matrixUrl)`, keeping only the parameters the
+ *   standard `/variants` call accepts (variantSetDbId, referenceName,
+ *   start, end, …) and adding `pageSize=${BRAPI_VARIANTS_PAGE_SIZE}`; the
+ *   matrix-only dimension paging and display switches are dropped.
  */
 export function brapiVariantsUrlFrom(matrixUrl: string): string {
   const { path, params } = splitUrl(matrixUrl);
-  const variantsPath = /\/allelematrix-search/.test(path)
-    ? path.replace(/\/allelematrix-search.*$/, '/variants')
-    : `${brapiBaseOf(matrixUrl)}/variants`;
-  params.delete('tree');
+  let variantsPath: string;
+  if (/\/allelematrix-search/.test(path)) {
+    variantsPath = path.replace(/\/allelematrix-search.*$/, '/variants');
+    params.delete('tree');
+  } else {
+    variantsPath = `${brapiBaseOf(matrixUrl)}/variants`;
+    for (const key of [...params.keys()]) if (!STANDARD_VARIANTS_PARAMS.has(key)) params.delete(key);
+    params.set('pageSize', String(BRAPI_VARIANTS_PAGE_SIZE));
+  }
   const qs = params.toString();
   return qs === '' ? variantsPath : `${variantsPath}?${qs}`;
 }
 
-/** GET an `/allelematrix-search` URL and normalise it with `fromBrAPIAlleleMatrix`. */
+/** Dimension page size put on a standard `/allelematrix` URL that names none. */
+export const BRAPI_DIMENSION_PAGE_SIZE = 1000;
+
+/**
+ * A standard BrAPI `/allelematrix` call pages BOTH dimensions, with
+ * server-chosen defaults that can be as small as a few rows; a matrix URL
+ * whose path ends in `/allelematrix` and names neither
+ * `dimensionVariantPageSize` nor `dimensionCallSetPageSize` gets
+ * `BRAPI_DIMENSION_PAGE_SIZE` for each, so the first request returns a
+ * usable window. URLs that name either, and g2p-style
+ * `/allelematrix-search` URLs, are returned as they are.
+ */
+export function brapiMatrixUrlWithDefaults(matrixUrl: string): string {
+  const { path, params } = splitUrl(matrixUrl);
+  if (!/\/allelematrix\/?$/.test(path)) return matrixUrl;
+  if (params.has('dimensionVariantPageSize') || params.has('dimensionCallSetPageSize')) return matrixUrl;
+  params.set('dimensionVariantPageSize', String(BRAPI_DIMENSION_PAGE_SIZE));
+  params.set('dimensionCallSetPageSize', String(BRAPI_DIMENSION_PAGE_SIZE));
+  return `${path}?${params.toString()}`;
+}
+
+/**
+ * GET an allele-matrix URL — a standard `/allelematrix` (dimension page
+ * sizes defaulted by `brapiMatrixUrlWithDefaults`) or a g2p
+ * `/allelematrix-search` — and normalise it with `fromBrAPIAlleleMatrix`.
+ */
 export async function fetchBrapiAlleleMatrix(
   url: string,
   opts: BrapiFetchOptions & { regionLabel?: string } = {},
 ): Promise<FromBrAPIAlleleMatrixResult> {
-  const json = await getJson<unknown>(url, transport(opts));
+  const json = await getJson<unknown>(brapiMatrixUrlWithDefaults(url), transport(opts));
   return fromBrAPIAlleleMatrix(json, opts.regionLabel !== undefined ? { regionLabel: opts.regionLabel } : {});
 }
 
@@ -147,13 +194,37 @@ export async function fetchBrapiGermplasm(
   return out;
 }
 
-/** GET a `/variants` URL (see `brapiVariantsUrlFrom`) and convert it with `fromBrAPIVariants`. */
+/**
+ * GET a `/variants` URL (see `brapiVariantsUrlFrom`) exactly as given,
+ * then — when the response carries a standard `metadata.pagination` block
+ * announcing more pages — the remaining pages via `page=N` (at most
+ * `maxPages` requests in all), and convert every row with
+ * `fromBrAPIVariants`. g2p's unpaginated response is a single request.
+ */
 export async function fetchBrapiVariants(
   variantsUrl: string,
-  opts: BrapiFetchOptions & { reference?: string } = {},
+  opts: BrapiFetchOptions & { reference?: string; maxPages?: number } = {},
 ): Promise<VariantSite[]> {
-  const json = await getJson<unknown>(variantsUrl, transport(opts));
-  return fromBrAPIVariants(json, opts.reference !== undefined ? { reference: opts.reference } : {});
+  const maxPages = opts.maxPages ?? Infinity;
+  const rows: unknown[] = [];
+  let url = variantsUrl;
+  for (let requests = 0; requests < maxPages; requests++) {
+    const json = await getJson<unknown>(url, transport(opts));
+    const body = (json && typeof json === 'object' ? json : {}) as Record<string, unknown>;
+    const result = (body.result && typeof body.result === 'object' ? body.result : null) as Record<string, unknown> | null;
+    const data = result !== null && Array.isArray(result.data) ? result.data : Array.isArray(json) ? json : [];
+    rows.push(...(data as unknown[]));
+    const metadata = (body.metadata && typeof body.metadata === 'object' ? body.metadata : {}) as Record<string, unknown>;
+    const pagination = (metadata.pagination && typeof metadata.pagination === 'object'
+      ? metadata.pagination
+      : null) as Record<string, unknown> | null;
+    if (pagination === null) break;
+    const currentPage = typeof pagination.currentPage === 'number' ? pagination.currentPage : requests;
+    const totalPages = typeof pagination.totalPages === 'number' ? pagination.totalPages : 1;
+    if (currentPage >= totalPages - 1 || data.length === 0) break;
+    url = buildUrl(variantsUrl, '', { page: currentPage + 1 });
+  }
+  return fromBrAPIVariants(rows, opts.reference !== undefined ? { reference: opts.reference } : {});
 }
 
 /** A precomputed variant-set tree, as gramene-g2p serves it. */
@@ -196,7 +267,11 @@ export async function fetchBrapiVariantSetTree(
 
 /** What `brapiAlleleMatrixSource.loadRoot` needs. */
 export interface BrapiCtx {
-  /** Full `/allelematrix-search` URL (relative URLs are fine), including `tree=upgma` when the server supports it. */
+  /**
+   * Full allele-matrix URL (relative URLs are fine): a standard BrAPI v2
+   * `/allelematrix?variantSetDbId=…` (dimension page sizes are defaulted
+   * when absent) or a gramene-g2p `/allelematrix-search?…&tree=upgma`.
+   */
   matrixUrl: string;
   /** BrAPI base for `/germplasm`; default `brapiBaseOf(matrixUrl)`. */
   base?: string;
@@ -221,6 +296,8 @@ export interface BrapiMeta {
   swappedNodeIds: NodeId[];
   treeMethod?: string;
   treeMetric?: string;
+  /** Matrix dimension paging as the server reported it (standard `/allelematrix` only). */
+  pagination?: BrapiMatrixPagination[];
 }
 
 /** One root with every sample as a leaf at distance 1; leaf ids `l<i>`, geneId = sample. */
@@ -312,6 +389,7 @@ export const brapiAlleleMatrixSource: TreeDataSource<BrapiCtx, BrapiMeta> = {
         sampleIds: r.sampleIds,
         ...(r.variantSetDbId !== undefined ? { variantSetDbId: r.variantSetDbId } : {}),
         swappedNodeIds,
+        ...(r.pagination !== undefined ? { pagination: r.pagination } : {}),
         ...(treeMethod !== undefined ? { treeMethod } : {}),
         ...(treeMetric !== undefined ? { treeMetric } : {}),
       },

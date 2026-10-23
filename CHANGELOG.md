@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.13.1
+
+Paired with tbrowse-core 1.0.1, which makes `brapiAlleleMatrixSource` work against a standard BrAPI v2 server (see `packages/core/CHANGELOG.md`).
+
+### Fixed
+- Auto-enable of a zone whose data has just arrived no longer defers to a sibling in the same linked exclusive group that is flagged visible but has no data of its own. Only a member that actually renders (visible and available, the test `Layout` already applies when laying zones out) holds the group's slot. Before, a host that seeded every zone visible — the playground does — could never see the genotype zone after a BrAPI load, because the empty MSA entry held the `detail` slot. The update is the new pure `autoEnableZones` (`src/layout/autoEnable.ts`), with tests.
+
+### Playground
+- The BrAPI row defaults to the public BrAPI test server (`https://test-server.brapi.org/brapi/v2/allelematrix?variantSetDbId=variantset1`, 20 variants × 13 callsets over CORS, clustered locally with UPGMA); gramene-g2p's `/allelematrix-search?…&tree=upgma` still works through the `/brapi` dev proxy. The readout notes when a standard response is one page of a larger matrix.
+
 ## 2.13.0
 
 Documentation release paired with tbrowse-core 1.0.0, whose surface is now frozen for the application note. No runtime change from 2.12.0; the `tbrowse-core` dependency range `>=0.1.0 <2.0.0` is unchanged and covers 1.0.0.

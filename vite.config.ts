@@ -78,10 +78,11 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     server: {
-      // The playground's BrAPI mode fetches a relative
-      // `/brapi/v2/allelematrix-search?…&tree=upgma` URL. Point the proxy at a
-      // running gramene-g2p API (its default dev port is 8080) or any other
-      // BrAPI v2 server via BRAPI_PROXY_TARGET.
+      // The playground's BrAPI mode defaults to the public BrAPI test
+      // server over CORS; a relative `/brapi/v2/…` URL (gramene-g2p's
+      // `/allelematrix-search?…&tree=upgma`, say) goes through this proxy
+      // instead. Point it at a running gramene-g2p API (its default dev
+      // port is 8080) or any other BrAPI v2 server via BRAPI_PROXY_TARGET.
       proxy: {
         '/brapi': {
           target: process.env.BRAPI_PROXY_TARGET ?? 'http://localhost:8080',

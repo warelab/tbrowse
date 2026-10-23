@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1
+
+`brapiAlleleMatrixSource` now works against a standard BrAPI v2 server (checked against `test-server.brapi.org`), not only gramene-g2p's augmented `/allelematrix-search`.
+
+- `fromBrAPIVariants` understands standard `/variants` objects (`variantDbId`, `referenceName`, `start`, `referenceBases`, `alternateBases`) next to g2p's long-form `{ sample, pos, ref, alleles, GT }` rows; the two may be mixed.
+- `mergeVariantSites` joins by position when the matrix column has one and otherwise by `id`, so sites reach the opaque `variantDbId`s of a standard server (before, an id join needed both sides position-less).
+- `fromBrAPIAlleleMatrix` / `BrapiMeta` carry the standard response's per-dimension `pagination` (`BrapiMatrixPagination[]`: VARIANTS and CALLSETS page, page size and total counts).
+- `brapiVariantsUrlFrom` on a standard `/allelematrix` URL keeps only the parameters `/variants` accepts (`variantSetDbId`, `referenceName`, `start`, `end`, …) and adds `pageSize=1000` (`BRAPI_VARIANTS_PAGE_SIZE`); g2p's `/allelematrix-search` URLs are mapped as before (every parameter kept except `tree`).
+- `fetchBrapiVariants` follows `metadata.pagination` across pages (new `maxPages` option); an unpaginated response is still a single request.
+- New `brapiMatrixUrlWithDefaults`: a standard `/allelematrix` URL that names neither `dimensionVariantPageSize` nor `dimensionCallSetPageSize` gets `BRAPI_DIMENSION_PAGE_SIZE` (1000) for both, since the servers' own defaults can be a handful of rows; `fetchBrapiAlleleMatrix` applies it.
+- Known limitation: the `germplasm` slot filters `/germplasm` by the matrix's `callSetDbId`s, which on most standard servers are not germplasm ids (the callset → sample → germplasm walk is not implemented), so it yields nothing there.
+
 ## 1.0.0
 
 The public surface is frozen: this is the version cited by the tbrowse application note. No runtime change from 0.2.0 — the release is documentation plus the version number. From here, additions arrive in minors and removals only in 2.0.

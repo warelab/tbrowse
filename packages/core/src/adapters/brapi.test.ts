@@ -81,6 +81,7 @@ describe('fromBrAPIAlleleMatrix', () => {
     });
     expect(same.matrix.regionLabel).toBe(`2:${(1000).toLocaleString()}–${(2500).toLocaleString()}`);
     expect(fromBrAPIAlleleMatrix(matrixResponse, { regionLabel: 'custom' }).matrix.regionLabel).toBe('custom');
+    expect(r).not.toHaveProperty('pagination');
     // Optional keys are absent, never undefined.
     expect(same).not.toHaveProperty('newick');
     expect(same).not.toHaveProperty('variantSetDbId');
@@ -143,6 +144,95 @@ describe('fromBrAPIGermplasm', () => {
   });
 });
 
+describe('fromBrAPIAlleleMatrix (standard /allelematrix page)', () => {
+  it('surfaces the per-dimension pagination array and ignores junk entries', () => {
+    const r = fromBrAPIAlleleMatrix({
+      metadata: { pagination: { currentPage: 0, totalPages: 1 } },
+      result: {
+        callSetDbIds: ['cs1', 'cs2'],
+        variantDbIds: ['variant01', 'variant02'],
+        variantSetDbIds: ['variantset1'],
+        sepPhased: '|',
+        sepUnphased: '/',
+        unknownString: '.',
+        pagination: [
+          { dimension: 'VARIANTS', page: 0, pageSize: 100, totalCount: 20, totalPages: 1 },
+          { dimension: 'CALLSETS', page: 0, pageSize: 100, totalCount: 13, totalPages: 1 },
+          null,
+          'junk',
+          { dimension: 7, page: 'x' },
+        ],
+        dataMatrices: [
+          { dataMatrixName: 'Genotype', dataMatrixAbbreviation: 'GT', dataType: 'string', dataMatrix: [['0/0', '0|1'], ['1/1', './.']] },
+          { dataMatrixName: 'Read Depth', dataMatrixAbbreviation: 'DP', dataType: 'integer', dataMatrix: [[10, 12], [9, 0]] },
+        ],
+      },
+    });
+    expect(r.sampleIds).toEqual(['cs1', 'cs2']);
+    // Opaque ids: no chrom:pos to parse.
+    expect(r.matrix.variants).toEqual([{ id: 'variant01' }, { id: 'variant02' }]);
+    expect(r.matrix.callsByGeneId).toEqual({ cs1: ['0/0', '1/1'], cs2: ['0|1', './.'] });
+    expect(r.variantSetDbId).toBe('variantset1');
+    expect(r.pagination).toEqual([
+      { dimension: 'VARIANTS', page: 0, pageSize: 100, totalCount: 20, totalPages: 1 },
+      { dimension: 'CALLSETS', page: 0, pageSize: 100, totalCount: 13, totalPages: 1 },
+      { dimension: '', page: 0, pageSize: 0, totalCount: 0, totalPages: 0 },
+    ]);
+    expect(r).not.toHaveProperty('newick');
+  });
+});
+
+describe('fromBrAPIVariants (standard BrAPI v2 variant objects)', () => {
+  const standard = {
+    metadata: { pagination: { currentPage: 0, pageSize: 1000, totalCount: 3, totalPages: 1 } },
+    result: {
+      data: [
+        { variantDbId: 'variant01', variantNames: ['rs1'], referenceName: '1', start: 100, end: 100, referenceBases: 'A', alternateBases: ['T'], variantSetDbId: 'variantset1' },
+        { variantDbId: 'variant02', referenceName: '1', start: 200, referenceBases: 'C', alternateBases: ['G', 'GA', 7] },
+        // Duplicate id → first wins.
+        { variantDbId: 'variant01', referenceName: '9', start: 999 },
+        // No position, no bases, empty referenceName → id only (reference from opts).
+        { variantDbId: 'variant03', referenceName: '', start: 'n/a', referenceBases: '', alternateBases: 'x' },
+        // Empty id → falls through to the long-form branch, which skips it (no pos).
+        { variantDbId: '', referenceName: '1', start: 5 },
+      ],
+    },
+  };
+
+  it('keeps variantDbId as the id and maps referenceName/start/referenceBases/alternateBases', () => {
+    expect(fromBrAPIVariants(standard)).toEqual([
+      { id: 'variant01', reference: '1', position: 100, ref: 'A', alt: ['T'] },
+      { id: 'variant02', reference: '1', position: 200, ref: 'C', alt: ['G', 'GA'] },
+      { id: 'variant03' },
+    ]);
+    expect(fromBrAPIVariants(standard, { reference: 'chrX' })[2]).toEqual({ id: 'variant03', reference: 'chrX' });
+  });
+
+  it('mixes standard objects with g2p long-form rows', () => {
+    expect(
+      fromBrAPIVariants([
+        { variantDbId: 'variant01', start: 100, referenceBases: 'A', alternateBases: ['T'] },
+        { sample: 's1', pos: 300, ref: 'G', alleles: ['G', 'C'], GT: [0, 1] },
+      ], { reference: '1' }),
+    ).toEqual([
+      { id: 'variant01', reference: '1', position: 100, ref: 'A', alt: ['T'] },
+      { id: '1:300', reference: '1', position: 300, ref: 'G', alt: ['C'] },
+    ]);
+  });
+
+  it('joins standard sites to opaque matrix ids by variantDbId', () => {
+    const matrix: GenotypeMatrix = {
+      variants: [{ id: 'variant01' }, { id: 'variant02' }],
+      callsByGeneId: { cs1: ['0/0', '0/1'] },
+    };
+    const merged = mergeVariantSites(matrix, fromBrAPIVariants([
+      { variantDbId: 'variant02', referenceBases: 'C', alternateBases: ['G'] },
+      { variantDbId: 'variant01', referenceName: '1', start: 100, referenceBases: 'A', alternateBases: ['T'] },
+    ]));
+    expect(merged.variants).toEqual([{ id: 'variant01', ref: 'A', alt: ['T'] }, { id: 'variant02', ref: 'C', alt: ['G'] }]);
+  });
+});
+
 describe('fromBrAPIVariants', () => {
   const rows = {
     result: {
@@ -184,12 +274,12 @@ describe('mergeVariantSites', () => {
     callsByGeneId: { a: ['0/0', '0/1', '1/1', '0/0'] },
   };
 
-  it('joins by position, by id only when both sides lack a position, and returns a new matrix', () => {
+  it('joins by position first, then by id, and returns a new matrix', () => {
     const merged = mergeVariantSites(matrix, [
       { id: 'other:100', position: 100, ref: 'A', alt: ['T'] },
       { id: '1:200', position: 200, alt: ['GA'], alleleFrequency: 0.25 },
       { id: 'rs9', ref: 'T', alt: ['A'] },
-      // Same id as a matrix column but carries a position → must not join by id.
+      // Same id as a position-less matrix column: joins by id even though the site has a position.
       { id: 'rs10', position: 999, ref: 'X' },
     ]);
     expect(merged).not.toBe(matrix);
@@ -199,7 +289,7 @@ describe('mergeVariantSites', () => {
       { id: '1:100', reference: '1', position: 100, ref: 'A', alt: ['T'] },
       { id: '1:200', reference: '1', position: 200, ref: 'C', alt: ['GA'], alleleFrequency: 0.25 },
       { id: 'rs9', ref: 'T', alt: ['A'] },
-      { id: 'rs10' },
+      { id: 'rs10', ref: 'X' },
     ]);
     // The input is untouched.
     expect(matrix.variants[0]).toEqual({ id: '1:100', reference: '1', position: 100 });

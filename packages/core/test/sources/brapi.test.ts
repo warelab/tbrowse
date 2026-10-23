@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   brapiAlleleMatrixSource,
   brapiBaseOf,
+  brapiMatrixUrlWithDefaults,
   brapiPages,
   brapiVariantsUrlFrom,
   fetchBrapiAlleleMatrix,
@@ -129,10 +130,130 @@ describe('brapiBaseOf / brapiVariantsUrlFrom', () => {
       'https://h/brapi/v2/variants?samples=x%2Cy&start=1&end=2',
     );
     expect(brapiVariantsUrlFrom('/brapi/v2/allelematrix-search')).toBe('/brapi/v2/variants');
-    // No allelematrix-search tail: append /variants to the base.
-    expect(brapiVariantsUrlFrom('/brapi/v2/allelematrix?variantSetDbId=a&tree=upgma')).toBe(
-      '/brapi/v2/variants?variantSetDbId=a',
+  });
+
+  it('maps a standard /allelematrix URL to /variants keeping only standard params plus pageSize', () => {
+    expect(
+      brapiVariantsUrlFrom(
+        'https://test-server.brapi.org/brapi/v2/allelematrix?variantSetDbId=variantset1&dimensionVariantPageSize=100&dimensionCallSetPageSize=100&preview=true&expandHomozygotes=true&tree=upgma',
+      ),
+    ).toBe('https://test-server.brapi.org/brapi/v2/variants?variantSetDbId=variantset1&pageSize=1000');
+    expect(brapiVariantsUrlFrom('/brapi/v2/allelematrix?referenceName=1&start=10&end=20&callSetDbId=c1&positionRange=1:10-20')).toBe(
+      '/brapi/v2/variants?referenceName=1&start=10&end=20&callSetDbId=c1&pageSize=1000',
     );
+    expect(brapiVariantsUrlFrom('/brapi/v2/allelematrix')).toBe('/brapi/v2/variants?pageSize=1000');
+  });
+});
+
+describe('brapiMatrixUrlWithDefaults', () => {
+  it('adds both dimension page sizes to a bare standard /allelematrix URL', () => {
+    expect(brapiMatrixUrlWithDefaults('/brapi/v2/allelematrix?variantSetDbId=a')).toBe(
+      '/brapi/v2/allelematrix?variantSetDbId=a&dimensionVariantPageSize=1000&dimensionCallSetPageSize=1000',
+    );
+    expect(brapiMatrixUrlWithDefaults('https://h/brapi/v2/allelematrix/')).toBe(
+      'https://h/brapi/v2/allelematrix/?dimensionVariantPageSize=1000&dimensionCallSetPageSize=1000',
+    );
+  });
+
+  it('leaves URLs that name a dimension page size, and g2p search URLs, untouched', () => {
+    const named = '/brapi/v2/allelematrix?variantSetDbId=a&dimensionCallSetPageSize=5';
+    expect(brapiMatrixUrlWithDefaults(named)).toBe(named);
+    expect(brapiMatrixUrlWithDefaults(MATRIX_URL)).toBe(MATRIX_URL);
+    expect(brapiMatrixUrlWithDefaults('/brapi/v2/allelematrix-search')).toBe('/brapi/v2/allelematrix-search');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A standard BrAPI v2 server (shapes recorded from test-server.brapi.org)
+// ---------------------------------------------------------------------------
+
+const STD_BASE = 'https://std.example/brapi/v2';
+const STD_MATRIX_URL = `${STD_BASE}/allelematrix?variantSetDbId=variantset1`;
+const STD_MATRIX_URL_FULL = `${STD_MATRIX_URL}&dimensionVariantPageSize=1000&dimensionCallSetPageSize=1000`;
+const STD_VARIANTS_P0 = `${STD_BASE}/variants?variantSetDbId=variantset1&pageSize=1000`;
+const STD_VARIANTS_P1 = `${STD_VARIANTS_P0}&page=1`;
+
+const stdMatrixBody = {
+  metadata: { pagination: { currentPage: 0, pageSize: 1000, totalCount: 1, totalPages: 1 } },
+  result: {
+    callSetDbIds: ['cs1', 'cs2', 'cs3'],
+    variantDbIds: ['variant01', 'variant02'],
+    variantSetDbIds: ['variantset1'],
+    sepPhased: '|',
+    sepUnphased: '/',
+    unknownString: '.',
+    expandHomozygotes: true,
+    pagination: [
+      { dimension: 'VARIANTS', page: 0, pageSize: 1000, totalCount: 2, totalPages: 1 },
+      { dimension: 'CALLSETS', page: 0, pageSize: 1000, totalCount: 3, totalPages: 1 },
+    ],
+    dataMatrices: [
+      { dataMatrixName: 'Genotype', dataMatrixAbbreviation: 'GT', dataType: 'string', dataMatrix: [['0/0', '0/1', '1/1'], ['0/0', '0/0', '1/1']] },
+      { dataMatrixName: 'Read Depth', dataMatrixAbbreviation: 'DP', dataType: 'integer', dataMatrix: [[1, 2, 3], [4, 5, 6]] },
+    ],
+  },
+};
+
+const stdVariantsPage = (page: number) => ({
+  metadata: { pagination: { currentPage: page, pageSize: 1000, totalCount: 2, totalPages: 2 } },
+  result: {
+    data: [
+      page === 0
+        ? { variantDbId: 'variant01', referenceName: '1', start: 100, end: 100, referenceBases: 'A', alternateBases: ['T'], variantSetDbId: 'variantset1' }
+        : { variantDbId: 'variant02', referenceName: '1', start: 200, end: 200, referenceBases: 'C', alternateBases: ['G'], variantSetDbId: 'variantset1' },
+    ],
+  },
+});
+
+describe('standard BrAPI v2 server', () => {
+  it('fetchBrapiAlleleMatrix defaults the dimension page sizes and surfaces pagination', async () => {
+    const fetch = fakeFetch({ [STD_MATRIX_URL_FULL]: stdMatrixBody });
+    const r = await fetchBrapiAlleleMatrix(STD_MATRIX_URL, { fetch });
+    expect(fetch.calls).toEqual([STD_MATRIX_URL_FULL]);
+    expect(r.sampleIds).toEqual(['cs1', 'cs2', 'cs3']);
+    expect(r.matrix.variants).toEqual([{ id: 'variant01' }, { id: 'variant02' }]);
+    expect(r.pagination?.map((p) => [p.dimension, p.totalCount])).toEqual([['VARIANTS', 2], ['CALLSETS', 3]]);
+    expect(r).not.toHaveProperty('newick');
+  });
+
+  it('fetchBrapiVariants follows metadata.pagination across pages', async () => {
+    const fetch = fakeFetch({ [STD_VARIANTS_P0]: stdVariantsPage(0), [STD_VARIANTS_P1]: stdVariantsPage(1) });
+    const sites = await fetchBrapiVariants(STD_VARIANTS_P0, { fetch });
+    expect(fetch.calls).toEqual([STD_VARIANTS_P0, STD_VARIANTS_P1]);
+    expect(sites).toEqual([
+      { id: 'variant01', reference: '1', position: 100, ref: 'A', alt: ['T'] },
+      { id: 'variant02', reference: '1', position: 200, ref: 'C', alt: ['G'] },
+    ]);
+    // maxPages caps the requests.
+    const fetch2 = fakeFetch({ [STD_VARIANTS_P0]: stdVariantsPage(0), [STD_VARIANTS_P1]: stdVariantsPage(1) });
+    expect((await fetchBrapiVariants(STD_VARIANTS_P0, { fetch: fetch2, maxPages: 1 })).map((s) => s.id)).toEqual(['variant01']);
+    expect(fetch2.calls).toEqual([STD_VARIANTS_P0]);
+  });
+
+  it('fetchBrapiVariants makes exactly one request for an unpaginated (g2p) response', async () => {
+    const fetch = fakeFetch(fullRoutes(false));
+    await fetchBrapiVariants(VARIANTS_URL, { fetch, reference: '1' });
+    expect(fetch.calls).toEqual([VARIANTS_URL]);
+  });
+
+  it('the source builds a UPGMA tree, pages /variants and enriches the matrix by variant id', async () => {
+    const fetch = fakeFetch({
+      [STD_MATRIX_URL_FULL]: stdMatrixBody,
+      [STD_VARIANTS_P0]: stdVariantsPage(0),
+      [STD_VARIANTS_P1]: stdVariantsPage(1),
+    });
+    const loader = createLoader(brapiAlleleMatrixSource, { fetch, retry: { attempts: 1 } });
+    const snap = await loader.start({ matrixUrl: STD_MATRIX_URL, germplasm: false });
+    expect(snap.status).toBe('ready');
+    expect(snap.root?.meta.treeMethod).toBe('upgma');
+    expect(snap.root?.meta.pagination?.map((p) => p.dimension)).toEqual(['VARIANTS', 'CALLSETS']);
+    expect(leafOrder(snap.tree!, { swappedNodeIds: new Set(snap.root!.meta.swappedNodeIds) }).map((id) => snap.tree!.nodes[id]!.geneId).sort()).toEqual(['cs1', 'cs2', 'cs3']);
+    expect(snap.slots.variants?.status).toBe('ready');
+    expect(snap.root?.meta.matrix.variants).toEqual([
+      { id: 'variant01', ref: 'A', alt: ['T'] },
+      { id: 'variant02', ref: 'C', alt: ['G'] },
+    ]);
+    expect(fetch.calls).toEqual([STD_MATRIX_URL_FULL, STD_VARIANTS_P0, STD_VARIANTS_P1]);
   });
 });
 

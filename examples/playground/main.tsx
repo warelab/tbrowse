@@ -42,6 +42,7 @@ import {
   writeHashState,
   type BrapiCtx,
   type BrapiMeta,
+  type GenotypeMatrix,
   type DataSlot,
   type EnsemblCtx,
   type EnsemblMeta,
@@ -84,11 +85,13 @@ const PRUNED_STYLES: { id: PrunedNodeStyle; label: string }[] = [
 
 const ENSEMBL_DEFAULT_GENE = 'ENSG00000139618'; // BRCA2 (human)
 const GRAMENE_DEFAULT_GENE = 'SORBI_3006G095600';
-// The dev server proxies `/brapi` to BRAPI_PROXY_TARGET (default
-// http://localhost:8080, gramene-g2p's API); without a server there the
-// load fails with an HTTP error in the BrAPI row rather than hanging.
-const BRAPI_DEFAULT_URL =
-  '/brapi/v2/allelematrix-search?variantSetDbId=kg-chr22-big:GRCh37&referenceName=22&start=24000000&end=24050000&minAF=0.05&maxAF=0.95&tree=upgma';
+// A standard BrAPI v2 `/allelematrix` on the public BrAPI test server
+// (CORS-enabled; variantset1 is 20 variants × 13 callsets, no server-side
+// tree, so the source clusters the samples with UPGMA). gramene-g2p's
+// augmented endpoint works here too — the dev server proxies `/brapi` to
+// BRAPI_PROXY_TARGET (default http://localhost:8080):
+//   /brapi/v2/allelematrix-search?variantSetDbId=…&referenceName=22&start=…&end=…&minAF=0.05&maxAF=0.95&tree=upgma
+const BRAPI_DEFAULT_URL = 'https://test-server.brapi.org/brapi/v2/allelematrix?variantSetDbId=variantset1';
 
 const mirrorLabel = (m: EnsemblMirror) =>
   `${m.host.split('.')[0] === 'rest' ? 'current' : m.host.split('.')[0]} · r${m.release}`;
@@ -246,6 +249,23 @@ const uploadedActive = (file: File, onReady: OnReady): ActiveSource => ({
   key: keyFor('uploaded', `${file.name}:${file.size}:${file.lastModified}`),
   onReady,
 });
+/**
+ * " · page of N variants × M samples" when a standard `/allelematrix`
+ * response is one page of a larger matrix (its `pagination` block reports
+ * per-dimension totals); empty otherwise.
+ */
+function brapiWindowNote(pagination: BrapiMeta['pagination'], matrix: GenotypeMatrix): string {
+  if (!pagination) return '';
+  const total = (dim: string): number | undefined => pagination.find((p) => p.dimension === dim)?.totalCount;
+  const variants = total('VARIANTS');
+  const samples = total('CALLSETS');
+  if (variants === undefined || samples === undefined) return '';
+  const shownVariants = matrix.variants.length;
+  const shownSamples = Object.keys(matrix.callsByGeneId).length;
+  if (variants <= shownVariants && samples <= shownSamples) return '';
+  return ` · page of ${variants} variants × ${samples} samples`;
+}
+
 const brapiActive = (matrixUrl: string, onReady: OnReady): ActiveSource => ({
   kind: 'brapi',
   ctx: { matrixUrl },
@@ -996,14 +1016,14 @@ export function Playground() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && brapiUrl.trim()) loadBrapi(brapiUrl);
             }}
-            placeholder="/brapi/v2/allelematrix-search?…"
+            placeholder="https://…/brapi/v2/allelematrix?variantSetDbId=…"
             style={{ width: 460, fontSize: 12 }}
             disabled={loadingKind === 'brapi'}
           />
           <button
             onClick={() => loadBrapi(brapiUrl)}
             disabled={loadingKind === 'brapi' || !brapiUrl.trim()}
-            title="Fetch a BrAPI allele-matrix response (with tree=upgma to get the embedded tree, else clustered locally) and render the genotype-matrix zone; /germplasm and /variants follow as eager slots."
+            title="Fetch a BrAPI v2 allele matrix (a standard /allelematrix page, or gramene-g2p's /allelematrix-search with tree=upgma for the server's tree; otherwise the samples are clustered locally with UPGMA) and render the genotype-matrix zone; /germplasm and /variants follow as eager slots."
           >
             {loadingKind === 'brapi' ? 'Loading…' : 'Load BrAPI'}
           </button>
@@ -1018,6 +1038,7 @@ export function Playground() {
               samples
               {matrix.regionLabel ? ` · ${matrix.regionLabel}` : ''}
               {brapiMeta?.treeMethod ? ` · tree: ${brapiMeta.treeMethod}` : ''}
+              {brapiWindowNote(brapiMeta?.pagination, matrix)}
             </MutedText>
           )}
           {errorFor('brapi') && <ErrorText>brapi error: {errorFor('brapi')}</ErrorText>}

@@ -29,6 +29,7 @@ import { resolveMatches } from '../search/resolveMatches';
 import { ReorderHandle } from './ReorderHandle';
 import { ResizeHandle } from './ResizeHandle';
 import { Toolbar } from './Toolbar';
+import { autoEnableZones } from './autoEnable';
 import { computeRowRange } from 'tbrowse-core';
 
 export const HEADER_HEIGHT = 56;
@@ -133,7 +134,8 @@ export function Layout({
   // re-mounts TBrowse (the ref starts empty and the zone's data then
   // arrives). The persisted `userToggled` flag closes that gap: a zone
   // the user has explicitly toggled is never auto-revealed, so a shared
-  // view restores its hidden zones exactly as saved.
+  // view restores its hidden zones exactly as saved. The update itself,
+  // exclusive groups included, is `autoEnableZones`.
   const autoEnabledRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const newlyAvailable: string[] = [];
@@ -145,50 +147,7 @@ export function Layout({
       }
     }
     if (newlyAvailable.length === 0) return;
-    setViewState((vs) => {
-      // Auto-enable must respect mutually-exclusive groups: if a linked
-      // group already shows a member, a sibling whose data just landed
-      // must not light up alongside it (and at most one member can be
-      // auto-revealed per pass). Unlinked groups behave like plain zones.
-      const unlinkedSet = new Set(vs.unlinkedZoneGroups ?? []);
-      const groupOf = new Map<string, string | undefined>(
-        zones.map((d) => [d.id, d.exclusiveGroup]),
-      );
-      const groupClaimed = new Set<string>();
-      for (const z of vs.zones) {
-        if (!z.visible) continue;
-        const g = groupOf.get(z.id);
-        if (g && !unlinkedSet.has(g)) groupClaimed.add(g);
-      }
-      const canEnable = (id: string) => {
-        const g = groupOf.get(id);
-        if (!g || unlinkedSet.has(g)) return true;
-        if (groupClaimed.has(g)) return false;
-        groupClaimed.add(g); // claim the group's single slot
-        return true;
-      };
-      const next = vs.zones.map((z) =>
-        newlyAvailable.includes(z.id) &&
-        !z.visible &&
-        !z.userToggled &&
-        canEnable(z.id)
-          ? { ...z, visible: true }
-          : z,
-      );
-      // Add an entry for any zone the existing list is missing
-      // (rare — only if the host hand-built `zones` without all
-      // registered ids).
-      const seen = new Set(next.map((z) => z.id));
-      for (const id of newlyAvailable) {
-        if (seen.has(id)) continue;
-        const def = zones.find((d) => d.id === id);
-        if (!def) continue;
-        next.push({ id, width: def.defaultWidth, visible: canEnable(id) });
-      }
-      const changed = next.some((z, i) => z !== vs.zones[i]) ||
-        next.length !== vs.zones.length;
-      return changed ? { ...vs, zones: next } : vs;
-    });
+    setViewState((vs) => autoEnableZones(vs, zones, newlyAvailable, data));
   }, [data, zones, setViewState]);
 
   const collapsedNodeIds = useMemo(

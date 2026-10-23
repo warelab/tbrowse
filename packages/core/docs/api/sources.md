@@ -4,24 +4,25 @@
 
 REST adapters, the TreeDataSource / DataSlot / Loader contract, built-in Ensembl, Gramene, BrAPI and file sources.
 
-95 exports: 42 functions, 10 constants, 42 interfaces, 1 type aliases.
+98 exports: 43 functions, 12 constants, 42 interfaces, 1 type aliases.
 
 Every name here is also exported from the package root (`tbrowse-core`); the subpath import lets a bundler drop the rest.
 
 | Name | Kind | Summary |
 |---|---|---|
 | [`brapiBaseOf`](#brapibaseof) | function | The BrAPI base of an endpoint URL: everything up to and including the `/brapi/v<N>` segment (`/proxy/brapi/v2/allelematrix-search?x=1` → `/proxy/brapi/v2`). |
+| [`brapiMatrixUrlWithDefaults`](#brapimatrixurlwithdefaults) | function | A standard BrAPI `/allelematrix` call pages BOTH dimensions, with server-chosen defaults that can be as small as a few rows; a matrix URL whose path ends in `/allelematrix` and names neither… |
 | [`brapiPages`](#brapipages) | function | Iterate a paged BrAPI list endpoint: GET `url` with `pageSize` and `page=0,1,…`, yielding each page's `result.data` with its pagination block, and stopping once `currentPage >= totalPages - 1`, after `maxPages`… |
-| [`brapiVariantsUrlFrom`](#brapivariantsurlfrom) | function | The `/variants` URL for the window an `/allelematrix-search` URL covers: the path's `/allelematrix-search…` tail becomes `/variants` (or `/variants` is appended to `brapiBaseOf(matrixUrl)` when that tail is absent),… |
+| [`brapiVariantsUrlFrom`](#brapivariantsurlfrom) | function | The `/variants` URL for the window a matrix URL covers. |
 | [`createLoader`](#createloader) | function | Creates a `Loader` for a source. |
 | [`defineSlot`](#defineslot) | function | Identity helper that pins a slot's `T`, `Ctx` and `M` so the `run` / `toHostData` / `failWhen` members are type-checked against each other without the caller writing the generics twice. |
 | [`ensemblGeneTreeUrl`](#ensemblgenetreeurl) | function | URL of the gene-tree-by-member endpoint for `geneId`, switching the route on the host's release (see `EnsemblMirror.route`). |
 | [`expandCigar`](#expandcigar) | function | Expand a Gramene CIGAR string against an unaligned protein sequence. |
 | [`extendSource`](#extendsource) | function | Derives a new source from `source`: the same `loadRoot`, `id` from the patch (default: the original id), and `slots` = the original slots minus the `without` ids, with each given slot either replacing the existing… |
 | [`facetPairsToCounts`](#facetpairstocounts) | function | Turn a Solr flat facet array (`[value, count, value, count, …]`) into `{ [String(value)]: count }`. |
-| [`fetchBrapiAlleleMatrix`](#fetchbrapiallelematrix) | function | GET an `/allelematrix-search` URL and normalise it with `fromBrAPIAlleleMatrix`. |
+| [`fetchBrapiAlleleMatrix`](#fetchbrapiallelematrix) | function | GET an allele-matrix URL — a standard `/allelematrix` (dimension page sizes defaulted by `brapiMatrixUrlWithDefaults`) or a g2p `/allelematrix-search` — and normalise it with `fromBrAPIAlleleMatrix`. |
 | [`fetchBrapiGermplasm`](#fetchbrapigermplasm) | function | Page through `{base}/germplasm` (`pageSize` default 1000) and return the records for `ids` only, keyed as `fromBrAPIGermplasm` keys them (germplasmDbId and germplasmName), so the result joins the tree's leaf… |
-| [`fetchBrapiVariants`](#fetchbrapivariants) | function | GET a `/variants` URL (see `brapiVariantsUrlFrom`) and convert it with `fromBrAPIVariants`. |
+| [`fetchBrapiVariants`](#fetchbrapivariants) | function | GET a `/variants` URL (see `brapiVariantsUrlFrom`) exactly as given, then — when the response carries a standard `metadata.pagination` block announcing more pages — the remaining pages via `page=N` (at most… |
 | [`fetchBrapiVariantSetTree`](#fetchbrapivariantsettree) | function | GET `{base}/variantsets/{id}/tree` — gramene-g2p's precomputed, dataset-wide sample tree (`{ newick, leafOrder, samples, variants, method, metric }`, optionally wrapped in `result`). |
 | [`fetchEnsemblGeneTree`](#fetchensemblgenetree) | function | GET the gene tree that contains `geneId` (via {@link ensemblGeneTreeUrl}, so the route follows the host's release) and convert it with `fromEnsemblGeneTree`. |
 | [`fetchEnsemblOverlap`](#fetchensembloverlap) | function | Fan out to `/overlap/id/{gene}?feature=transcript;feature=exon;feature=cds; feature=regulatory;feature=motif` for every gene id and split each response into a `GeneStructure` (`fromEnsemblGeneStructure`) and… |
@@ -35,7 +36,7 @@ Every name here is also exported from the package root (`tbrowse-core`); the sub
 | [`fromBrAPIAlleleMatrix`](#frombrapiallelematrix) | function | Convert a BrAPI v2 `/allelematrix-search` response into a TBrowse `GenotypeMatrix`. |
 | [`fromBrAPIGermplasm`](#frombrapigermplasm) | function | Convert a BrAPI v2 `/germplasm` (or `/search/germplasm`) response into a `Record<GeneId, Germplasm>` map keyed by germplasmDbId AND germplasmName, so a tree whose leaves carry either id can join the map without the… |
 | [`fromBrAPITree`](#frombrapitree) | function | Parse the tree block of a BrAPI allele-matrix response into a `Tree` plus the `swappedNodeIds` that make `leafOrder(tree, { swappedNodeIds })` reproduce the server's `leafOrder`. |
-| [`fromBrAPIVariants`](#frombrapivariants) | function | Convert the long-form BrAPI `/variants` response of gramene-g2p — one row per (sample, variant): `{ sample, pos, ref?, alleles, GT }`, wrapped in `result.data` or given as a bare array — into one `VariantSite` per… |
+| [`fromBrAPIVariants`](#frombrapivariants) | function | Convert a BrAPI `/variants` response (`result.data`, or a bare array) into one `VariantSite` per variant. |
 | [`fromEnsemblGeneStructure`](#fromensemblgenestructure) | function | Convert one `/overlap/id/{geneId}?feature=transcript;feature=exon;feature=cds` response into a `GeneStructure` for that gene. |
 | [`fromEnsemblGeneTree`](#fromensemblgenetree) | function | Convert an Ensembl gene-tree REST response into TBrowse's normalized inputs. |
 | [`fromEnsemblGenomeFeatures`](#fromensemblgenomefeatures) | function | Convert one `/overlap/id/{geneId}?feature=regulatory;feature=motif` response into the proximal-feature track that drives the genome browser zone's optional annotations row. |
@@ -52,6 +53,8 @@ Every name here is also exported from the package root (`tbrowse-core`); the sub
 | [`mirrorFor`](#mirrorfor) | function | Resolve a host name to its mirror record. |
 | [`staticSource`](#staticsource) | function | Wraps a function of the context into a `TreeDataSource` whose `loadRoot` awaits `rootOf(ctx)` (sync or async). |
 | [`zoneStatusOf`](#zonestatusof) | function | Derives per-zone status from per-slot status through the host's zone id → slot ids map. |
+| [`BRAPI_DIMENSION_PAGE_SIZE`](#brapi_dimension_page_size) | constant | Dimension page size put on a standard `/allelematrix` URL that names none. |
+| [`BRAPI_VARIANTS_PAGE_SIZE`](#brapi_variants_page_size) | constant | `pageSize` put on a standard `/variants` URL (the servers' own defaults can be tiny). |
 | [`brapiAlleleMatrixSource`](#brapiallelematrixsource) | constant | `TreeDataSource` for a BrAPI `/allelematrix-search` window. |
 | [`ENSEMBL_DEFAULT_DOMAIN_SOURCES`](#ensembl_default_domain_sources) | constant | Protein-feature sources kept by default (`type` field of each row). |
 | [`ENSEMBL_DEFAULT_MIRROR`](#ensembl_default_mirror) | constant | The current (load-sensitive) endpoint; the default when a host names none. |
@@ -122,6 +125,20 @@ work; the query string is discarded.
 function brapiBaseOf(matrixUrl: string): string;
 ```
 
+### `brapiMatrixUrlWithDefaults`
+
+A standard BrAPI `/allelematrix` call pages BOTH dimensions, with
+server-chosen defaults that can be as small as a few rows; a matrix URL
+whose path ends in `/allelematrix` and names neither
+`dimensionVariantPageSize` nor `dimensionCallSetPageSize` gets
+`BRAPI_DIMENSION_PAGE_SIZE` for each, so the first request returns a
+usable window. URLs that name either, and g2p-style
+`/allelematrix-search` URLs, are returned as they are.
+
+```ts
+function brapiMatrixUrlWithDefaults(matrixUrl: string): string;
+```
+
 ### `brapiPages`
 
 Iterate a paged BrAPI list endpoint: GET `url` with `pageSize` and
@@ -141,12 +158,17 @@ function brapiPages<T>(url: string, opts?: BrapiFetchOptions & {
 
 ### `brapiVariantsUrlFrom`
 
-The `/variants` URL for the window an `/allelematrix-search` URL covers:
-the path's `/allelematrix-search…` tail becomes `/variants` (or
-`/variants` is appended to `brapiBaseOf(matrixUrl)` when that tail is
-absent), and EVERY query parameter is kept except `tree` — the region,
-sample and allele-frequency filters must match the matrix exactly
-(`main.tsx:681-684`).
+The `/variants` URL for the window a matrix URL covers.
+
+- gramene-g2p style (`…/allelematrix-search?…`): the path tail becomes
+  `/variants` and EVERY query parameter is kept except `tree` — the
+  region, sample and allele-frequency filters must match the matrix
+  exactly (`main.tsx:681-684`).
+- standard BrAPI v2 (`…/allelematrix?…`, or any other path): `/variants`
+  under `brapiBaseOf(matrixUrl)`, keeping only the parameters the
+  standard `/variants` call accepts (variantSetDbId, referenceName,
+  start, end, …) and adding `pageSize=${BRAPI_VARIANTS_PAGE_SIZE}`; the
+  matrix-only dimension paging and display switches are dropped.
 
 ```ts
 function brapiVariantsUrlFrom(matrixUrl: string): string;
@@ -235,7 +257,9 @@ function facetPairsToCounts(facet: ReadonlyArray<string | number> | undefined): 
 
 ### `fetchBrapiAlleleMatrix`
 
-GET an `/allelematrix-search` URL and normalise it with `fromBrAPIAlleleMatrix`.
+GET an allele-matrix URL — a standard `/allelematrix` (dimension page
+sizes defaulted by `brapiMatrixUrlWithDefaults`) or a g2p
+`/allelematrix-search` — and normalise it with `fromBrAPIAlleleMatrix`.
 
 ```ts
 function fetchBrapiAlleleMatrix(url: string, opts?: BrapiFetchOptions & {
@@ -260,11 +284,16 @@ function fetchBrapiGermplasm(base: string, ids: readonly string[], opts?: BrapiF
 
 ### `fetchBrapiVariants`
 
-GET a `/variants` URL (see `brapiVariantsUrlFrom`) and convert it with `fromBrAPIVariants`.
+GET a `/variants` URL (see `brapiVariantsUrlFrom`) exactly as given,
+then — when the response carries a standard `metadata.pagination` block
+announcing more pages — the remaining pages via `page=N` (at most
+`maxPages` requests in all), and convert every row with
+`fromBrAPIVariants`. g2p's unpaginated response is a single request.
 
 ```ts
 function fetchBrapiVariants(variantsUrl: string, opts?: BrapiFetchOptions & {
     reference?: string;
+    maxPages?: number;
 }): Promise<VariantSite[]>;
 ```
 
@@ -453,15 +482,25 @@ function fromBrAPITree(r: Pick<FromBrAPIAlleleMatrixResult, 'newick' | 'leafOrde
 
 ### `fromBrAPIVariants`
 
-Convert the long-form BrAPI `/variants` response of gramene-g2p — one row
-per (sample, variant): `{ sample, pos, ref?, alleles, GT }`, wrapped in
-`result.data` or given as a bare array — into one `VariantSite` per
-position (first row per `pos` wins, in order of first appearance). `ref`
-is the row's `ref`, `alt` is `alleles.slice(1)` (`alleles[0]` is REF),
-and the id is synthesised as `${reference ?? ''}:${pos}` so it matches
-the matrix's variantDbIds (g2p `brapi/genotyping.ts:426`). Rows without a
-numeric `pos` are skipped.
-Origin: stale worktree `examples/playground/main.tsx:679-700` (`loadBrapiVariants`).
+Convert a BrAPI `/variants` response (`result.data`, or a bare array)
+into one `VariantSite` per variant. Two row shapes are understood, and
+may be mixed:
+
+- Standard BrAPI v2 variant objects (`variantDbId`, `referenceName`,
+  `start`, `referenceBases`, `alternateBases`, …): the id is the
+  `variantDbId`, so the site joins the matrix's `variantDbIds` by id or
+  by position; `position` is `start` when numeric. The first row per id
+  wins.
+- gramene-g2p's long-form rows — one per (sample, variant):
+  `{ sample, pos, ref?, alleles, GT }` — collapsed to one site per
+  position (first row per `pos` wins, in order of first appearance).
+  `ref` is the row's `ref`, `alt` is `alleles.slice(1)` (`alleles[0]`
+  is REF), and the id is synthesised as `${reference ?? ''}:${pos}` so
+  it matches the matrix's variantDbIds (g2p `brapi/genotyping.ts:426`).
+  Rows without a numeric `pos` are skipped.
+
+Origin of the long-form branch: stale worktree
+`examples/playground/main.tsx:679-700` (`loadBrapiVariants`).
 
 ```ts
 function fromBrAPIVariants(raw: unknown, opts?: FromBrAPIVariantsOptions): VariantSite[];
@@ -668,10 +707,11 @@ function mergeHostData(base: HostDataPatch, patch: HostDataPatch, opts?: {
 ### `mergeVariantSites`
 
 Merge REF/ALT (and allele-frequency) detail from `sites` into the
-matrix's variant columns. The join is by POSITION: a matrix variant with
-a `position` takes the site at the same position; one without a position
-matches a site by `id` only when that site also lacks a position. On a
-hit, `ref`, `alt` and `alleleFrequency` are taken from the site when it
+matrix's variant columns. A matrix variant with a `position` takes the
+site at the same position (g2p synthesises `chr:pos` ids on both sides,
+so position is the reliable key there); failing that, the site with the
+same `id` — which is how standard BrAPI servers join, their
+`variantDbId`s being opaque. On a hit, `ref`, `alt` and `alleleFrequency` are taken from the site when it
 defines them and kept otherwise. Returns a new `GenotypeMatrix` (new
 `variants` array) when at least one column changed, and the SAME object
 when nothing matched, so a loader can tell a no-op from a change.
@@ -718,6 +758,22 @@ function zoneStatusOf(slots: Record<string, SlotState>, zoneSlots: Readonly<Reco
 ```
 
 ## Constants
+
+### `BRAPI_DIMENSION_PAGE_SIZE`
+
+Dimension page size put on a standard `/allelematrix` URL that names none.
+
+```ts
+const BRAPI_DIMENSION_PAGE_SIZE = 1000;
+```
+
+### `BRAPI_VARIANTS_PAGE_SIZE`
+
+`pageSize` put on a standard `/variants` URL (the servers' own defaults can be tiny).
+
+```ts
+const BRAPI_VARIANTS_PAGE_SIZE = 1000;
+```
 
 ### `brapiAlleleMatrixSource`
 
@@ -848,7 +904,11 @@ What `brapiAlleleMatrixSource.loadRoot` needs.
 
 ```ts
 interface BrapiCtx {
-    /** Full `/allelematrix-search` URL (relative URLs are fine), including `tree=upgma` when the server supports it. */
+    /**
+     * Full allele-matrix URL (relative URLs are fine): a standard BrAPI v2
+     * `/allelematrix?variantSetDbId=…` (dimension page sizes are defaulted
+     * when absent) or a gramene-g2p `/allelematrix-search?…&tree=upgma`.
+     */
     matrixUrl: string;
     /** BrAPI base for `/germplasm`; default `brapiBaseOf(matrixUrl)`. */
     base?: string;
@@ -889,6 +949,8 @@ interface BrapiMeta {
     swappedNodeIds: NodeId[];
     treeMethod?: string;
     treeMetric?: string;
+    /** Matrix dimension paging as the server reported it (standard `/allelematrix` only). */
+    pagination?: BrapiMatrixPagination[];
 }
 ```
 
@@ -1160,6 +1222,13 @@ interface FromBrAPIAlleleMatrixResult {
     treeMetric?: string;
     /** Server-supplied display order of leaves, when present. */
     leafOrder?: string[];
+    /**
+     * The matrix dimensions as the server paged them: a standard BrAPI v2
+     * `/allelematrix` response carries one entry per dimension (VARIANTS
+     * and CALLSETS). When `totalCount` exceeds what the response holds,
+     * the window is one page of a larger matrix.
+     */
+    pagination?: BrapiMatrixPagination[];
 }
 ```
 

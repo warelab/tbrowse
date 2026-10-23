@@ -6,11 +6,11 @@ Generated from the built declaration files; one page per entry point. The root e
 
 | Entry point | Exports | Page | Contents |
 |---|---|---|---|
-| `tbrowse-core` | 275 (61 root-only) | this page | Everything below, plus the data-model types, the table-zone types and aggregators, and the genotype call encoding. |
+| `tbrowse-core` | 278 (61 root-only) | this page | Everything below, plus the data-model types, the table-zone types and aggregators, and the genotype call encoding. |
 | `tbrowse-core/tree` | 37 | [tree.md](./tree.md) | Children index, walks, roll-ups, pruning, pivot, Newick, hierarchy conversion, swaps, validation. |
 | `tbrowse-core/parsers` | 21 | [parsers.md](./parsers.md) | Newick, Nexus and PhyloXML tree parsers; CSV/TSV table parser. |
 | `tbrowse-core/fetch` | 19 | [fetch.md](./fetch.md) | Retrying fetch, JSON and URL helpers, bounded fan-out. |
-| `tbrowse-core/sources` | 95 | [sources.md](./sources.md) | REST adapters, the TreeDataSource / DataSlot / Loader contract, built-in Ensembl, Gramene, BrAPI and file sources. |
+| `tbrowse-core/sources` | 98 | [sources.md](./sources.md) | REST adapters, the TreeDataSource / DataSlot / Loader contract, built-in Ensembl, Gramene, BrAPI and file sources. |
 | `tbrowse-core/cluster` | 8 | [cluster.md](./cluster.md) | UPGMA clustering of genotype dosages. |
 | `tbrowse-core/view` | 23 | [view.md](./view.md) | ViewState construction, normalisation, URL-hash codec, derived prunes, row model. |
 | `tbrowse-core/zone` | 11 | [zone.md](./zone.md) | Row flags, leaf/taxon joins and facet roll-ups for host-defined zones. |
@@ -984,10 +984,13 @@ Alphabetical, with the page that documents each name.
 | `assertValidTree` | [tree](./tree.md#assertvalidtree) |
 | `averageDosage` | [root](#averagedosage) |
 | `backoffMs` | [fetch](./fetch.md#backoffms) |
+| `BRAPI_DIMENSION_PAGE_SIZE` | [sources](./sources.md#brapi_dimension_page_size) |
+| `BRAPI_VARIANTS_PAGE_SIZE` | [sources](./sources.md#brapi_variants_page_size) |
 | `brapiAlleleMatrixSource` | [sources](./sources.md#brapiallelematrixsource) |
 | `brapiBaseOf` | [sources](./sources.md#brapibaseof) |
 | `BrapiCtx` | [sources](./sources.md#brapictx) |
 | `BrapiFetchOptions` | [sources](./sources.md#brapifetchoptions) |
+| `brapiMatrixUrlWithDefaults` | [sources](./sources.md#brapimatrixurlwithdefaults) |
 | `BrapiMeta` | [sources](./sources.md#brapimeta) |
 | `BrapiPage` | [sources](./sources.md#brapipage) |
 | `brapiPages` | [sources](./sources.md#brapipages) |
